@@ -154,10 +154,16 @@ export const RegrindingManagementView: React.FC<RegrindingManagementViewProps> =
     regrindCountBefore: number;
     urgency: 'HIGH' | 'NORMAL' | 'LOW';
     receivedBy: string;
+    startImmediately?: boolean;
   }) => {
     const newTicket = regrindService.createManualTicket(data);
+    if (data.startImmediately) {
+      regrindService.startGrinding(newTicket.id, data.receivedBy || 'Tooling Tech', { etaMinutes: 30 });
+      showToast('success', `⚡ เปิดใบงานและเริ่มเจียร ${newTicket.jobCode} (${newTicket.partName}) ทันทีเรียบร้อยแล้ว (สถานะ: กำลังเจียร)`);
+    } else {
+      showToast('success', `เปิดใบงาน ${newTicket.jobCode} (${newTicket.partName}) เรียบร้อยแล้ว`);
+    }
     setIsNewOrderModalOpen(false);
-    showToast('success', `เปิดใบงาน ${newTicket.jobCode} (${newTicket.partName}) เรียบร้อยแล้ว`);
     reloadData();
   };
 

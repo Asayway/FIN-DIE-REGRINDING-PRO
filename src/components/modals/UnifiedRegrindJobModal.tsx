@@ -7,7 +7,8 @@ import {
   Zap,
   Check,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Play
 } from 'lucide-react';
 import { ProductionLineId, LINE_INFO_MAP, RegrindMasterStandard } from '../../types';
 import { RegrindWorkTicket, DefectReasonCode } from '../../types/regrind';
@@ -64,7 +65,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
 
   // Unified Mode: Normal vs Urgent/Emergency #1
   const [isEmergency, setIsEmergency] = useState<boolean>(initialIsEmergency);
-  const [executionMode, setExecutionMode] = useState<'QUEUE_TICKET' | 'COMPLETE_NOW' | 'SCRAP_NOW'>('QUEUE_TICKET');
+  const [executionMode, setExecutionMode] = useState<'QUEUE_TICKET' | 'START_NOW' | 'SCRAP_NOW'>('QUEUE_TICKET');
 
   // Core Fields
   const [scheduledDate, setScheduledDate] = useState<string>(initialDateStr || todayStr);
@@ -246,13 +247,13 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
   const totalWearRangeMm = Number(Math.max(0.01, nominalLengthMm - minAllowedLengthMm).toFixed(2));
   const remainingPercent = Math.min(100, Math.max(0, (remainingWearMm / totalWearRangeMm) * 100));
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const executeSubmit = (shouldStartNow: boolean = false) => {
     if (isBefore2025) {
       alert(`⚠️ ไม่อนุญาตให้ลงวันที่ย้อนหลังเกิน Jan 2025 (กรุณาเลือกตั้งแต่วันที่ ${minAllowedDateStr} เป็นต้นไป)`);
       return;
     }
+
+    const isStartImmediate = shouldStartNow || executionMode === 'START_NOW';
 
     const parsedDate = new Date(scheduledDate);
     const year = parsedDate.getFullYear() || 2026;
@@ -290,6 +291,11 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         const scr = regrindService.scrapItem(existingTicket.id, defectReason, remarks, technician);
         regrindService.incrementDailyMatrixCount(year, month, 'DEFECT_SCRAP', partName, day, quantity);
         onSaved(scr.message, res.ticket);
+      } else if (isStartImmediate) {
+        const startRes = regrindService.startGrinding(existingTicket.id, technician, { etaMinutes: 30 });
+        regrindService.incrementDailyMatrixCount(year, month, 'REPAIR', partName, day, quantity);
+        const latest = regrindService.getQueueTickets().find(t => t.id === existingTicket.id);
+        onSaved(`⚡ ${startRes.message}`, latest || res.ticket);
       } else {
         regrindService.incrementDailyMatrixCount(year, month, 'REPAIR', partName, day, quantity);
         onSaved(res.message, res.ticket);
@@ -371,6 +377,53 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         note: remarks || `คัดทิ้งชำรุด (Scrap) จำนวน ${quantity} ชิ้น`,
         status: 'SCRAP'
       });
+      onSaved(`🗑️ บันทึกคัดทิ้ง ${createdTicket.jobCode} (${partName}) เรียบร้อย`, createdTicket);
+    } else if (isStartImmediate) {
+      // Start Grinding Immediately upon creation
+      const startRes = regrindService.startGrinding(createdTicket.id, technician, { etaMinutes: 30 });
+      regrindService.incrementDailyMatrixCount(
+        year,
+        month,
+        matrixCategory === 'DEFECT_SCRAP' ? 'DEFECT_SCRAP' : 'REPAIR',
+        partName,
+        day,
+        quantity
+      );
+      storageService.recordRegrind({
+        lineId,
+        lineLastUsed: lineId,
+        dieCode,
+        finDie: dieCode,
+        partCode,
+        partName,
+        partInstanceOrLot: serialOrLot,
+        previousLength: previousLengthMm,
+        currentLength: resultLengthMm,
+        actualGrindingRemovedMm: grindDepthMm,
+        mmRemovedThisCycle: grindDepthMm,
+        regrindCountBefore,
+        regrindCountAfter: nextCycle,
+        regrindCycleCount: nextCycle,
+        remainingRegrindCount: Math.max(0, maxRegrindAllowed - nextCycle),
+        maxAllowedCycles: maxRegrindAllowed,
+        supplierOrInternalProcess: 'INTERNAL_TOOL_ROOM',
+        vendorName: 'Internal Fin Die Tool Room (In-House)',
+        workOrder: createdTicket.jobCode,
+        cost: 2500,
+        surfaceRoughnessRa: 0.12,
+        hardnessHrc: 63.0,
+        inspectionResult: 'PENDING',
+        inspectionStatus: 'PENDING',
+        performedBy: technician,
+        regrindDate: scheduledDate,
+        note: remarks || `เริ่มดำเนินการเจียรทันที (In-Process) โดยช่าง ${technician}`,
+        status: 'REGRINDING'
+      });
+      const latest = regrindService.getQueueTickets().find(t => t.id === createdTicket.id);
+      onSaved(
+        `⚡ บันทึกและเริ่มเจียร ${createdTicket.jobCode} (${partName}) ทันทีเรียบร้อยแล้ว (สถานะ: กำลังเจียร)`,
+        latest || createdTicket
+      );
     } else {
       regrindService.incrementDailyMatrixCount(
         year,
@@ -410,15 +463,20 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         note: remarks || `ลงคิวงานเจียร กำหนดส่ง ${scheduledDate}`,
         status: 'WAITING REGRIND'
       });
+      onSaved(
+        isEmergency
+          ? `🚨 บันทึกงานด่วน ${createdTicket.jobCode} (${partName}) แทรกคิว #1 เรียบร้อย`
+          : `✅ บันทึกงานเจียร ${createdTicket.jobCode} (${partName}) เรียบร้อย`,
+        createdTicket
+      );
     }
 
-    onSaved(
-      isEmergency
-        ? `🚨 บันทึกงานด่วน ${createdTicket.jobCode} (${partName}) แทรกคิว #1 เรียบร้อย`
-        : `✅ บันทึกงานเจียร ${createdTicket.jobCode} (${partName}) เรียบร้อย`,
-      createdTicket
-    );
     onClose();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSubmit(executionMode === 'START_NOW');
   };
 
   if (!isOpen) return null;
@@ -894,10 +952,19 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                     className="w-full px-3 py-2 bg-slate-900 border-2 border-slate-700 rounded-xl text-white font-black cursor-pointer text-sm focus:border-cyan-400 focus:outline-none shadow-inner"
                   >
                     <option value="QUEUE_TICKET">
-                      {isEmergency ? '🚨 คิวด่วน #1' : '⏳ ลงคิวเจียร'}
+                      {isEmergency ? '🚨 คิวด่วน #1 (รอเริ่มเจียร)' : '⏳ ลงคิวรอเจียร (Queued)'}
+                    </option>
+                    <option value="START_NOW">
+                      ⚡ เริ่มเจียรทันที (Start Regrind Now)
                     </option>
                     <option value="SCRAP_NOW">🗑️ คัดทิ้ง (Scrap Tooling)</option>
                   </select>
+                  {executionMode === 'START_NOW' && (
+                    <div className="mt-1.5 text-[11px] text-emerald-300 font-bold flex items-center gap-1 bg-emerald-950/60 border border-emerald-500/40 px-2 py-1 rounded-lg">
+                      <Play className="w-3 h-3 fill-emerald-400 text-emerald-400 shrink-0" />
+                      <span>บันทึกและปรับสถานะเป็น "กำลังเจียร (In-Process)" ทันที</span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -966,39 +1033,61 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
           </div>
 
           {/* Action Footer */}
-          <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/15 mt-1">
-            <div className="text-xs font-mono text-slate-300 truncate max-w-xs">
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/15 mt-1 flex-wrap sm:flex-nowrap">
+            <div className="text-xs font-mono text-slate-300 truncate">
               หลังเจียร:{' '}
               <strong className={`text-sm font-black ${isUnderMinLength ? 'text-rose-400' : 'text-emerald-300'}`}>
                 {resultLengthMm.toFixed(2)} mm
               </strong>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-end">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-bold cursor-pointer transition-colors"
+                className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs sm:text-sm font-bold cursor-pointer transition-colors border border-white/10"
               >
                 ยกเลิก
               </button>
-              <button
-                type="submit"
-                className={`px-4 py-1.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer shadow-lg transition-all active:scale-95 ${
-                  isEmergency
-                    ? 'bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white shadow-rose-600/40'
-                    : 'bg-gradient-to-r from-cyan-400 to-cyan-300 hover:from-cyan-300 hover:to-cyan-200 text-slate-950 shadow-cyan-500/30'
-                }`}
-              >
-                {isEmergency ? <Flame className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                <span>
-                  {existingTicket
-                    ? 'บันทึกแก้ไข'
-                    : isEmergency
-                    ? 'บันทึกคิวด่วน #1'
-                    : 'บันทึกคิวงานเจียร'}
-                </span>
-              </button>
+
+              {executionMode === 'SCRAP_NOW' ? (
+                <button
+                  type="button"
+                  onClick={() => executeSubmit(false)}
+                  className="px-4 py-1.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer shadow-lg bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white shadow-rose-900/40 active:scale-95 transition-all"
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>ยืนยันคัดทิ้ง (Scrap)</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => executeSubmit(false)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer border border-cyan-500/40 bg-slate-900/90 hover:bg-cyan-950/50 text-cyan-300 hover:text-cyan-200 transition-all active:scale-95 shadow-sm"
+                    title="บันทึกเข้าคิวงานโดยยังไม่เริ่มเจียร (สถานะ: ในคิวรอเจียร)"
+                  >
+                    {isEmergency ? <Flame className="w-4 h-4 text-rose-400" /> : <Check className="w-4 h-4 text-cyan-400" />}
+                    <span>
+                      {existingTicket
+                        ? 'บันทึกแก้ไข'
+                        : isEmergency
+                        ? 'บันทึกคิวด่วน #1'
+                        : 'บันทึกเข้าคิว'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => executeSubmit(true)}
+                    className="px-4 py-1.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer shadow-lg bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-400 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-300 text-slate-950 shadow-emerald-500/30 transition-all active:scale-95 ring-2 ring-emerald-400/60 hover:ring-emerald-300"
+                    title="บันทึกข้อมูลและปรับสถานะเป็น กำลังเจียร (In-Process) ทันที"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
+                    <span>⚡ เริ่มเจียรทันที</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </form>

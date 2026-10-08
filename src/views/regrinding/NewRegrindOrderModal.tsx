@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ProductionLineId } from '../../types';
 import { ToolingPartMasterItem, DefectReasonCode, DEFECT_REASON_LABELS } from '../../types/regrind';
 import { ToolingPicThumbnail } from '../../components/regrind/ToolingPicThumbnail';
-import { PlusCircle, Wrench, X } from 'lucide-react';
+import { PlusCircle, Wrench, X, Play } from 'lucide-react';
 import { storageService } from '../../services/storageService';
 
 interface NewRegrindOrderModalProps {
@@ -21,6 +21,7 @@ interface NewRegrindOrderModalProps {
     regrindCountBefore: number;
     urgency: 'HIGH' | 'NORMAL' | 'LOW';
     receivedBy: string;
+    startImmediately?: boolean;
   }) => void;
   currentUserName?: string;
 }
@@ -78,8 +79,7 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const executeSubmit = (startImmediately: boolean = false) => {
     if (!currentMaster) return;
 
     onSubmit({
@@ -93,8 +93,14 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
       previousLengthMm,
       regrindCountBefore,
       urgency,
-      receivedBy: receivedBy.trim() || 'Tooling Tech'
+      receivedBy: receivedBy.trim() || 'Tooling Tech',
+      startImmediately
     });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSubmit(false);
   };
 
   return (
@@ -295,7 +301,7 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800 flex-wrap sm:flex-nowrap">
             <button
               type="button"
               onClick={onClose}
@@ -304,11 +310,20 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
               ยกเลิก
             </button>
             <button
-              type="submit"
-              className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold shadow-md transition-all flex items-center gap-1.5"
+              type="button"
+              onClick={() => executeSubmit(false)}
+              className="px-4 py-2 rounded-xl border border-cyan-500/50 bg-slate-100 dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-slate-700 text-cyan-700 dark:text-cyan-300 font-bold transition-all flex items-center gap-1.5"
             >
-              <PlusCircle className="w-4 h-4" />
-              <span>บันทึกเปิดใบงานเข้าคิว</span>
+              <PlusCircle className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+              <span>บันทึกเข้าคิว</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => executeSubmit(true)}
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 text-white font-extrabold shadow-md shadow-emerald-500/25 transition-all flex items-center gap-1.5 ring-2 ring-emerald-500/40 active:scale-95"
+            >
+              <Play className="w-4 h-4 fill-white text-white" />
+              <span>⚡ เริ่มเจียรทันที</span>
             </button>
           </div>
         </form>
