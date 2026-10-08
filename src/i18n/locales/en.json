@@ -1,0 +1,82 @@
+{
+  "header": {
+    "title": "FinDie Regrind Pro",
+    "subtitle": "FIN DIE TOOLING SHARPENING & REGRINDING LIFECYCLE",
+    "liveStatus": "LIVE ONLINE",
+    "hmiStatus": "SYSTEM ACTIVE"
+  },
+  "sidebar": {
+    "overviewSection": "OVERVIEW",
+    "operations": "REGRIND CONTROL",
+    "toolingSetup": "MASTER DATA",
+    "settings": "SETTINGS",
+    "shotEntry": "Shot Entry",
+    "tvDashboard": "Overview Dashboard",
+    "partReplacement": "Part Replacement & Layout",
+    "regrindingHub": "Regrinding Hub",
+    "regrindingControl": "Regrind Log & 31-Day Calendar",
+    "dieAndPartMaster": "Die & Part Master Specs",
+    "systemSettings": "System Settings"
+  },
+  "tv": {
+    "finDieShotCount": "FIN DIE SHOT COUNT",
+    "stagePunchDie": "Stage Punch / Die",
+    "replacementCount": "Life Standard (Shots)",
+    "shotCount": "Shot Count",
+    "progress": "Progress",
+    "lifeTime": "Life Time (Days)",
+    "installQty": "Install Qty.",
+    "stockQty": "Stock Qty.",
+    "orderRequire": "STATUS",
+    "mainFinDie": "MAIN FIN DIE",
+    "total": "Total",
+    "today": "Today",
+    "signalStandard": "SIGNAL STANDARD:",
+    "normal": "Normal",
+    "warning": "Warning",
+    "prepare": "Prepare",
+    "overLife": "Over Life",
+    "autoWidth": "Auto Width"
+  },
+  "table": {
+    "no": "NO.",
+    "partName": "PART NAME",
+    "limit": "LIMIT",
+    "current": "CURRENT",
+    "usage": "USAGE",
+    "remain": "REMAIN",
+    "progress": "PROGRESS",
+    "lastChange": "LAST CHANGE",
+    "installed": "INSTALLED",
+    "spare": "SPARE",
+    "status": "STATUS",
+    "stage": "STAGE"
+  },
+  "kpi": {
+    "totalShots": "TOTAL SHOTS",
+    "activeParts": "ACTIVE PARTS",
+    "criticalAlerts": "CRITICAL ALERTS",
+    "regrindQueue": "REGRIND QUEUE",
+    "scrapCount": "SCRAP COUNT"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "search": "Search...",
+    "filter": "Filter",
+    "export": "Export CSV",
+    "done": "Done",
+    "confirm": "Confirm",
+    "add": "Add New"
+  },
+  "status": {
+    "normal": "NORMAL",
+    "warning": "WARNING",
+    "prepare": "PREPARE",
+    "critical": "CRITICAL",
+    "overLife": "OVER LIFE",
+    "missing": "MISSING"
+  }
+}

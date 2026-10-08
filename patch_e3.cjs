@@ -1,0 +1,8 @@
+const fs = require('fs');
+let code = fs.readFileSync('src/views/LineConfigurationView.tsx', 'utf8');
+code = code.replace(/setE3DieSelection\('Die 1' \| 'Die 2'\)\('Die 1'\)/g, "setE3DieSelection\('Die 1' | 'Die 2' | 'Die 3'\)\('Die 1'\)");
+code = code.replace(/const \[e3DieSelection, setE3DieSelection\] = useState\<'Die 1' \| 'Die 2'\>\('Die 1'\);/, "const [e3DieSelection, setE3DieSelection] = useState<'Die 1' | 'Die 2' | 'Die 3'>('Die 1');");
+code = code.replace(/const getOptionsForLine = \(lineId: string, e3Die: 'Die 1' \| 'Die 2'\) => \{/, "const getOptionsForLine = (lineId: string, e3Die: 'Die 1' | 'Die 2' | 'Die 3') => {");
+code = code.replace(/if \(e3Die === 'Die 1'\) \{/, "if (e3Die === 'Die 1' || e3Die === 'Die 3') {");
+code = code.replace(/<span>Die 2 - 4P<\/span>\n                          <\/label>/, "<span>Die 2 - 4P</span>\n                          </label>\n                          <label className=\"flex items-center gap-2 text-white cursor-pointer\">\n                            <input \n                              type=\"radio\" \n                              name={`e3die-${config.id}`} \n                              value=\"Die 3\" \n                              checked={e3DieSelection === 'Die 3'}\n                              onChange={() => {\n                                setE3DieSelection('Die 3');\n                                setEditForm(prev => ({ ...prev, pathsCount: '3P' }));\n                              }}\n                              className=\"text-indigo-500 bg-slate-900 border-slate-700\"\n                            />\n                            <span>Die 3 - 3P</span>\n                          </label>");
+fs.writeFileSync('src/views/LineConfigurationView.tsx', code);

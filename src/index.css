@@ -1,0 +1,731 @@
+@import "tailwindcss";
+@import "./global-theme.css";
+@import "./theme.css";
+
+@layer base {
+  body {
+    background-color: #000000;
+    color: #ffffff;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* LG Monitor Industrial Dashboard Overrides */
+.lg-monitor-body {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+.lg-header-th {
+  background-color: #666677 !important;
+  color: #ffffff !important;
+  border: 1px solid #666666 !important;
+  font-weight: 800 !important;
+}
+
+.lg-table-row-dark {
+  background-color: #333333 !important;
+  color: #ffffff !important;
+  border-bottom: 1px solid #666666 !important;
+}
+
+.lg-table-row-dark:hover {
+  background-color: #3c3c3c !important;
+}
+
+.lg-shot-cell {
+  background-color: #00ff00 !important;
+  color: #000000 !important;
+  font-weight: 900 !important;
+  text-align: right !important;
+}
+
+.lg-subhead-panel {
+  background-color: #cfd3d8 !important;
+  color: #000000 !important;
+  border: 1px solid #777777 !important;
+}
+
+/* Industrial HMI (Matrix Green & Solid Black) Theme Override */
+.theme-hmi .bg-\[\#070F1E\],
+.theme-hmi .bg-\[\#0B172E\],
+.theme-hmi .bg-\[\#0C1A33\],
+.theme-hmi .bg-\[\#0E172A\],
+.theme-hmi .bg-\[\#1E293B\],
+.theme-hmi .bg-\[\#0F172A\],
+.theme-hmi .bg-\[\#0B1322\],
+.theme-hmi .bg-\[\#080E1B\],
+.theme-hmi .bg-\[\#070D18\],
+.theme-hmi .bg-slate-900,
+.theme-hmi .bg-slate-950,
+.theme-hmi .bg-slate-800 {
+  background-color: #000000 !important;
+}
+
+.theme-hmi .border-slate-800,
+.theme-hmi .border-slate-700,
+.theme-hmi .border-slate-800\/90,
+.theme-hmi .border-slate-800\/80 {
+  border-color: #166534 !important;
+}
+
+/* Light Theme Override: LG Light Enterprise Style */
+.theme-light body {
+  background-color: #F7F8FA;
+  color: #1F2937;
+}
+
+.theme-light {
+  background-color: #F7F8FA;
+  color: #1F2937;
+}
+
+/* 1. Main Backgrounds & Container Cards (Clean White with Soft LG Elevation) */
+.theme-light .bg-\[\#070F1E\],
+.theme-light .bg-\[\#0B172E\],
+.theme-light .bg-\[\#0C1A33\],
+.theme-light .bg-\[\#0E172A\],
+.theme-light .bg-\[\#1E293B\],
+.theme-light .bg-\[\#0F172A\],
+.theme-light .bg-\[\#0B1322\],
+.theme-light .bg-\[\#0B1222\],
+.theme-light .bg-\[\#0D1527\],
+.theme-light .bg-\[\#080E1B\],
+.theme-light .bg-\[\#070D18\],
+.theme-light .bg-\[\#0B1120\],
+.theme-light .bg-\[\#0B132B\],
+.theme-light .bg-\[\#0B1528\],
+.theme-light .bg-slate-900,
+.theme-light .bg-slate-950,
+.theme-light .bg-zinc-950,
+.theme-light .bg-zinc-900 {
+  background-color: #ffffff !important;
+  color: #1F2937 !important;
+  border-color: #E2E8F0 !important;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+}
+
+/* Inner Panels, Sub-cards & Grid Containers */
+.theme-light .bg-slate-950\/80,
+.theme-light .bg-slate-950\/50,
+.theme-light .bg-slate-950\/40,
+.theme-light .bg-slate-950\/90,
+.theme-light .bg-slate-900\/95,
+.theme-light .bg-slate-900\/90,
+.theme-light .bg-slate-900\/80,
+.theme-light .bg-slate-900\/50,
+.theme-light .bg-slate-900\/60,
+.theme-light .bg-slate-900\/40,
+.theme-light .bg-slate-800,
+.theme-light .bg-slate-800\/95,
+.theme-light .bg-slate-800\/90,
+.theme-light .bg-slate-800\/80,
+.theme-light .bg-slate-800\/70,
+.theme-light .bg-slate-800\/60,
+.theme-light .bg-slate-800\/50 {
+  background-color: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+  color: #1F2937 !important;
+}
+
+/* Form Controls & Inputs in Light Mode */
+.theme-light input,
+.theme-light select,
+.theme-light textarea {
+  background-color: #ffffff !important;
+  color: #1F2937 !important;
+  border-color: #CBD5E1 !important;
+}
+
+.theme-light input:focus,
+.theme-light select:focus,
+.theme-light textarea:focus {
+  border-color: #A50034 !important;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(165, 0, 52, 0.15) !important;
+}
+
+/* Table Headers & Section Bar Titles */
+.theme-light thead,
+.theme-light thead tr,
+.theme-light thead th,
+.theme-light .bg-\[\#0B172E\].border-b-2,
+.theme-light .bg-\[\#0C1A33\].rounded-t-lg {
+  background-color: #F1F5F9 !important;
+  color: #1E293B !important;
+  border-color: #CBD5E1 !important;
+}
+
+/* 2. Text & Data Typography (High Contrast & Clear Hierarchy) */
+.theme-light .text-white,
+.theme-light .text-slate-100,
+.theme-light .text-slate-200 {
+  color: #1F2937 !important;
+}
+
+.theme-light .text-slate-300,
+.theme-light .text-slate-400 {
+  color: #475569 !important;
+}
+
+.theme-light .text-slate-500,
+.theme-light .text-slate-600 {
+  color: #64748B !important;
+}
+
+/* Deep Industrial Blue/Sky for Data Text in Light Theme */
+.theme-light .text-cyan-400,
+.theme-light .text-cyan-300,
+.theme-light .text-cyan-200,
+.theme-light .text-cyan-500,
+.theme-light .text-cyan-100,
+.theme-light .text-sky-400,
+.theme-light .text-sky-300,
+.theme-light .text-sky-200 {
+  color: #0284C7 !important;
+}
+
+/* Forest Green for Normal / Shots */
+.theme-light .text-emerald-400,
+.theme-light .text-emerald-300,
+.theme-light .text-emerald-500,
+.theme-light .text-green-400,
+.theme-light .text-green-300 {
+  color: #16A34A !important;
+}
+
+/* Warm Amber / Brown for Warning */
+.theme-light .text-amber-400,
+.theme-light .text-amber-300,
+.theme-light .text-yellow-400,
+.theme-light .text-yellow-300,
+.theme-light .text-yellow-200 {
+  color: #D97706 !important;
+}
+
+/* LG Red / Deep Crimson for Over Life / Broken / Critical */
+.theme-light .text-rose-400,
+.theme-light .text-rose-300,
+.theme-light .text-rose-200,
+.theme-light .text-red-400,
+.theme-light .text-red-300 {
+  color: #DC2626 !important;
+}
+
+/* Deep Purple for Locked / Changeover */
+.theme-light .text-purple-400,
+.theme-light .text-purple-300,
+.theme-light .text-purple-200 {
+  color: #7C3AED !important;
+}
+
+/* 3. Soft Contrast Status Badges & Pills */
+/* Normal / OK / Running */
+.theme-light .bg-emerald-950,
+.theme-light .bg-emerald-950\/90,
+.theme-light .bg-emerald-950\/80,
+.theme-light .bg-emerald-950\/70,
+.theme-light .bg-emerald-950\/60,
+.theme-light .bg-emerald-950\/40,
+.theme-light .bg-emerald-900,
+.theme-light .bg-emerald-900\/60,
+.theme-light .bg-green-950,
+.theme-light .bg-emerald-600 {
+  background-color: #F0FDF4 !important;
+  color: #16A34A !important;
+  border-color: #86EFAC !important;
+}
+
+/* Warning / Idle / Missing */
+.theme-light .bg-amber-950,
+.theme-light .bg-amber-950\/90,
+.theme-light .bg-amber-950\/80,
+.theme-light .bg-amber-950\/60,
+.theme-light .bg-amber-950\/40,
+.theme-light .bg-amber-900,
+.theme-light .bg-amber-900\/60,
+.theme-light .bg-yellow-950,
+.theme-light .bg-yellow-950\/60,
+.theme-light .bg-yellow-400,
+.theme-light .bg-yellow-500,
+.theme-light .bg-amber-500 {
+  background-color: #FFFBEB !important;
+  color: #D97706 !important;
+  border-color: #FDE68A !important;
+}
+
+/* Prepare / Bypass */
+.theme-light .bg-orange-950,
+.theme-light .bg-orange-950\/90,
+.theme-light .bg-orange-950\/80,
+.theme-light .bg-orange-950\/60,
+.theme-light .bg-orange-950\/40,
+.theme-light .bg-orange-900,
+.theme-light .bg-orange-600 {
+  background-color: #FFF7ED !important;
+  color: #C2410C !important;
+  border-color: #FED7AA !important;
+}
+
+/* Over Life / Critical / Broken / Stopped / Down */
+.theme-light .bg-rose-950,
+.theme-light .bg-rose-950\/90,
+.theme-light .bg-rose-950\/80,
+.theme-light .bg-rose-950\/60,
+.theme-light .bg-rose-950\/40,
+.theme-light .bg-rose-950\/30,
+.theme-light .bg-rose-900,
+.theme-light .bg-rose-900\/60,
+.theme-light .bg-rose-600,
+.theme-light .bg-red-950,
+.theme-light .bg-red-950\/40,
+.theme-light .bg-red-900,
+.theme-light .bg-red-600,
+.theme-light .bg-\[\#3B0707\],
+.theme-light .bg-\[\#2B0E17\],
+.theme-light .bg-\[\#2E0909\] {
+  background-color: #FEF2F2 !important;
+  color: #DC2626 !important;
+  border-color: #FCA5A5 !important;
+}
+
+/* Info / Tags / Sky Pill */
+.theme-light .bg-cyan-950,
+.theme-light .bg-cyan-950\/90,
+.theme-light .bg-cyan-950\/80,
+.theme-light .bg-cyan-950\/60,
+.theme-light .bg-cyan-900,
+.theme-light .bg-cyan-900\/80,
+.theme-light .bg-cyan-500\/10,
+.theme-light .bg-blue-950,
+.theme-light .bg-\[\#0B1E2E\] {
+  background-color: #EFF6FF !important;
+  color: #2563EB !important;
+  border-color: #BFDBFE !important;
+}
+
+/* Locked / Maintenance / Changeover */
+.theme-light .bg-purple-950,
+.theme-light .bg-purple-950\/70,
+.theme-light .bg-purple-950\/40,
+.theme-light .bg-purple-900,
+.theme-light .bg-purple-900\/60,
+.theme-light .bg-purple-900\/80,
+.theme-light .bg-\[\#19142B\] {
+  background-color: #F3E8FF !important;
+  color: #7C3AED !important;
+  border-color: #DDD6FE !important;
+}
+
+/* 4. Interactive 2D Die Pins (Desaturated Clean Pin Graphics for Eye Comfort) */
+.theme-light button.bg-emerald-500,
+.theme-light .die-pin-normal {
+  background-color: #F0FDF4 !important;
+  color: #16A34A !important;
+  border-color: #86EFAC !important;
+  box-shadow: none !important;
+}
+
+.theme-light button.bg-emerald-500:hover,
+.theme-light .die-pin-normal:hover {
+  background-color: #DCFCE7 !important;
+  border-color: #22C55E !important;
+  box-shadow: 0 1px 3px 0 rgba(34, 197, 94, 0.2) !important;
+}
+
+.theme-light button.bg-amber-400,
+.theme-light .die-pin-warning {
+  background-color: #FFFBEB !important;
+  color: #D97706 !important;
+  border-color: #F59E0B !important;
+  box-shadow: 0 1px 3px 0 rgba(245, 158, 11, 0.15) !important;
+}
+
+.theme-light button.bg-rose-500,
+.theme-light .die-pin-broken {
+  background-color: #FEF2F2 !important;
+  color: #DC2626 !important;
+  border-color: #EF4444 !important;
+  box-shadow: 0 1px 3px 0 rgba(239, 68, 68, 0.2) !important;
+}
+
+.theme-light button.bg-purple-900,
+.theme-light .die-pin-locked {
+  background-color: #F3E8FF !important;
+  color: #7C3AED !important;
+  border-color: #A855F7 !important;
+  box-shadow: none !important;
+}
+
+.theme-light button.bg-orange-600,
+.theme-light .die-pin-bypass {
+  background-color: #FFF7ED !important;
+  color: #C2410C !important;
+  border-color: #F97316 !important;
+  box-shadow: none !important;
+}
+
+/* Light Theme Borders */
+.theme-light .border-slate-800,
+.theme-light .border-slate-700,
+.theme-light .border-slate-800\/90,
+.theme-light .border-slate-800\/80,
+.theme-light .border-slate-800\/70,
+.theme-light .border-slate-800\/60,
+.theme-light .border-slate-700\/90,
+.theme-light .border-slate-700\/80,
+.theme-light .border-slate-700\/70 {
+  border-color: #E2E8F0 !important;
+}
+
+/* Modal Backdrops & Overlays */
+.theme-light .bg-black\/85,
+.theme-light .bg-black\/80,
+.theme-light .bg-black\/75 {
+  background-color: rgba(15, 23, 42, 0.45) !important;
+}
+
+/* Scrollbars in Light Theme */
+.theme-light .custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.theme-light .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.theme-light .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Industrial HMI Monospace & Glowing Accents */
+.font-mono-tech {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.text-matrix-glow {
+  text-shadow: 0 0 8px rgba(74, 222, 128, 0.6), 0 0 20px rgba(34, 197, 94, 0.4);
+}
+
+.box-matrix-glow {
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.25), inset 0 0 10px rgba(34, 197, 94, 0.1);
+}
+
+/* Refined custom scrollbar for industrial screens */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Custom AG Grid Dark Theme Overrides for Fin Die Control */
+.ag-theme-alpine-dark.fin-die-theme {
+  --ag-background-color: #0F172A; /* Tailwind slate-900 */
+  --ag-header-background-color: #1E293B; /* Tailwind slate-800 */
+  --ag-odd-row-background-color: #0F172A; 
+  --ag-border-color: #334155; /* Tailwind slate-700 */
+  --ag-row-border-color: #334155;
+  --ag-header-foreground-color: #94A3B8; /* Tailwind slate-400 */
+  --ag-data-color: #F1F5F9; /* Tailwind slate-100 */
+  --ag-control-panel-background-color: #0E172A;
+  --ag-active-color: #22D3EE; /* Tailwind cyan-400 */
+  --ag-selected-row-background-color: rgba(34, 211, 238, 0.1);
+  --ag-row-hover-color: rgba(51, 65, 85, 0.5);
+  font-family: inherit;
+}
+
+/* Highlight Edited Cells awaiting Batch Save */
+.dirty-cell {
+  background-color: rgba(234, 179, 8, 0.15) !important;
+  border: 1px solid #EAB308 !important;
+  color: #FDE047 !important;
+  transition: all 0.2s ease;
+}
+
+/* ==========================================================================
+   iOS 27 LIQUID OBSIDIAN GLASS DESIGN SYSTEM
+   ========================================================================== */
+
+/* Apple-style Smooth Spring Transition */
+.ios-spring {
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ios-spring-slow {
+  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Deep Obsidian Liquid Glass Card */
+.liquid-glass-card {
+  background: rgba(12, 16, 24, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.45),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.25);
+  border-radius: 1.25rem; /* 20px */
+}
+
+.liquid-glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Floating Island Glass Surface */
+.liquid-glass-island {
+  background: rgba(10, 14, 22, 0.82);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 
+    0 12px 40px 0 rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
+  border-radius: 1.5rem; /* 24px */
+}
+
+/* Modal Frosted Glass Sheet */
+.liquid-glass-sheet {
+  background: rgba(8, 12, 18, 0.88);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 
+    0 25px 60px -15px rgba(0, 0, 0, 0.85),
+    inset 0 1.5px 0 0 rgba(255, 255, 255, 0.2);
+  border-radius: 1.75rem; /* 28px */
+}
+
+/* Liquid Pill Button (Capsule Style) */
+.liquid-pill {
+  border-radius: 9999px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.liquid-pill::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 45%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 100%);
+  border-radius: 9999px 9999px 0 0;
+  pointer-events: none;
+}
+
+.liquid-pill:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.liquid-pill:active {
+  transform: scale(0.96);
+}
+
+/* Liquid Glass Tactile Pin Bead (Squircle) */
+.liquid-tactile-bead {
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px rgba(255, 255, 255, 0.3),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.liquid-tactile-bead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 35%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 100%);
+  border-radius: 8px 8px 0 0;
+  pointer-events: none;
+}
+
+.liquid-tactile-bead:hover {
+  transform: translateY(-2px) scale(1.06);
+  z-index: 10;
+}
+
+.liquid-tactile-bead:active {
+  transform: scale(0.92);
+}
+
+/* Fluid Progress Chamber (Capsule) */
+.liquid-progress-chamber {
+  border-radius: 9999px;
+  position: relative;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.liquid-progress-chamber::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
+}
+
+/* 3D Glossy Status Orb / Gem */
+.liquid-orb {
+  border-radius: 9999px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 
+    0 0 12px currentColor,
+    inset 0 -2px 4px rgba(0, 0, 0, 0.4),
+    inset 0 2px 3px rgba(255, 255, 255, 0.6);
+}
+
+.liquid-orb::before {
+  content: '';
+  position: absolute;
+  top: 15%;
+  left: 20%;
+  width: 35%;
+  height: 35%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 70%);
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+/* Recessed Glass Input Track */
+.liquid-input {
+  background: rgba(11, 19, 41, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.875rem; /* 14px */
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  color: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.liquid-input:focus {
+  border-color: rgba(6, 182, 212, 0.5);
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.4),
+    0 0 0 3px rgba(6, 182, 212, 0.15);
+  outline: none;
+}
+
+/* Deep Dark Dropdown & Option Styling for Dark Mode UI */
+select,
+select option,
+select optgroup {
+  background-color: #090d16 !important;
+  color: #f8fafc !important;
+}
+
+select option {
+  padding: 8px 12px;
+  background-color: #090d16 !important;
+  color: #f8fafc !important;
+}
+
+select option:checked {
+  background-color: #0284c7 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+select option:hover,
+select option:focus {
+  background-color: #1e293b !important;
+  color: #38bdf8 !important;
+}
+
+.theme-light select,
+.theme-light select option,
+.theme-light select optgroup {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Subtle ambient backdrop aura */
+.liquid-backdrop {
+  background-color: #05070B;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(6, 182, 212, 0.04) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.03) 0px, transparent 50%);
+}
+
+/* Executive A4 Print / PDF Export Styles */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 6mm;
+  }
+
+  body, html {
+    background-color: #060a12 !important;
+    color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* Hide navigation, sidebars, header, interactive buttons during print */
+  aside,
+  header,
+  nav,
+  .no-print,
+  button,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Expand workspace to full width on A4 page */
+  #root,
+  main,
+  .liquid-backdrop,
+  .ios-spring {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Ensure card backgrounds and borders render crisply */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+  }
+}

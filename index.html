@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      (function() {
+        var suppress = function(e) {
+          if (e) {
+            try { if (typeof e.preventDefault === 'function') e.preventDefault(); } catch (_) {}
+            try { if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation(); } catch (_) {}
+          }
+          return true;
+        };
+        window.onerror = function(msg, url, line, col, err) {
+          console.warn('[Early Global Guard]:', msg, err);
+          return true;
+        };
+        window.addEventListener('error', suppress, true);
+        window.addEventListener('unhandledrejection', function(e) {
+          suppress(e);
+          console.warn('[Early Unhandled Rejection]:', e ? e.reason : 'unknown');
+          return true;
+        }, true);
+
+        // Safe storage check and fallback
+        try {
+          var k = '__fp_probe__';
+          window.localStorage.setItem(k, '1');
+          window.localStorage.removeItem(k);
+        } catch (_) {
+          var mem = {};
+          var memStorage = {
+            getItem: function(k) { return mem.hasOwnProperty(k) ? mem[k] : null; },
+            setItem: function(k, v) { mem[k] = String(v); },
+            removeItem: function(k) { delete mem[k]; },
+            clear: function() { mem = {}; },
+            key: function(i) { return Object.keys(mem)[i] || null; },
+            get length() { return Object.keys(mem).length; }
+          };
+          try {
+            Object.defineProperty(window, 'localStorage', { value: memStorage, configurable: true, writable: true });
+          } catch (e) {
+            window.localStorage = memStorage;
+          }
+        }
+
+        // Avoid modal exceptions in sandboxed iframes
+        window.alert = function(m) { console.info('[Notice]:', m); };
+        window.confirm = function() { return true; };
+        window.prompt = function() { return null; };
+        window.open = function() { return null; };
+        window.print = function() { console.info('[Print suppressed in preview iframe]'); };
+
+        // Shims for Fullscreen & Clipboard
+        if (typeof Element !== 'undefined' && Element.prototype.requestFullscreen) {
+          var origReq = Element.prototype.requestFullscreen;
+          Element.prototype.requestFullscreen = function() {
+            try {
+              var r = origReq.apply(this, arguments);
+              if (r && typeof r.catch === 'function') return r.catch(function() {});
+              return Promise.resolve();
+            } catch (_) {
+              return Promise.resolve();
+            }
+          };
+        }
+        if (typeof document !== 'undefined' && document.exitFullscreen) {
+          var origExit = document.exitFullscreen;
+          document.exitFullscreen = function() {
+            try {
+              var r = origExit.apply(this, arguments);
+              if (r && typeof r.catch === 'function') return r.catch(function() {});
+              return Promise.resolve();
+            } catch (_) {
+              return Promise.resolve();
+            }
+          };
+        }
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+          var origClip = navigator.clipboard.writeText.bind(navigator.clipboard);
+          navigator.clipboard.writeText = function(text) {
+            try {
+              return origClip(text).catch(function() {});
+            } catch (_) {
+              return Promise.resolve();
+            }
+          };
+        }
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FinDie Regrind Pro</title>
+    <meta name="description" content="FinDie Regrind Pro - Real-time regrinding control, SLA tracking, part lifetime monitoring, and executive summary dashboard." />
+    <meta property="og:title" content="FinDie Regrind Pro" />
+    <meta property="og:description" content="FinDie Regrind Pro - Real-time regrinding control, SLA tracking, part lifetime monitoring, and executive summary dashboard." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#111111] text-white antialiased selection:bg-[#00ff00] selection:text-black">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

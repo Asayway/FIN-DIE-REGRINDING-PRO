@@ -1,0 +1,424 @@
+/* ==========================================================================
+   LG FACTORY MONITOR - INDUSTRIAL DESIGN SYSTEM (global-theme.css)
+   Based 100% on LG Electronics Industrial Production Floor Monitor
+   - Strictly Black & Charcoal Backgrounds (Eradicates Modern Navy Blue)
+   - Heavy Industrial Angular Geometry (0px Border Radius, No Curved Pills)
+   - Strict 8-Column Factory Table (#555566 Thead, #333333 Tbody, 1px solid #666666)
+   - Solid Cell Fill (100% #00FF00 Shot Count, 100% #B5B5C3 Progress, No Modern Bars)
+   - Official Status Palette (#FFCC00 Warning Dots, #C40045 LG Over Life)
+   ========================================================================== */
+
+/* ==========================================================================
+   1. CORE CSS VARIABLES (:root)
+   ========================================================================== */
+:root {
+  /* --- Canvas & Container Colors --- */
+  --bg-app: #111111;                 /* พื้นหลังแอปหลัก ดำสนิท */
+  --bg-body: #111111;                /* พื้นหลัง Body */
+  --bg-sidebar: #111111;             /* พื้นหลัง Sidebar ดำสนิท */
+  --bg-header: #111111;              /* พื้นหลัง Header ด้านบน */
+  --bg-main: #111111;                /* เข้ากันได้กับ theme เดิม */
+  --bg-card: #111111;                /* พื้นหลังการ์ดย่อย เทาดำ */
+  --bg-card-secondary: #1a1a1a;      /* พื้นหลังการ์ดระดับ 2 */
+  --bg-card-sub: #222222;            /* พื้นหลังการ์ดระดับ 3 */
+  --bg-input: #111111;               /* พื้นหลังช่องป้อนข้อมูล */
+  --bg-modal: #111111;               /* พื้นหลัง Modal */
+
+  /* --- Strict Industrial Table System --- */
+  --th-bg: #555566;                  /* พื้นหลังหัวตาราง เทาอมม่วงเข้ม */
+  --th-text: #ffffff;                /* สีตัวอักษรหัวตาราง ขาว */
+  --tbody-bg: #333333;               /* พื้นหลังแถวข้อมูล เทาเข้ม */
+  --tbody-row-hover: #3c3c3c;        /* ไฮไลต์แถวเมื่อเมาส์ชี้ */
+  --cell-bg: #333333;                /* เข้ากันได้กับ theme เดิม */
+  --cell-hover-bg: #3c3c3c;
+  --table-border-color: #666666;     /* สีเส้นขอบตารางทึบ */
+  --table-border: 1px solid #666666; /* เส้นขอบตาราง 1px solid #666666 */
+  --border-color: #666666;
+  --table-padding-y: 4px;            /* 4px vertical padding for tight industrial density */
+  --table-padding-x: 8px;            /* 8px horizontal padding */
+
+  /* --- Solid Cell Fills (No Progress Bars) --- */
+  --color-shot-fill: #00FF00;        /* สีเขียวสว่างเต็มเซลล์ Shot Count */
+  --color-shot-text: #000000;        /* ตัวอักษรสีดำ */
+  --color-progress-fill: #B5B5C3;    /* สีเทาอ่อนเต็มเซลล์ Progress */
+  --color-progress-text: #000000;    /* ตัวอักษรสีดำ */
+
+  /* --- Notification & Alert Colors --- */
+  --color-warning: #FFCC00;          /* สีเหลืองจุดแจ้งเตือน Warning / Order Require */
+  --color-yellow: #FFCC00;
+  --color-danger: #C40045;           /* สีแดง LG สำหรับ Over Life หรือชำรุด */
+  --color-normal: #00FF00;           /* สีเขียว Normal #00FF00 */
+  --color-subhead-title: #5c1878;    /* สีม่วงเข้มสำหรับ Main Fin Die */
+
+  /* --- Sub-header Control Bar --- */
+  --sub-header-bg: #cfd3d8;          /* สีเทาอ่อนแถบ Sub-header */
+  --sub-header-text: #000000;        /* สีตัวหนังสือ Sub-header ดำ */
+  --sub-header-purple: #5c1878;
+
+  /* --- Typography & Curved Geometry --- */
+  --font-industrial: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono-industrial: "SF Mono", "Consolas", "Courier New", monospace;
+  --border-radius-base: 1rem;         /* ความโค้งมนระดับมาตรฐาน 16px */
+  --border-radius-subtle: 0.625rem;   /* ความโค้งมนย่อย 10px */
+}
+
+/* ==========================================================================
+   2. GLOBAL RESET & BASE TYPOGRAPHY
+   ========================================================================== */
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: var(--bg-app) !important;
+  color: #ffffff !important;
+  font-family: var(--font-industrial) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* บังคับใช้ฟอนต์มาตรฐานแบบโรงงานกับองค์ประกอบข้อความทั้งหมด */
+*,
+*::before,
+*::after {
+  font-family: var(--font-industrial);
+  box-sizing: border-box;
+}
+
+/* ==========================================================================
+   3. ERADICATE MODERN BLUE THEME (ล้างบางสีน้ำเงินกรมท่า & ฟ้านีออน)
+   ========================================================================== */
+
+/* ปรับสีพื้นหลังน้ำเงินกรมท่าทั้งหมดเป็นสีดำสนิท #111111 หรือ #000000 */
+.bg-\[\#0B1120\],
+.bg-\[\#070F1E\],
+.bg-\[\#0B172E\],
+.bg-\[\#0C1A33\],
+.bg-\[\#0E172A\],
+.bg-\[\#1E293B\],
+.bg-\[\#0F172A\],
+.bg-\[\#0B1322\],
+.bg-\[\#0B1222\],
+.bg-\[\#0D1527\],
+.bg-\[\#080E1B\],
+.bg-\[\#070D18\],
+.bg-\[\#0B1120\],
+.bg-\[\#0B132B\],
+.bg-\[\#0B1528\],
+.bg-\[\#0B1E2E\],
+.bg-slate-950,
+.bg-slate-900,
+.bg-zinc-950 {
+  background-color: var(--bg-app) !important;
+}
+
+/* ปรับการ์ดและคอนเทนเนอร์ย่อย slate-800 ทั้งหมดเป็นสีเทาเข้ม #222222 ถึง #333333 */
+.bg-slate-800,
+.bg-slate-800\/95,
+.bg-slate-800\/90,
+.bg-slate-800\/80,
+.bg-slate-800\/70,
+.bg-slate-800\/60,
+.bg-slate-800\/50,
+.bg-slate-900\/95,
+.bg-slate-900\/90,
+.bg-slate-900\/80,
+.bg-slate-900\/70,
+.bg-slate-900\/60,
+.bg-slate-900\/50,
+.bg-slate-900\/40,
+.bg-slate-950\/90,
+.bg-slate-950\/80,
+.bg-slate-950\/50,
+.bg-slate-950\/40 {
+  background-color: var(--bg-card) !important;
+}
+
+/* ปรับเส้นขอบทั้งหมดให้เป็นเส้นทึบสีเทา 1px solid #666666 */
+.border-slate-800,
+.border-slate-700,
+.border-slate-600,
+.border-slate-800\/90,
+.border-slate-800\/80,
+.border-slate-800\/70,
+.border-slate-800\/60,
+.border-slate-700\/90,
+.border-slate-700\/80,
+.border-slate-700\/70,
+.border-slate-700\/60 {
+  border-color: var(--table-border-color) !important;
+}
+
+/* ลบตัวหนังสือสีฟ้า Cyan นีออนออก ให้เป็นสีขาวหรือสีเขียวอุตสาหกรรม */
+.text-cyan-400,
+.text-cyan-300,
+.text-cyan-200,
+.text-cyan-100 {
+  color: #ffffff !important;
+}
+
+.text-cyan-500 {
+  color: var(--color-shot-fill) !important;
+}
+
+/* ลบสีพื้นหลัง Cyan นีออน */
+.bg-cyan-500,
+.bg-cyan-600 {
+  background-color: #444444 !important;
+  color: #ffffff !important;
+}
+
+.bg-cyan-500\/20,
+.bg-cyan-500\/15,
+.bg-cyan-500\/10,
+.bg-cyan-950,
+.bg-cyan-950\/90,
+.bg-cyan-950\/80,
+.bg-cyan-950\/60 {
+  background-color: #2a2a2a !important;
+  color: #ffffff !important;
+  border-color: var(--table-border-color) !important;
+}
+
+/* ==========================================================================
+   4. CURVED LIQUID GEOMETRY (ปรับกรอบและคอนเทนเนอร์ทั้งหมดให้มีความโค้งมนสวยงาม)
+   ========================================================================== */
+.rounded-sm {
+  border-radius: 0.25rem !important;
+}
+
+.rounded {
+  border-radius: 0.375rem !important;
+}
+
+.rounded-md {
+  border-radius: 0.5rem !important;
+}
+
+.rounded-lg {
+  border-radius: 0.75rem !important;
+}
+
+.rounded-xl {
+  border-radius: 1rem !important;
+}
+
+.rounded-2xl {
+  border-radius: 1.25rem !important;
+}
+
+.rounded-3xl {
+  border-radius: 1.5rem !important;
+}
+
+.rounded-full {
+  border-radius: 9999px !important;
+}
+
+.dot-yellow,
+.status-dot-warning,
+.status-dot-yellow,
+.indicator-circle,
+span.w-1\.5.h-1\.5.rounded-full,
+span.w-2.h-2.rounded-full,
+span.w-2\.5.h-2\.5.rounded-full,
+span.w-3.h-3.rounded-full,
+span.w-3\.5.h-3\.5.rounded-full,
+span.w-4.h-4.rounded-full {
+  border-radius: 50% !important;
+}
+
+/* ปุ่มและฟอร์มอินพุตมีความโค้งมนสวยงาม */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  border-radius: 0.75rem;
+}
+
+/* ==========================================================================
+   5. STRICT TABLE DESIGN (ระบบตารางทางการแบบจอมอนิเตอร์ LG 100%)
+   ========================================================================== */
+
+/* โครงสร้างตารางหลัก */
+table,
+.lg-table,
+.industrial-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  background-color: var(--tbody-bg) !important;
+  color: #ffffff !important;
+  border: var(--table-border) !important;
+  font-family: var(--font-industrial) !important;
+}
+
+/* หัวตาราง (Thead): พื้นหลังสีเทาอมม่วงเข้ม (#555566) ตัวอักษรสีขาว หนา */
+thead,
+thead tr,
+thead th,
+.th,
+.lg-header-th {
+  background-color: var(--th-bg) !important;
+  color: var(--th-text) !important;
+  border: var(--table-border) !important;
+  font-weight: 800 !important;
+  font-size: 13px !important;
+  padding: var(--table-padding-y) var(--table-padding-x) !important;
+  text-align: center !important;
+  letter-spacing: 0.2px !important;
+  white-space: nowrap !important;
+  font-family: var(--font-industrial) !important;
+}
+
+/* แถวข้อมูล (Tbody): พื้นหลังสีเทาเข้ม (#333333) ขอบ 1px solid #666666 */
+tbody,
+tbody tr,
+tbody td,
+.td,
+.lg-td {
+  background-color: var(--tbody-bg) !important;
+  color: #ffffff !important;
+  border: var(--table-border) !important;
+  padding: var(--table-padding-y) var(--table-padding-x) !important;
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+  font-family: var(--font-industrial) !important;
+  box-sizing: border-box !important;
+}
+
+/* Hover สไตล์โรงงานเรียบๆ */
+tbody tr:hover td {
+  background-color: var(--tbody-row-hover) !important;
+}
+
+/* ==========================================================================
+   6. SOLID CELL FILL ONLY (ลบหลอด Progress Bar แบบเดิมทิ้ง เทสีเต็มเซลล์)
+   ========================================================================== */
+
+/* คอลัมน์ตัวเลขสำคัญ (Shot Count): เทสีพื้นหลังเต็มเซลล์เป็นเขียวสว่าง #00FF00 ตัวอักษรสีดำ ชิดขวา */
+.cell-shot,
+.cell-green,
+.lg-shot-cell,
+td.cell-shot {
+  background-color: var(--color-shot-fill) !important;
+  color: var(--color-shot-text) !important;
+  font-weight: 900 !important;
+  text-align: right !important;
+  font-family: var(--font-industrial) !important;
+}
+
+/* คอลัมน์ Progress: เทสีพื้นหลังเต็มเซลล์เป็นสีเทาอ่อน #B5B5C3 ตัวอักษรสีดำ จัดกึ่งกลาง */
+.cell-progress,
+.cell-gray-purple,
+td.cell-progress {
+  background-color: var(--color-progress-fill) !important;
+  color: var(--color-progress-text) !important;
+  font-weight: 900 !important;
+  text-align: center !important;
+  font-family: var(--font-industrial) !important;
+}
+
+/* จุดแจ้งเตือน Order Require: สีเหลือง #FFCC00 */
+.dot-yellow,
+.status-dot-warning,
+.status-dot-yellow {
+  display: inline-block !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  background-color: var(--color-warning) !important;
+  box-shadow: 0 0 6px var(--color-warning), 0 0 1px rgba(0, 0, 0, 0.8) !important;
+  border: 1px solid #b38f00 !important;
+  margin: 0 2px !important;
+  vertical-align: middle !important;
+}
+
+/* สถานะแจ้งเตือน Over Life หรือชำรุด: สีแดง LG #C40045 */
+.badge-overlife,
+.status-overlife,
+.text-overlife,
+.cell-overlife {
+  background-color: var(--color-danger) !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+.text-danger-lg {
+  color: var(--color-danger) !important;
+}
+
+/* ==========================================================================
+   7. SIDEBAR, CARDS & CONTAINERS FOR THE ENTIRE APP
+   ========================================================================== */
+
+/* แถบเมนูด้านข้าง (Sidebar) สีดำสนิท #111111 และเส้นขอบขวา */
+aside,
+.industrial-sidebar,
+.sidebar-container {
+  background-color: var(--bg-sidebar);
+  color: #ffffff;
+}
+
+/* รายการเมนูใน Sidebar */
+aside button,
+.sidebar-container button {
+  transition: background-color 0.15s ease;
+}
+
+/* สถานะเมนูที่ถูกเลือก (Active Route) */
+aside button.active,
+aside .nav-active,
+.sidebar-container button.active {
+  background-color: #2a2a2a;
+  color: var(--color-shot-fill);
+  font-weight: 800;
+}
+
+/* กล่องการ์ดและคอนเทนเนอร์ทั่วทั้งแอป (Cards & Sub-panels) */
+.industrial-card,
+.card,
+.panel {
+  background-color: var(--bg-card);
+  border-radius: 1rem;
+}
+
+/* แถบส่วนหัวด้านบนของหน้า (Header) */
+header,
+.app-top-header {
+  background-color: var(--bg-header);
+  color: #ffffff;
+}
+
+/* แถบ Sub-header ควบคุมข้อมูล (สีเทาอ่อน #cfd3d8) */
+.sub-header-bar,
+.app-sub-header {
+  background-color: var(--sub-header-bg);
+  color: var(--sub-header-text);
+  font-family: var(--font-industrial);
+}
+
+/* ==========================================================================
+   8. UTILITY ALIGNMENTS & DENSITY HELPERS
+   ========================================================================== */
+.text-left { text-align: left !important; }
+.text-right { text-align: right !important; }
+.text-center { text-align: center !important; }
+
+/* Custom Scrollbar แบบ Smooth Curved */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #555555;
+  border-radius: 9999px !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #777777;
+}

@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FIN DIE SHOT CONTROL - Industrial HMI & SCADA</title>
+  
+  <!-- Tailwind CSS via CDN with arbitrary values enabled -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            hmi: {
+              bg: '#0b1120',
+              panel: '#111827',
+              border: '#1f2937',
+              borderHover: '#374151',
+              cyan: '#06b6d4',
+              cyanGlow: '#0891b2',
+              safe: '#10b981',
+              prepare: '#f59e0b',
+              warning: '#f97316',
+              critical: '#ef4444'
+            }
+          },
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Consolas', 'Roboto Mono', 'monospace'],
+            sans: ['Inter', 'Prompt', 'Sarabun', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Google Fonts: JetBrains Mono & Prompt for Industrial UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Lucide Icons via CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    body {
+      background-color: #0b1120;
+      color: #f1f5f9;
+      font-family: 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    
+    .font-digital {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Custom Industrial Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b1120;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1f2937;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #06b6d4;
+    }
+
+    /* Pulse & Glow Effects */
+    @keyframes neonGlow {
+      0%, 100% { box-shadow: 0 0 15px rgba(6, 182, 212, 0.35); }
+      50% { box-shadow: 0 0 25px rgba(6, 182, 212, 0.65); }
+    }
+    .neon-border-active {
+      animation: neonGlow 2.5s infinite;
+    }
+
+    @keyframes liveDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.85); }
+    }
+    .live-dot {
+      animation: liveDot 1.2s infinite ease-in-out;
+    }
+
+    /* Scanline Overlay effect for HMI SCADA Feel */
+    .scanlines {
+      background: linear-gradient(
+        to bottom,
+        rgba(255,255,255,0),
+        rgba(255,255,255,0) 50%,
+        rgba(0, 0, 0, 0.15) 50%,
+        rgba(0, 0, 0, 0.15)
+      );
+      background-size: 100% 4px;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-[#0b1120] text-slate-100 flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+
+  <!-- TOP INDUSTRIAL HEADER / SCADA STATUS BAR -->
+  <header class="bg-[#111827] border-b border-[#1f2937] px-4 py-3 sticky top-0 z-40 shadow-xl backdrop-blur-md">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Brand & SCADA Title -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-cyan-950 border border-cyan-500/80 flex items-center justify-center text-cyan-400 shadow-lg shadow-cyan-950/60">
+          <i data-lucide="cpu" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-black tracking-wider text-white font-digital flex items-center gap-1.5">
+              <span>FIN DIE SHOT CONTROL</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-400 border border-cyan-500/50">HMI v2.4</span>
+            </h1>
+          </div>
+          <p class="text-xs text-slate-400 font-normal">ระบบจำลองความเร็วจังหวะตัดแม่พิมพ์ & ตรวจจับการสึกหรออะไหล่</p>
+        </div>
+      </div>
+
+      <!-- Real-time Shift & Machine Clock -->
+      <div class="flex items-center gap-3 flex-wrap">
+        
+        <!-- Live Shift Badge -->
+        <div id="liveShiftContainer" class="px-3 py-1.5 rounded-lg bg-[#0b1120] border border-[#1f2937] flex items-center gap-2 text-xs font-digital">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 live-dot"></span>
+          <span class="text-slate-400 font-sans">กะปัจจุบัน:</span>
+          <span id="currentShiftBadge" class="font-bold text-cyan-300">กะเช้า (DAY)</span>
+        </div>
+
+        <!-- Clock & Date -->
+        <div class="px-3 py-1.5 rounded-lg bg-[#0b1120] border border-[#1f2937] flex items-center gap-2 text-xs font-digital">
+          <i data-lucide="clock" class="w-4 h-4 text-cyan-400"></i>
+          <span id="liveClock" class="font-bold text-white tracking-widest">00:00:00</span>
+          <span class="text-slate-500">|</span>
+          <span id="liveDate" class="text-slate-400 font-sans">DD/MM/YYYY</span>
+        </div>
+
+        <!-- Reset Mock Data Button -->
+        <button id="btnResetData" onclick="resetMockData()" class="px-3 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 hover:text-white text-xs font-bold font-digital flex items-center gap-1.5 transition-all" title="ล้างและคืนค่าข้อมูลจำลองเริ่มต้น">
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+          <span>RESET MOCK DATA</span>
+        </button>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN SCADA WORKSPACE (TWO-COLUMN INDUSTRIAL LAYOUT) -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 lg:p-6 space-y-4">
+    
+    <!-- LINE SELECTOR BAR (Cyberpunk HMI Button Grid) -->
+    <section class="bg-[#111827] border border-[#1f2937] rounded-xl p-3.5 shadow-lg">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-2 text-xs font-bold font-digital text-slate-400">
+          <i data-lucide="layers" class="w-4 h-4 text-cyan-400"></i>
+          <span>SELECT PRODUCTION LINE:</span>
+        </div>
+        
+        <!-- Line Selector Buttons -->
+        <div id="lineSelectorContainer" class="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          <!-- Rendered dynamically by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 2-COLUMN SCADA GRID -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      
+      <!-- LEFT COLUMN: MACHINE CONTROL PANEL (5 Cols on large screens) -->
+      <div class="lg:col-span-5 space-y-4">
+        
+        <!-- CARD: ACTIVE DIE & MACHINE STATUS -->
+        <div class="bg-[#111827] border border-[#1f2937] rounded-xl p-4 shadow-xl space-y-4 relative overflow-hidden">
+          
+          <!-- Top Tag & Active Line Header -->
+          <div class="flex items-center justify-between pb-3 border-b border-[#1f2937]">
+            <div class="flex items-center gap-2">
+              <span id="activeLineBadge" class="px-2.5 py-1 rounded bg-cyan-500 text-slate-950 font-black font-digital text-xs">
+                LINE E1
+              </span>
+              <span id="activeDieCode" class="text-sm font-bold text-white font-digital">
+                DIE-E1-01 (Ø7 Slit)
+              </span>
+            </div>
+            
+            <div id="machineStateTag" class="px-2.5 py-0.5 rounded text-xs font-bold font-digital flex items-center gap-1.5 bg-slate-800 text-slate-400 border border-slate-700">
+              <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+              <span>STOPPED</span>
+            </div>
+          </div>
+
+          <!-- MODE SELECTOR TABS -->
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-2 flex items-center justify-between">
+              <span class="font-digital">OPERATION MODE:</span>
+              <span class="text-[11px] text-cyan-400 font-sans">เลือก 1 ใน 2 โหมดควบคุม</span>
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="tabMode1" onclick="switchMode(1)" class="p-2.5 rounded-lg border text-xs font-bold font-digital flex flex-col items-center justify-center gap-1 transition-all bg-cyan-950 border-cyan-400 text-cyan-300 shadow-md">
+                <div class="flex items-center gap-1.5">
+                  <i data-lucide="gauge" class="w-4 h-4"></i>
+                  <span>MODE 1: SPM SIM</span>
+                </div>
+                <span class="text-[10px] text-slate-400 font-sans font-normal">จำลองความเร็ว & Loss Time</span>
+              </button>
+              
+              <button id="tabMode2" onclick="switchMode(2)" class="p-2.5 rounded-lg border text-xs font-bold font-digital flex flex-col items-center justify-center gap-1 transition-all bg-[#0b1120] border-[#1f2937] text-slate-400 hover:text-slate-200">
+                <div class="flex items-center gap-1.5">
+                  <i data-lucide="zap" class="w-4 h-4"></i>
+                  <span>MODE 2: DIRECT PLC</span>
+                </div>
+                <span class="text-[10px] text-slate-500 font-sans font-normal">รับพัลส์ PLC ตรงแบบเรียลไทม์</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- ================= MODE 1 PANEL: SPM SIMULATION & MANUAL SYNC ================= -->
+          <div id="mode1Panel" class="space-y-4">
+            
+            <!-- SPM Setting & Live Counter Display -->
+            <div class="grid grid-cols-2 gap-3">
+              
+              <!-- SPM Input -->
+              <div class="bg-[#0b1120] border border-[#1f2937] rounded-lg p-3">
+                <label class="block text-[11px] font-bold text-slate-400 mb-1 font-digital">
+                  TARGET SPEED (SPM):
+                </label>
+                <div class="flex items-center gap-2">
+                  <input type="number" id="inputSpm" value="100" min="10" max="400" step="5" onchange="onSpmChanged()" class="w-full bg-[#111827] border border-[#374151] rounded px-3 py-1.5 text-base font-digital font-bold text-cyan-300 focus:outline-none focus:border-cyan-400">
+                  <span class="text-xs font-digital text-slate-400">จังหวะ/นาที</span>
+                </div>
+              </div>
+
+              <!-- Accumulated Live Shots Ticker -->
+              <div class="bg-[#0b1120] border border-[#1f2937] rounded-lg p-3 flex flex-col justify-center">
+                <span class="text-[10px] font-bold text-slate-400 font-digital">RUNNING DURATION:</span>
+                <div id="liveRunTimer" class="text-base font-digital font-black text-white tracking-wider">
+                  00:00:00
+                </div>
+                <span id="breakDeductedLabel" class="text-[10px] text-amber-400 font-sans hidden">
+                  (หักพักเบรกแล้ว -0m)
+                </span>
+              </div>
+            </div>
+
+            <!-- LIVE EXPECTED SHOTS HUD DISPLAY -->
+            <div class="bg-gradient-to-br from-[#0b1120] to-[#131d31] border-2 border-[#1f2937] rounded-xl p-4 text-center relative overflow-hidden">
+              <div class="text-[11px] font-bold font-digital text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-center gap-2">
+                <i data-lucide="activity" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span>EXPECTED VISUAL COUNTER (ยอดจำลองตามเวลา)</span>
+              </div>
+              <div id="expectedCounterDisplay" class="text-3xl sm:text-4xl font-black font-digital text-cyan-400 tracking-widest my-1 drop-shadow-[0_0_12px_rgba(6,182,212,0.5)]">
+                +0
+              </div>
+              <div class="text-[11px] text-slate-400 font-mono flex items-center justify-center gap-3 mt-1">
+                <span>อัตราการผลิต: <b id="displaySpmRate" class="text-white">100</b> shots/min</span>
+                <span>•</span>
+                <span>สถานะ: <b id="displayRunState" class="text-slate-400">พร้อมเดินเครื่อง</b></span>
+              </div>
+            </div>
+
+            <!-- MACHINE START / STOP CONTROLS -->
+            <div class="grid grid-cols-2 gap-3">
+              <button id="btnStartMachine" onclick="startMachineSimulation()" class="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-digital text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/80 transition-all">
+                <i data-lucide="play" class="w-4 h-4 fill-white"></i>
+                <span>START MACHINE</span>
+              </button>
+
+              <button id="btnStopMachine" onclick="stopMachineSimulation()" disabled class="py-3 px-4 rounded-xl bg-rose-950 border border-rose-800/80 text-rose-400 font-bold font-digital text-sm flex items-center justify-center gap-2 transition-all opacity-50 cursor-not-allowed">
+                <i data-lucide="square" class="w-4 h-4 fill-current"></i>
+                <span>STOP MACHINE</span>
+              </button>
+            </div>
+
+            <!-- BREAK TIME SCHEDULE SUMMARY INFO -->
+            <div class="bg-[#0b1120] border border-[#1f2937] rounded-lg p-2.5 text-[11px] space-y-1">
+              <div class="font-bold text-slate-300 font-digital flex items-center gap-1.5">
+                <i data-lucide="coffee" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>AUTO BREAK TIME DEDUCTION (หักเวลาพักอัตโนมัติ):</span>
+              </div>
+              <p class="text-slate-400 leading-relaxed font-sans">
+                <b class="text-slate-300">กะกลางวัน:</b> 10:00-10:10 (10m), 12:00-13:00 (60m), 15:00-15:10 (10m), 17:00-17:30 (30m)<br>
+                <b class="text-slate-300">กะกลางคืน:</b> 21:30-21:40 (10m), 23:30-00:30 (60m), 02:30-02:40 (10m), 04:30-05:30 (60m)
+              </p>
+            </div>
+
+            <!-- MANUAL SYNC & LOSS TIME CATCHER (Active when stopped with shots) -->
+            <div id="syncSection" class="bg-[#0b1120] border border-[#1f2937] rounded-xl p-3.5 space-y-3">
+              <div class="flex items-center justify-between border-b border-[#1f2937] pb-2">
+                <h4 class="text-xs font-bold text-white font-digital flex items-center gap-1.5">
+                  <i data-lucide="check-circle-2" class="w-4 h-4 text-cyan-400"></i>
+                  <span>MANUAL SYNC & LOSS TIME CATCHER</span>
+                </h4>
+                <span class="text-[10px] text-slate-400 font-sans">กรอกยอดจริงหน้าตู้</span>
+              </div>
+
+              <!-- Operator Name & Actual Meter Reading -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 mb-1">ชื่อผู้บันทึก (Operator):</label>
+                  <input type="text" id="inputOperatorName" placeholder="เช่น สมชาย ช." class="w-full bg-[#111827] border border-[#374151] rounded px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-400">
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-400 mb-1 font-digital">
+                    ACTUAL SHOTS (ยอดจริงที่ผลิตได้):
+                  </label>
+                  <input type="number" id="inputActualShots" placeholder="0" min="0" oninput="calculateLossTime()" class="w-full bg-[#111827] border border-[#374151] rounded px-3 py-1.5 text-sm font-digital font-bold text-emerald-400 focus:outline-none focus:border-emerald-400">
+                </div>
+              </div>
+
+              <!-- LOSS TIME DETECTION ALERT & REASON SELECTOR -->
+              <div id="lossTimeContainer" class="hidden bg-amber-950/40 border border-amber-500/60 rounded-lg p-3 space-y-2">
+                <div class="flex items-start justify-between">
+                  <div class="flex items-center gap-2 text-amber-400 font-bold text-xs font-digital">
+                    <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                    <span>LOSS TIME DETECTED! (ยอดจริงน้อยกว่ายอดจำลอง)</span>
+                  </div>
+                  <span id="lossMinutesBadge" class="px-2 py-0.5 rounded bg-amber-900 text-amber-200 text-[10px] font-bold font-digital">
+                    Loss: 0 นาที
+                  </span>
+                </div>
+
+                <div class="text-[11px] text-slate-300 space-y-1 font-mono">
+                  <div class="flex justify-between">
+                    <span class="text-slate-400">ยอดจำลอง (Expected):</span>
+                    <span id="lossExpectedText" class="font-bold text-cyan-300">0 shots</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-400">ยอดจริง (Actual):</span>
+                    <span id="lossActualText" class="font-bold text-emerald-400">0 shots</span>
+                  </div>
+                  <div class="flex justify-between border-t border-amber-500/30 pt-1">
+                    <span class="text-amber-300 font-bold">ผลต่าง (Missing Shots):</span>
+                    <span id="lossMissingText" class="font-bold text-amber-400">0 shots</span>
+                  </div>
+                </div>
+
+                <!-- Mandatory Loss Reason Dropdown -->
+                <div>
+                  <label class="block text-[11px] font-bold text-amber-300 mb-1">
+                    * กรุณาระบุสาเหตุ Loss Time (จำเป็นต้องเลือกก่อน Submit):
+                  </label>
+                  <select id="selectLossReason" class="w-full bg-[#111827] border border-amber-500/80 rounded px-2.5 py-1.5 text-xs text-amber-200 font-sans focus:outline-none focus:ring-1 focus:ring-amber-400">
+                    <option value="">-- เลือกสาเหตุที่เครื่องจักรหยุด/ล่าช้า --</option>
+                    <option value="COIL_CHANGE">เปลี่ยนม้วนคอยล์วัตถุดิบ (Coil Changeover)</option>
+                    <option value="DIE_JAM">เศษฟินติด / ปัญหาใบมีด (Die Jam / Fin Sticking)</option>
+                    <option value="MACHINE_BREAKDOWN">เครื่องจักรขัดข้อง / ปั๊มน้ำมัน / ลมตก (Machine Breakdown)</option>
+                    <option value="QUALITY_CHECK">ตรวจสอบคุณภาพครีบฟิน / ปรับระยะ Burr (Quality Inspection)</option>
+                    <option value="WAITING_MATERIAL">รอวัตถุดิบอลูมิเนียม / ฟอยล์ (Waiting Material/Crane)</option>
+                    <option value="BREAK_OVERTIME">พักเบรกเกินเวลา / สลับกะการทำงาน (Break / Shift Change)</option>
+                    <option value="OTHER">อื่นๆ (Other / Maintenance check)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- SUBMIT RECORD BUTTON -->
+              <button id="btnSubmitMode1" onclick="submitMode1Entry()" class="w-full py-3 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black font-digital text-sm flex items-center justify-center gap-2 shadow-lg shadow-cyan-950/60 transition-all">
+                <i data-lucide="send" class="w-4 h-4"></i>
+                <span>SUBMIT & ACCUMULATE SHOTS TO SPARES</span>
+              </button>
+
+            </div>
+
+          </div>
+
+          <!-- ================= MODE 2 PANEL: DIRECT PLC INCREMENT ================= -->
+          <div id="mode2Panel" class="space-y-4 hidden">
+            <div class="bg-gradient-to-br from-[#0b1120] to-[#122336] border-2 border-cyan-600/50 rounded-xl p-4 text-center">
+              <div class="text-[11px] font-bold font-digital text-cyan-300 uppercase tracking-wider mb-1 flex items-center justify-center gap-2">
+                <i data-lucide="radio" class="w-4 h-4 text-cyan-400 live-dot"></i>
+                <span>PLC DIRECT PULSE SIGNAL STREAM</span>
+              </div>
+              <div id="plcLiveCounterDisplay" class="text-3xl sm:text-4xl font-black font-digital text-emerald-400 tracking-widest my-1 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]">
+                0
+              </div>
+              <div class="text-xs text-slate-400 font-mono">
+                สัญญาณพัลส์ตรงจากหน้าตู้ควบคุม (Real-time Direct Trigger)
+              </div>
+            </div>
+
+            <!-- DIRECT TRIGGER SIMULATOR BUTTONS -->
+            <div class="space-y-2">
+              <label class="block text-xs font-bold text-slate-400 font-digital">
+                PULSE SIMULATOR CONTROLS:
+              </label>
+              <div class="grid grid-cols-3 gap-2">
+                <button onclick="triggerDirectPulse(1)" class="p-2.5 rounded-lg bg-[#0b1120] hover:bg-cyan-950 border border-cyan-600/60 text-cyan-300 font-digital font-bold text-xs flex items-center justify-center gap-1">
+                  +1 PULSE
+                </button>
+                <button onclick="triggerDirectPulse(10)" class="p-2.5 rounded-lg bg-[#0b1120] hover:bg-cyan-950 border border-cyan-600/60 text-cyan-300 font-digital font-bold text-xs flex items-center justify-center gap-1">
+                  +10 PULSES
+                </button>
+                <button onclick="triggerDirectPulse(100)" class="p-2.5 rounded-lg bg-[#0b1120] hover:bg-cyan-950 border border-cyan-600/60 text-cyan-300 font-digital font-bold text-xs flex items-center justify-center gap-1">
+                  +100 PULSES
+                </button>
+              </div>
+
+              <!-- AUTO POLLING TOGGLE -->
+              <button id="btnAutoPulseToggle" onclick="toggleAutoPulse()" class="w-full py-2.5 px-3 rounded-lg bg-[#0b1120] border border-[#1f2937] text-slate-300 font-digital font-bold text-xs flex items-center justify-center gap-2 hover:border-cyan-500 transition-all">
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+                <span id="autoPulseLabel">START AUTO PLC POLLING (100 SPM PULSE STREAM)</span>
+              </button>
+            </div>
+
+            <div class="p-3 bg-[#0b1120] border border-[#1f2937] rounded-lg text-xs text-slate-400 space-y-1">
+              <span class="font-bold text-emerald-400 font-digital flex items-center gap-1">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                AUTOMATIC ACCUMULATION:
+              </span>
+              <p class="font-sans">
+                ในโหมด DIRECT PLC ยอดช็อตทุกๆ พัลส์จะถูกนำไปบวกสะสมเข้าแก่อะไหล่แม่พิมพ์ของไลน์นั้นโดยอัตโนมัติทันทีโดยไม่ต้องผ่านขั้นตอนกดยืนยัน
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: SPARE PARTS WEAR TRACKER & AUDIT TRAIL (7 Cols) -->
+      <div class="lg:col-span-7 space-y-4">
+        
+        <!-- SPARE PARTS WEAR TRACKER CARD -->
+        <div class="bg-[#111827] border border-[#1f2937] rounded-xl p-4 shadow-xl space-y-4">
+          
+          <!-- Tracker Header & Status Legend -->
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-[#1f2937] pb-3">
+            <div>
+              <h3 class="text-sm sm:text-base font-black text-white font-digital flex items-center gap-2">
+                <i data-lucide="shield-alert" class="w-4 h-4 text-cyan-400"></i>
+                <span>SPARE PARTS WEAR TRACKER</span>
+                <span id="trackerLineName" class="text-xs font-bold text-cyan-400 font-mono">(LINE E1)</span>
+              </h3>
+              <p class="text-xs text-slate-400">ความสึกหรอและอายุการใช้งานคงเหลือของชิ้นส่วนแม่พิมพ์</p>
+            </div>
+
+            <!-- Progress Colors Legend -->
+            <div class="flex items-center gap-2 text-[10px] font-digital flex-wrap">
+              <span class="flex items-center gap-1 text-emerald-400"><span class="w-2 h-2 rounded bg-emerald-500"></span> &lt;70% Safe</span>
+              <span class="flex items-center gap-1 text-amber-400"><span class="w-2 h-2 rounded bg-amber-500"></span> 70%+ Prep</span>
+              <span class="flex items-center gap-1 text-orange-400"><span class="w-2 h-2 rounded bg-orange-500"></span> 85%+ Warn</span>
+              <span class="flex items-center gap-1 text-rose-400"><span class="w-2 h-2 rounded bg-rose-500"></span> 95%+ Crit</span>
+            </div>
+          </div>
+
+          <!-- SPARE PARTS LIST CONTAINER (DYNAMICALLY RENDERED) -->
+          <div id="sparesListContainer" class="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+            <!-- Rendered by JS -->
+          </div>
+
+        </div>
+
+        <!-- RECENT ACTIVITY AUDIT LOG CARD -->
+        <div class="bg-[#111827] border border-[#1f2937] rounded-xl p-4 shadow-xl space-y-3">
+          <div class="flex items-center justify-between border-b border-[#1f2937] pb-2">
+            <h4 class="text-xs font-bold text-white font-digital flex items-center gap-2">
+              <i data-lucide="history" class="w-4 h-4 text-cyan-400"></i>
+              <span>RECENT SHOT ENTRIES & LOSS AUDIT LOG</span>
+            </h4>
+            <span class="text-[10px] text-slate-400 font-mono">Real-time Timestamp Log</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono">
+              <thead>
+                <tr class="text-slate-400 border-b border-[#1f2937] text-[11px]">
+                  <th class="py-2 px-2">TIMESTAMP</th>
+                  <th class="py-2 px-2">LINE</th>
+                  <th class="py-2 px-2">SHIFT</th>
+                  <th class="py-2 px-2">OPERATOR</th>
+                  <th class="py-2 px-2 text-right">SHOTS ADDED</th>
+                  <th class="py-2 px-2 text-center">LOSS / REASON</th>
+                </tr>
+              </thead>
+              <tbody id="auditLogTbody" class="divide-y divide-[#1f2937] text-slate-300">
+                <!-- Rendered by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- TOAST NOTIFICATION POPUP -->
+  <div id="toastNotification" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+    <div class="bg-[#111827] border border-cyan-500 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3">
+      <i id="toastIcon" data-lucide="check-circle" class="w-5 h-5 text-cyan-400"></i>
+      <div>
+        <div id="toastTitle" class="text-xs font-bold font-digital text-cyan-300">แจ้งเตือนระบบ</div>
+        <div id="toastMessage" class="text-xs text-slate-300 font-sans">ดำเนินการสำเร็จ</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT LOGIC ENGINE ================= -->
+  <script>
+    // --- 1. INDUSTRIAL PRODUCTION LINES MASTER DEFINITION ---
+    const PRODUCTION_LINES = [
+      { id: 'E1', name: 'E1', tag: 'Ø7 Slit', dieCode: 'DIE-E1-01', material: 'PCM' },
+      { id: 'E2', name: 'E2', tag: 'Ø5 Slit', dieCode: 'DIE-E2-01', material: 'BARE' },
+      { id: 'E3-1', name: 'E3', tag: 'Slit 3P', dieCode: 'DIE-E3-01', material: 'GOLD' },
+      { id: 'E3-2', name: 'E3', tag: 'WL+ 4P', dieCode: 'DIE-E3-02', material: 'PCM' },
+      { id: 'E3-3', name: 'E3', tag: 'Corr 4P', dieCode: 'DIE-E3-03', material: 'BARE' },
+      { id: 'E4', name: 'E4', tag: 'Ø5 Slit', dieCode: 'DIE-E4-01', material: 'PCM' },
+      { id: 'E5', name: 'E5', tag: 'Ø5 Slit', dieCode: 'DIE-E5-01', material: 'GOLD' },
+      { id: 'E6', name: 'E6', tag: 'Ø7 Louver', dieCode: 'DIE-E6-01', material: 'PCM' }
+    ];
+
+    // Standard Default Spare Parts Master Template
+    const DEFAULT_SPARES_TEMPLATE = [
+      { id: 'P01', code: 'LP-01', name: 'Louver Punch / Blade (คมตัดฟิน)', maxLife: 18000000, currentShots: 12450000, unit: 'shots' },
+      { id: 'P02', code: 'DP-01', name: 'Drawing Punch (เข็มขึ้นรูปทรงรู)', maxLife: 30000000, currentShots: 27800000, unit: 'shots' },
+      { id: 'P03', code: 'FP-01', name: 'Flare Punch (เข็มบานปากท่อฟิน)', maxLife: 30000000, currentShots: 15200000, unit: 'shots' },
+      { id: 'P04', code: 'CO-01', name: 'Cut-off Blade (ใบมีดตัดแผงฟิน)', maxLife: 50000000, currentShots: 48900000, unit: 'shots' },
+      { id: 'P05', code: 'EB-01', name: 'Edge Trim Punch (ตัดขอบแผ่นฟิน)', maxLife: 40000000, currentShots: 21500000, unit: 'shots' },
+      { id: 'P06', code: 'GP-01', name: 'Guide Post / Bushing (เสานำศูนย์)', maxLife: 60000000, currentShots: 18400000, unit: 'shots' }
+    ];
+
+    // Standard Shift Intervals
+    const SHIFT_SCHEDULES = [
+      { name: 'กะเช้า (DAY SHIFT)', start: '08:00', end: '17:00', type: 'DAY' },
+      { name: 'กะเช้า OT (DAY OT)', start: '17:30', end: '19:30', type: 'DAY_OT' },
+      { name: 'กะดึก (NIGHT SHIFT)', start: '19:30', end: '05:30', type: 'NIGHT' },
+      { name: 'กะดึก OT (NIGHT OT)', start: '06:30', end: '07:30', type: 'NIGHT_OT' },
+      { name: 'ช่วงพิเศษ (SPECIAL)', start: '07:30', end: '08:00', type: 'SPECIAL' }
+    ];
+
+    // Standard Break Schedules for Automatic Deduction
+    const BREAK_SCHEDULES = [
+      // Day breaks
+      { start: '10:00', end: '10:10', mins: 10 },
+      { start: '12:00', end: '13:00', mins: 60 },
+      { start: '15:00', end: '15:10', mins: 10 },
+      { start: '17:00', end: '17:30', mins: 30 },
+      // Night breaks
+      { start: '21:30', end: '21:40', mins: 10 },
+      { start: '23:30', end: '00:30', mins: 60 },
+      { start: '02:30', end: '02:40', mins: 10 },
+      { start: '04:30', end: '05:30', mins: 60 }
+    ];
+
+    // --- 2. APPLICATION STATE ---
+    let currentLineId = 'E1';
+    let currentMode = 1; // 1 = SPM Sim, 2 = Direct PLC
+    let isMachineRunning = false;
+    let machineStartTime = null;
+    let runTimerInterval = null;
+    let simCounterInterval = null;
+    let expectedShots = 0;
+    let deductedBreakMinutes = 0;
+
+    // Direct PLC State
+    let directPlcCount = 0;
+    let isAutoPolling = false;
+    let autoPollingInterval = null;
+
+    // LocalStorage Keys
+    const LS_SPARES_KEY = 'FIN_DIE_SPARES_DB_V2';
+    const LS_AUDIT_KEY = 'FIN_DIE_AUDIT_LOG_V2';
+
+    // --- 3. STORAGE INITIALIZATION & HELPERS ---
+    function getStoredSparesData() {
+      const raw = localStorage.getItem(LS_SPARES_KEY);
+      if (raw) {
+        try { return JSON.parse(raw); } catch (e) { console.error(e); }
+      }
+      // Initialize Default Database
+      const initialDb = {};
+      PRODUCTION_LINES.forEach(line => {
+        initialDb[line.id] = JSON.parse(JSON.stringify(DEFAULT_SPARES_TEMPLATE));
+      });
+      localStorage.setItem(LS_SPARES_KEY, JSON.stringify(initialDb));
+      return initialDb;
+    }
+
+    function saveStoredSparesData(data) {
+      localStorage.setItem(LS_SPARES_KEY, JSON.stringify(data));
+    }
+
+    function getStoredAuditLogs() {
+      const raw = localStorage.getItem(LS_AUDIT_KEY);
+      if (raw) {
+        try { return JSON.parse(raw); } catch (e) { console.error(e); }
+      }
+      return [
+        {
+          timestamp: new Date(Date.now() - 3600000).toLocaleString('th-TH'),
+          lineId: 'E1',
+          shift: 'กะเช้า',
+          operator: 'วิชัย สมบูรณ์',
+          shotsAdded: 24500,
+          lossType: 'COIL_CHANGE',
+          lossMinutes: 12
+        }
+      ];
+    }
+
+    function saveStoredAuditLog(entry) {
+      const logs = getStoredAuditLogs();
+      logs.unshift(entry);
+      if (logs.length > 50) logs.pop(); // Keep 50 records
+      localStorage.setItem(LS_AUDIT_KEY, JSON.stringify(logs));
+      renderAuditLogs();
+    }
+
+    function resetMockData() {
+      if (confirm('คุณต้องการล้างและคืนค่าข้อมูลจำลองทั้งหมดเป็นค่าเริ่มต้นใช่หรือไม่?')) {
+        localStorage.removeItem(LS_SPARES_KEY);
+        localStorage.removeItem(LS_AUDIT_KEY);
+        showToast('รีเซ็ตข้อมูลจำลองสำเร็จ', 'คืนค่าฐานข้อมูลอะไหล่และ Audit Log เรียบร้อยแล้ว');
+        renderSpares();
+        renderAuditLogs();
+      }
+    }
+
+    // --- 4. SHIFT & TIME UTILITIES ---
+    function getCurrentShiftInfo(date = new Date()) {
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const currentMinOfDay = hours * 60 + minutes;
+
+      const toMins = (hhmm) => {
+        const [h, m] = hhmm.split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      // 08:00 - 17:00 -> กะเช้า
+      if (currentMinOfDay >= toMins('08:00') && currentMinOfDay < toMins('17:00')) {
+        return { name: 'กะเช้า (DAY SHIFT)', code: 'DAY', color: 'text-cyan-300' };
+      }
+      // 17:30 - 19:30 -> กะเช้า OT
+      if (currentMinOfDay >= toMins('17:30') && currentMinOfDay < toMins('19:30')) {
+        return { name: 'กะเช้า OT (DAY OT)', code: 'DAY_OT', color: 'text-amber-300' };
+      }
+      // 19:30 - 05:30 -> กะดึก (Crosses midnight)
+      if (currentMinOfDay >= toMins('19:30') || currentMinOfDay < toMins('05:30')) {
+        return { name: 'กะดึก (NIGHT SHIFT)', code: 'NIGHT', color: 'text-purple-300' };
+      }
+      // 06:30 - 07:30 -> กะดึก OT
+      if (currentMinOfDay >= toMins('06:30') && currentMinOfDay < toMins('07:30')) {
+        return { name: 'กะดึก OT (NIGHT OT)', code: 'NIGHT_OT', color: 'text-pink-300' };
+      }
+      // 07:30 - 08:00 -> ช่วงพิเศษ
+      return { name: 'ช่วงพิเศษ (SPECIAL SHIFT)', code: 'SPECIAL', color: 'text-emerald-300' };
+    }
+
+    function calculateBreakDeduction(startTime, endTime) {
+      if (!startTime || !endTime) return 0;
+      let totalBreakMinutes = 0;
+      
+      const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
+      const endMinutes = endTime.getHours() * 60 + endTime.getMinutes();
+
+      const toMins = (hhmm) => {
+        const [h, m] = hhmm.split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      BREAK_SCHEDULES.forEach(b => {
+        const bStart = toMins(b.start);
+        const bEnd = toMins(b.end);
+
+        // Check if run interval overlaps with this break
+        if (bStart < bEnd) {
+          // Normal within-day interval
+          const overlapStart = Math.max(startMinutes, bStart);
+          const overlapEnd = Math.min(endMinutes, bEnd);
+          if (overlapEnd > overlapStart) {
+            totalBreakMinutes += (overlapEnd - overlapStart);
+          }
+        }
+      });
+
+      return Math.min(totalBreakMinutes, 120);
+    }
+
+    // --- 5. RENDER FUNCTIONS ---
+    function renderLineSelectors() {
+      const container = document.getElementById('lineSelectorContainer');
+      container.innerHTML = '';
+
+      PRODUCTION_LINES.forEach(line => {
+        const isSelected = line.id === currentLineId;
+        const btn = document.createElement('button');
+        btn.onclick = () => selectLine(line.id);
+        
+        btn.className = `px-2.5 py-1.5 rounded-lg text-xs font-digital font-bold transition-all flex items-center gap-1.5 border ${
+          isSelected
+            ? 'bg-cyan-500 text-slate-950 border-cyan-300 shadow-md shadow-cyan-500/30 scale-105 font-black ring-1 ring-cyan-300'
+            : 'bg-[#0b1120] text-slate-300 hover:bg-slate-800 border-[#1f2937]'
+        }`;
+
+        btn.innerHTML = `
+          <span class="w-2 h-2 rounded-full ${isSelected ? 'bg-slate-950' : 'bg-emerald-400'}"></span>
+          <span>${line.name}</span>
+          <span class="text-[10px] px-1.5 py-0.2 rounded font-mono ${
+            isSelected ? 'bg-slate-950 text-cyan-300' : 'bg-[#111827] text-slate-400'
+          }">${line.tag}</span>
+        `;
+
+        container.appendChild(btn);
+      });
+    }
+
+    function renderSpares() {
+      const container = document.getElementById('sparesListContainer');
+      const db = getStoredSparesData();
+      const currentSpares = db[currentLineId] || DEFAULT_SPARES_TEMPLATE;
+
+      const lineInfo = PRODUCTION_LINES.find(l => l.id === currentLineId) || PRODUCTION_LINES[0];
+      document.getElementById('trackerLineName').innerText = `(${lineInfo.name} - ${lineInfo.tag})`;
+
+      container.innerHTML = '';
+
+      currentSpares.forEach(part => {
+        const wearPercent = Math.min(100, Math.round((part.currentShots / part.maxLife) * 100));
+        const remainingShots = Math.max(0, part.maxLife - part.currentShots);
+
+        // Status Level & Colors
+        let statusBadge = { label: 'SAFE', bg: 'bg-emerald-950 text-emerald-300 border-emerald-500', bar: 'bg-emerald-500' };
+        if (wearPercent >= 95) {
+          statusBadge = { label: 'CRITICAL (95%+)', bg: 'bg-rose-950 text-rose-300 border-rose-500 animate-pulse', bar: 'bg-rose-500' };
+        } else if (wearPercent >= 85) {
+          statusBadge = { label: 'WARNING (85%+)', bg: 'bg-orange-950 text-orange-300 border-orange-500', bar: 'bg-orange-500' };
+        } else if (wearPercent >= 70) {
+          statusBadge = { label: 'PREPARE (70%+)', bg: 'bg-amber-950 text-amber-300 border-amber-500', bar: 'bg-amber-500' };
+        }
+
+        const card = document.createElement('div');
+        card.className = 'bg-[#0b1120] border border-[#1f2937] hover:border-[#374151] rounded-xl p-3 space-y-2 transition-all';
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-digital font-bold bg-[#111827] text-cyan-400 border border-[#1f2937]">
+                  ${part.code}
+                </span>
+                <span class="text-xs font-bold text-white">${part.name}</span>
+              </div>
+              <div class="text-[11px] font-digital text-slate-400 mt-0.5">
+                อายุคงเหลือ: <b class="text-white">${remainingShots.toLocaleString()}</b> / ${part.maxLife.toLocaleString()} shots
+              </div>
+            </div>
+
+            <div class="text-right">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold font-digital border ${statusBadge.bg}">
+                ${statusBadge.label}
+              </span>
+              <div class="text-sm font-black font-digital text-white mt-0.5">
+                ${wearPercent}%
+              </div>
+            </div>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+            <div class="h-full rounded-full ${statusBadge.bar} transition-all duration-500" style="width: ${wearPercent}%"></div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderAuditLogs() {
+      const tbody = document.getElementById('auditLogTbody');
+      const logs = getStoredAuditLogs();
+      tbody.innerHTML = '';
+
+      if (logs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-slate-500">ยังไม่มีประวัติการบันทึก</td></tr>`;
+        return;
+      }
+
+      logs.slice(0, 8).forEach(l => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-900/50 transition-colors';
+        tr.innerHTML = `
+          <td class="py-2 px-2 text-slate-400 text-[11px]">${l.timestamp}</td>
+          <td class="py-2 px-2"><span class="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 text-[10px] font-bold font-digital">${l.lineId}</span></td>
+          <td class="py-2 px-2 text-slate-300">${l.shift}</td>
+          <td class="py-2 px-2 text-slate-200">${l.operator || 'Operator'}</td>
+          <td class="py-2 px-2 text-right font-bold text-emerald-400 font-digital">+${Number(l.shotsAdded || 0).toLocaleString()}</td>
+          <td class="py-2 px-2 text-center">
+            ${l.lossMinutes > 0 ? `<span class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700 text-[10px]">Loss ${l.lossMinutes}m</span>` : '<span class="text-emerald-500 text-[10px]">NORMAL</span>'}
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // --- 6. LINE & MODE INTERACTIONS ---
+    function selectLine(lineId) {
+      if (isMachineRunning) {
+        if (!confirm('เครื่องจักรในไลน์ปัจจุบันกำลังเดินเครื่องอยู่ คุณต้องการเปลี่ยนไลน์การผลิตหรือไม่?')) {
+          return;
+        }
+        stopMachineSimulation(true);
+      }
+      currentLineId = lineId;
+      const lineInfo = PRODUCTION_LINES.find(l => l.id === lineId);
+      document.getElementById('activeLineBadge').innerText = `LINE ${lineInfo.name}`;
+      document.getElementById('activeDieCode').innerText = `${lineInfo.dieCode} (${lineInfo.tag})`;
+
+      renderLineSelectors();
+      renderSpares();
+      showToast(`สลับไปยัง LINE ${lineInfo.name}`, `แม่พิมพ์: ${lineInfo.dieCode} (${lineInfo.tag})`);
+    }
+
+    function switchMode(mode) {
+      if (isMachineRunning) {
+        alert('กรุณาหยุดเครื่องจักรก่อนสลับโหมดการทำงาน');
+        return;
+      }
+      currentMode = mode;
+      const tab1 = document.getElementById('tabMode1');
+      const tab2 = document.getElementById('tabMode2');
+      const panel1 = document.getElementById('mode1Panel');
+      const panel2 = document.getElementById('mode2Panel');
+
+      if (mode === 1) {
+        tab1.className = 'p-2.5 rounded-lg border text-xs font-bold font-digital flex flex-col items-center justify-center gap-1 transition-all bg-cyan-950 border-cyan-400 text-cyan-300 shadow-md';
+        tab2.className = 'p-2.5 rounded-lg border text-xs font-bold font-digital flex flex-col items-center justify-center gap-1 transition-all bg-[#0b1120] border-[#1f2937] text-slate-400 hover:text-slate-200';
+        panel1.classList.remove('hidden');
+        panel2.classList.add('hidden');
+      } else {
+        tab2.className = 'p-2.5 rounded-lg border text-xs font-bold font-digital flex flex-col items-center justify-center gap-1 transition-all bg-cyan-950 border-cyan-400 text-cyan-300 shadow-md';
+        tab1.className = 'p-2.5 rounded-lg border text-xs font-bold font-digital flex flex-col items-center justify-center gap-1 transition-all bg-[#0b1120] border-[#1f2937] text-slate-400 hover:text-slate-200';
+        panel2.classList.remove('hidden');
+        panel1.classList.add('hidden');
+      }
+    }
+
+    // --- 7. MODE 1: SPM SIMULATION ENGINE & BREAK DEDUCTION ---
+    function onSpmChanged() {
+      const spm = parseInt(document.getElementById('inputSpm').value) || 100;
+      document.getElementById('displaySpmRate').innerText = spm;
+    }
+
+    function startMachineSimulation() {
+      isMachineRunning = true;
+      machineStartTime = new Date();
+      expectedShots = 0;
+      deductedBreakMinutes = 0;
+
+      // Update UI Status
+      const stateTag = document.getElementById('machineStateTag');
+      stateTag.className = 'px-2.5 py-0.5 rounded text-xs font-bold font-digital flex items-center gap-1.5 bg-emerald-950 text-emerald-400 border border-emerald-500 shadow-sm';
+      stateTag.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 live-dot"></span><span>RUNNING</span>';
+
+      document.getElementById('displayRunState').innerText = 'กำลังผลิต (RUNNING)';
+      document.getElementById('displayRunState').className = 'text-emerald-400 font-bold';
+
+      document.getElementById('btnStartMachine').disabled = true;
+      document.getElementById('btnStartMachine').classList.add('opacity-50', 'cursor-not-allowed');
+
+      document.getElementById('btnStopMachine').disabled = false;
+      document.getElementById('btnStopMachine').classList.remove('opacity-50', 'cursor-not-allowed');
+      document.getElementById('btnStopMachine').classList.replace('bg-rose-950', 'bg-rose-600');
+      document.getElementById('btnStopMachine').classList.replace('text-rose-400', 'text-white');
+
+      // Clear input fields
+      document.getElementById('inputActualShots').value = '';
+      document.getElementById('lossTimeContainer').classList.add('hidden');
+
+      // Live Run Timer Interval
+      runTimerInterval = setInterval(() => {
+        if (!machineStartTime) return;
+        const now = new Date();
+        const diffMs = now - machineStartTime;
+        const totalSecs = Math.floor(diffMs / 1000);
+        const hrs = String(Math.floor(totalSecs / 3600)).padStart(2, '0');
+        const mins = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0');
+        const secs = String(totalSecs % 60).padStart(2, '0');
+        document.getElementById('liveRunTimer').innerText = `${hrs}:${mins}:${secs}`;
+
+        // Break deduction
+        const breakMins = calculateBreakDeduction(machineStartTime, now);
+        if (breakMins > 0) {
+          const breakLabel = document.getElementById('breakDeductedLabel');
+          breakLabel.classList.remove('hidden');
+          breakLabel.innerText = `(หักพักเบรกแล้ว -${breakMins}m)`;
+        }
+      }, 1000);
+
+      // Fast Counter Ticker Simulation (every 200ms)
+      const spm = parseInt(document.getElementById('inputSpm').value) || 100;
+      simCounterInterval = setInterval(() => {
+        const now = new Date();
+        const elapsedMinutes = (now - machineStartTime) / 60000;
+        const breakMins = calculateBreakDeduction(machineStartTime, now);
+        const effectiveMinutes = Math.max(0, elapsedMinutes - breakMins);
+        
+        expectedShots = Math.floor(effectiveMinutes * spm);
+        document.getElementById('expectedCounterDisplay').innerText = `+${expectedShots.toLocaleString()}`;
+      }, 200);
+
+      showToast('เริ่มเดินเครื่องจักร', `ไลน์: ${currentLineId} | อัตราความเร็ว: ${spm} SPM`);
+    }
+
+    function stopMachineSimulation(silent = false) {
+      if (!isMachineRunning) return;
+      isMachineRunning = false;
+      clearInterval(runTimerInterval);
+      clearInterval(simCounterInterval);
+
+      // Update UI Status
+      const stateTag = document.getElementById('machineStateTag');
+      stateTag.className = 'px-2.5 py-0.5 rounded text-xs font-bold font-digital flex items-center gap-1.5 bg-rose-950 text-rose-400 border border-rose-800';
+      stateTag.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500"></span><span>STOPPED</span>';
+
+      document.getElementById('displayRunState').innerText = 'หยุดเดินเครื่อง (STOPPED)';
+      document.getElementById('displayRunState').className = 'text-rose-400 font-bold';
+
+      document.getElementById('btnStartMachine').disabled = false;
+      document.getElementById('btnStartMachine').classList.remove('opacity-50', 'cursor-not-allowed');
+
+      document.getElementById('btnStopMachine').disabled = true;
+      document.getElementById('btnStopMachine').classList.add('opacity-50', 'cursor-not-allowed');
+      document.getElementById('btnStopMachine').classList.replace('bg-rose-600', 'bg-rose-950');
+      document.getElementById('btnStopMachine').classList.replace('text-white', 'text-rose-400');
+
+      // Autofill actual shots with expected as starting point
+      document.getElementById('inputActualShots').value = expectedShots;
+      calculateLossTime();
+
+      if (!silent) {
+        showToast('หยุดเครื่องจักรแล้ว', `ยอดจำลอง: ${expectedShots.toLocaleString()} shots กรุณาตรวจสอบยอดจริงก่อน Submit`);
+      }
+    }
+
+    function calculateLossTime() {
+      const spm = parseInt(document.getElementById('inputSpm').value) || 100;
+      const actualVal = parseInt(document.getElementById('inputActualShots').value) || 0;
+      const lossBox = document.getElementById('lossTimeContainer');
+
+      if (actualVal < expectedShots && expectedShots > 0) {
+        const missingShots = expectedShots - actualVal;
+        const lossMinutes = Math.round(missingShots / spm);
+
+        lossBox.classList.remove('hidden');
+        document.getElementById('lossMinutesBadge').innerText = `Loss: ${lossMinutes} นาที (${missingShots.toLocaleString()} shots)`;
+        document.getElementById('lossExpectedText').innerText = `${expectedShots.toLocaleString()} shots`;
+        document.getElementById('lossActualText').innerText = `${actualVal.toLocaleString()} shots`;
+        document.getElementById('lossMissingText').innerText = `-${missingShots.toLocaleString()} shots`;
+      } else {
+        lossBox.classList.add('hidden');
+      }
+    }
+
+    function submitMode1Entry() {
+      if (isMachineRunning) {
+        alert('กรุณากด [STOP MACHINE] ก่อนทำการกดยืนยันบันทึกยอด');
+        return;
+      }
+
+      const operatorName = document.getElementById('inputOperatorName').value.trim();
+      if (!operatorName) {
+        alert('กรุณาระบุชื่อพนักงานผู้บันทึก (Operator Name)');
+        document.getElementById('inputOperatorName').focus();
+        return;
+      }
+
+      const actualShots = parseInt(document.getElementById('inputActualShots').value);
+      if (isNaN(actualShots) || actualShots <= 0) {
+        alert('กรุณากรอกยอดช็อตจริงที่ถูกต้อง (> 0)');
+        return;
+      }
+
+      const spm = parseInt(document.getElementById('inputSpm').value) || 100;
+      let lossMinutes = 0;
+      let lossReason = 'NORMAL';
+
+      if (actualShots < expectedShots && expectedShots > 0) {
+        lossReason = document.getElementById('selectLossReason').value;
+        if (!lossReason) {
+          alert('ตรวจพบ Loss Time (ยอดจริงน้อยกว่ายอดจำลอง) กรุณาเลือก "สาเหตุ Loss Time" ก่อนยืนยัน!');
+          document.getElementById('selectLossReason').focus();
+          return;
+        }
+        lossMinutes = Math.round((expectedShots - actualShots) / spm);
+      }
+
+      // 1. Accumulate shots to all spare parts of this line
+      accumulateShotsToSpares(currentLineId, actualShots);
+
+      // 2. Add Audit Log Entry
+      const shiftInfo = getCurrentShiftInfo();
+      const auditEntry = {
+        timestamp: new Date().toLocaleString('th-TH'),
+        lineId: currentLineId,
+        shift: shiftInfo.name,
+        operator: operatorName,
+        shotsAdded: actualShots,
+        lossType: lossReason,
+        lossMinutes: lossMinutes
+      };
+      saveStoredAuditLog(auditEntry);
+
+      // 3. Reset form
+      expectedShots = 0;
+      document.getElementById('expectedCounterDisplay').innerText = '+0';
+      document.getElementById('liveRunTimer').innerText = '00:00:00';
+      document.getElementById('breakDeductedLabel').classList.add('hidden');
+      document.getElementById('inputActualShots').value = '';
+      document.getElementById('lossTimeContainer').classList.add('hidden');
+      document.getElementById('selectLossReason').value = '';
+
+      showToast('บันทึกยอดช็อตสำเร็จ!', `+${actualShots.toLocaleString()} shots ถูกบวกสะสมเข้าอะไหล่ไลน์ ${currentLineId} เรียบร้อยแล้ว`);
+      renderSpares();
+    }
+
+    // --- 8. MODE 2: DIRECT PLC ENGINE ---
+    function triggerDirectPulse(amount = 1) {
+      directPlcCount += amount;
+      document.getElementById('plcLiveCounterDisplay').innerText = directPlcCount.toLocaleString();
+      accumulateShotsToSpares(currentLineId, amount);
+      renderSpares();
+    }
+
+    function toggleAutoPulse() {
+      const btn = document.getElementById('btnAutoPulseToggle');
+      const label = document.getElementById('autoPulseLabel');
+
+      if (!isAutoPolling) {
+        isAutoPolling = true;
+        btn.classList.replace('bg-[#0b1120]', 'bg-cyan-950');
+        btn.classList.add('border-cyan-400', 'text-cyan-300');
+        label.innerText = 'POLLING ACTIVE... (CLICK TO STOP)';
+
+        // Emit pulse every 600ms (~100 SPM)
+        autoPollingInterval = setInterval(() => {
+          triggerDirectPulse(1);
+        }, 600);
+
+        showToast('เปิดใช้งาน Auto PLC Polling', 'กำลังรับสัญญาณชีพจรช็อตแม่พิมพ์อย่างต่อเนื่อง');
+      } else {
+        isAutoPolling = false;
+        clearInterval(autoPollingInterval);
+        btn.classList.replace('bg-cyan-950', 'bg-[#0b1120]');
+        btn.classList.remove('border-cyan-400', 'text-cyan-300');
+        label.innerText = 'START AUTO PLC POLLING (100 SPM PULSE STREAM)';
+        showToast('หยุด Auto PLC Polling แล้ว', 'หยุดการจำลองสัญญาณชั่วคราว');
+      }
+    }
+
+    // --- 9. ACCUMULATE SHOTS HELPER ---
+    function accumulateShotsToSpares(lineId, shotsToAdd) {
+      const db = getStoredSparesData();
+      if (!db[lineId]) {
+        db[lineId] = JSON.parse(JSON.stringify(DEFAULT_SPARES_TEMPLATE));
+      }
+      db[lineId].forEach(part => {
+        part.currentShots += shotsToAdd;
+      });
+      saveStoredSparesData(db);
+    }
+
+    // --- 10. SYSTEM CLOCK & SHIFT BADGE LOOP ---
+    function updateClockAndShift() {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('th-TH', { hour12: false });
+      const dateStr = now.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      
+      document.getElementById('liveClock').innerText = timeStr;
+      document.getElementById('liveDate').innerText = dateStr;
+
+      const shift = getCurrentShiftInfo(now);
+      const shiftEl = document.getElementById('currentShiftBadge');
+      shiftEl.innerText = shift.name;
+      shiftEl.className = `font-bold ${shift.color}`;
+    }
+
+    // --- 11. TOAST NOTIFICATION ---
+    let toastTimeout = null;
+    function showToast(title, message) {
+      const toast = document.getElementById('toastNotification');
+      document.getElementById('toastTitle').innerText = title;
+      document.getElementById('toastMessage').innerText = message;
+
+      toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+        toast.classList.remove('translate-y-0', 'opacity-100');
+      }, 3500);
+    }
+
+    // --- 12. INITIALIZATION ---
+    window.addEventListener('DOMContentLoaded', () => {
+      // Initialize Lucide Icons
+      lucide.createIcons();
+
+      // Render Components
+      renderLineSelectors();
+      renderSpares();
+      renderAuditLogs();
+
+      // Start Real-time Clock
+      updateClockAndShift();
+      setInterval(updateClockAndShift, 1000);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+/* ==========================================================================
+   LG MONITOR INDUSTRIAL FACTORY DESIGN SYSTEM (theme.css)
+   Pixel-Perfect clone for Fin Die Shot Monitoring & Production Dashboards
+   ========================================================================== */
+
+/* 1. CSS Variables (:root) สำหรับใช้ทั้งแอป */
+:root {
+  --bg-main: #111111;              /* สีพื้นหลังหน้าจอหลัก ดำสนิท */
+  --cell-bg: #333333;              /* สีพื้นหลังเซลล์ตาราง เทาเข้ม industrial slate */
+  --cell-hover-bg: #3c3c3c;        /* สีเซลล์เมื่อเอาเมาส์ชี้ */
+  --table-border: 1px solid #666666; /* เส้นขอบตารางทึบ 1px solid #666666 */
+  --border-color: #666666;         /* ตัวแปรสำรอง */
+  --th-bg: #555566;                /* สีพื้นหลังหัวตาราง Slate Grey */
+  --text-main: #ffffff;            /* สีตัวอักษรหลัก ขาว */
+  --text-muted: #999999;           /* สีตัวอักษรรอง */
+
+  /* สีสำหรับไฮไลต์และการแจ้งเตือน */
+  --color-green: #00FF00;          /* สีเขียวสดใสสำหรับ Shot Count */
+  --color-gray-purple: #B5B5C3;    /* สีเทาสำหรับ Progress */
+  --color-yellow: #FFCC00;         /* สีเหลืองสำหรับ Order Require */
+  --color-danger: #C40045;         /* สีแดง LG สำหรับ Over Life หรือชำรุด */
+
+  /* Header Panels */
+  --sub-header-bg: #111111;        /* สีพื้นหลัง Sub-header สีดำสนิท */
+  --sub-header-text: #ffffff;      /* สีตัวหนังสือ Sub-header */
+  --sub-header-purple: #5c1878;    /* สีม่วงสำหรับคำว่า MAIN FIN DIE */
+}
+
+/* 2. Global Reset & Base Styles */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 3. ตาราง (Global Table Style) บรรทัดแคบ อัดแน่น ไม่มีฟอนต์โมเดิร์น */
+table, .lg-table {
+  width: 100%;
+  border-collapse: collapse !important;
+  border-spacing: 0;
+  background-color: var(--cell-bg);
+  color: var(--text-main);
+  border: 1px solid #666666 !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
+th, td, .lg-th, .lg-td {
+  border: 1px solid #666666 !important;
+  padding: 4px 8px !important;    /* ลด Padding 4px 8px ให้แคบ อัดแน่นตามมาตรฐานโรงงาน */
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
+th, .lg-th {
+  background-color: var(--th-bg) !important;
+  color: var(--text-main) !important;
+  font-weight: 700 !important;
+  text-align: center;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+td, .lg-td {
+  background-color: var(--cell-bg);
+  color: var(--text-main);
+}
+
+tr:hover td {
+  background-color: var(--cell-hover-bg);
+}
+
+/* 4. Utility Classes สำหรับ <td> เทสีพื้นหลังเต็มเซลล์ (Solid Background) */
+
+/* .cell-green: เทสีพื้นหลังเต็มเซลล์ด้วยสี #00ff00 ตัวหนังสือสีดำ ตัวหนา จัดชิดขวา */
+.cell-green {
+  background-color: #00ff00 !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  text-align: right !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
+/* .cell-gray-purple: เทสีพื้นหลังเต็มเซลล์ด้วยสี #b5b5c3 ตัวหนังสือสีดำ จัดกึ่งกลาง */
+.cell-gray-purple {
+  background-color: #b5b5c3 !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  text-align: center !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
+/* คลาสสำรองสำหรับความเข้ากันได้ */
+.bg-green-alert {
+  background-color: #00ff00 !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  text-align: right !important;
+}
+
+.bg-gray-purple {
+  background-color: #b5b5c3 !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  text-align: center !important;
+}
+
+/* .dot-yellow: จุดวงกลมสีเหลืองขนาดเล็ก (#ffcc00) ในคอลัมน์ Order Require */
+.dot-yellow, .status-dot-yellow {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #ffcc00;
+  box-shadow: 0 0 6px #ffcc00, 0 0 1px rgba(0, 0, 0, 0.8);
+  margin: 0 2px;
+  vertical-align: middle;
+}
+
+/* 5. Layout Headers */
+
+/* แถบ Header ด้านบนสุด (ไล่สีเทาเข้ม-ม่วงเข้ม) */
+.header-top, .app-top-header {
+  background: linear-gradient(180deg, #2b2b38 0%, #191924 50%, #111118 100%) !important;
+  border-bottom: 1px solid var(--table-border);
+  color: var(--text-main);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: Arial, Helvetica, sans-serif !important;
+  user-select: none;
+}
+
+/* แถบ Sub-header สีเทาอ่อน */
+.sub-header, .app-sub-header {
+  background-color: var(--sub-header-bg) !important;
+  color: var(--sub-header-text) !important;
+  border: 1px solid var(--table-border);
+  border-top: none;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: bold;
+  font-size: 13px;
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
+/* ตัวหนังสือสีม่วงสำหรับคำว่า "Main Fin Die" */
+.sub-header .main-fin-die,
+.app-sub-header .badge-purple,
+.text-purple-dark {
+  color: #4a2840 !important;
+  font-weight: 900 !important;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+/* 6. Text Alignment Utilities */
+.text-left { text-align: left !important; }
+.text-right { text-align: right !important; }
+.text-center { text-align: center !important; }

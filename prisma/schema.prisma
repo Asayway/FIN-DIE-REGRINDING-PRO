@@ -1,0 +1,26 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+// You can change this to "postgresql" or "mysql" depending on your actual database
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model SparePartMaster {
+  id               String   @id @default(uuid())
+  part_code_name   String
+  stage_function   String?
+  // We store the install quantities across E1-E6 as a JSON string (or native Json if using Postgres)
+  install_quantity String   
+  
+  pcm_life_shots   Int?
+  gold_life_shots  Int?
+  bare_life_shots  Int?
+  max_regrind      Int?
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

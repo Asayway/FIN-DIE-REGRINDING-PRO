@@ -1,0 +1,82 @@
+{
+  "header": {
+    "title": "FinDie Regrind Pro",
+    "subtitle": "ระบบบริหารจัดการและสรุปภาพรวมงานเจียระไนแม่พิมพ์",
+    "liveStatus": "ออนไลน์สด",
+    "hmiStatus": "ระบบทำงานอยู่"
+  },
+  "sidebar": {
+    "overviewSection": "ภาพรวมระบบ (OVERVIEW)",
+    "operations": "งานเจียระไน (REGRIND)",
+    "toolingSetup": "ฐานข้อมูลแม่พิมพ์ (MASTER)",
+    "settings": "ตั้งค่า",
+    "shotEntry": "บันทึกช็อต",
+    "tvDashboard": "แดชบอร์ดสรุปภาพรวม",
+    "partReplacement": "เปลี่ยนอะไหล่ & ผัง 2D",
+    "regrindingHub": "เจียรลับคมแม่พิมพ์",
+    "regrindingControl": "บันทึกงานเจียร & ปฏิทิน 31 วัน",
+    "dieAndPartMaster": "ข้อมูลแม่พิมพ์ & สเปกอะไหล่",
+    "systemSettings": "ตั้งค่าระบบ"
+  },
+  "tv": {
+    "finDieShotCount": "FIN DIE SHOT COUNT",
+    "stagePunchDie": "ชื่อชิ้นส่วน (Stage Punch / Die)",
+    "replacementCount": "มาตรฐานอายุการใช้งาน (Shot)",
+    "shotCount": "ยอดผลิตปัจจุบัน",
+    "progress": "ความคืบหน้า %",
+    "lifeTime": "อายุงาน(วัน)",
+    "installQty": "จำนวนติดตั้ง",
+    "stockQty": "สต็อกอะไหล่",
+    "orderRequire": "สถานะ",
+    "mainFinDie": "แม่พิมพ์ฟินหลัก",
+    "total": "ยอดผลิตรวม",
+    "today": "ยอดผลิตวันนี้",
+    "signalStandard": "เกณฑ์สัญญาณ:",
+    "normal": "ปกติ",
+    "warning": "เฝ้าระวัง",
+    "prepare": "เตรียมเปลี่ยน",
+    "overLife": "เกินอายุ",
+    "autoWidth": "ปรับขนาดอัตโนมัติ"
+  },
+  "table": {
+    "no": "ลำดับ",
+    "partName": "ชื่อชิ้นส่วน",
+    "limit": "ลิมิตช็อต",
+    "current": "ช็อตปัจจุบัน",
+    "usage": "สัดส่วน %",
+    "remain": "คงเหลือ",
+    "progress": "ความคืบหน้า",
+    "lastChange": "เปลี่ยนล่าสุด",
+    "installed": "ติดตั้ง",
+    "spare": "สำรอง",
+    "status": "สถานะ",
+    "stage": "สเตจแม่พิมพ์"
+  },
+  "kpi": {
+    "totalShots": "ช็อตรวมทั้งหมด",
+    "activeParts": "อะไหล่ติดตั้งใช้งาน",
+    "criticalAlerts": "การเตือนวิกฤต",
+    "regrindQueue": "คิวรอเจียรลับคม",
+    "scrapCount": "จำนวนตัดทิ้ง"
+  },
+  "actions": {
+    "save": "บันทึก",
+    "cancel": "ยกเลิก",
+    "edit": "แก้ไข",
+    "delete": "ลบ",
+    "search": "ค้นหา...",
+    "filter": "กรองข้อมูล",
+    "export": "ส่งออก CSV",
+    "done": "เสร็จสิ้น",
+    "confirm": "ยืนยัน",
+    "add": "เพิ่มรายการ"
+  },
+  "status": {
+    "normal": "ปกติ",
+    "warning": "เฝ้าระวัง",
+    "prepare": "เตรียมอะไหล่",
+    "critical": "วิกฤต",
+    "overLife": "เกินอายุ",
+    "missing": "ไม่มีมาตรฐาน"
+  }
+}
