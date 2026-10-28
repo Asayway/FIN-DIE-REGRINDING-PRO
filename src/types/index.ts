@@ -304,6 +304,7 @@ export interface PartLifeStandard {
   createdAt: string;
   updatedAt: string;
   isImportedSeed?: boolean;
+  isDataMalformed?: boolean;
 }
 
 export type TubeSizeCompat = 'Ø5' | 'Ø7' | 'BOTH';
@@ -1202,4 +1203,16 @@ export interface Downtime30DayReport {
   lineSummaries: Record<ProductionLineId, DowntimeSummaryByLine>;
 }
 
-
+export interface PartWorkpiecePhoto {
+  id: string;
+  partKey: string;
+  dataUrl: string;
+  fileName?: string;
+  caption: string;
+  notes?: string;
+  viewAngle?: 'FULL' | 'CUTTING_EDGE' | 'SHANK' | 'TOP' | 'DEFECT' | 'OTHER';
+  conditionRating?: 'EXCELLENT' | 'GOOD' | 'WORN' | 'CRITICAL' | 'SCRAPPED';
+  uploadedAt: string;
+  uploadedBy?: string;
+  isPrimary?: boolean;
+}

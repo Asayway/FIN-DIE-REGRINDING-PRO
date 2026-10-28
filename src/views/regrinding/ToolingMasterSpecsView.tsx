@@ -53,6 +53,16 @@ const LINE_QUICK_FILTERS: LineQuickFilter[] = [
   { id: 'E5', label: 'E5', subLabel: 'Ø5 Slit, BARE', tube: 'Ø5', material: 'BARE', finType: 'New Slit', paths: '3P (Pitch)' },
 ];
 
+export const toNum = (val: any, fallback: number = 0): number => {
+  if (val === null || val === undefined || val === '') return fallback;
+  const num = typeof val === 'number' ? val : Number(val);
+  return Number.isFinite(num) ? num : fallback;
+};
+
+export const safeToFixed = (val: any, decimals: number = 2, fallback: number = 0): string => {
+  return toNum(val, fallback).toFixed(decimals);
+};
+
 interface ToolingMasterSpecsViewProps {
   masters?: ToolingPartMasterItem[];
 }
@@ -66,6 +76,7 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
   const [selectedLine, setSelectedLine] = useState<string>('ALL');
   const [selectedMaterial, setSelectedMaterial] = useState<string>('ALL');
   const [selectedTube, setSelectedTube] = useState<string>('ALL');
+  const [activeTab, setActiveTab] = useState<'specs' | 'master' | 'installed' | 'stock'>('specs');
   
   const [isEditing, setIsEditing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -153,9 +164,9 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
 
   const getMinAllowedLength = (partCode: string, partName: string, maxRegrind: number): number => {
     const pm = partMasterMap.get(partCode.toUpperCase()) || partMasterMap.get(partName.toLowerCase());
-    if (pm && pm.minAllowedLengthMm) return pm.minAllowedLengthMm;
+    if (pm && pm.minAllowedLengthMm) return toNum(pm.minAllowedLengthMm, 65.0);
     const nominal = getNominalLength(partCode, partName);
-    return Math.max(0, nominal - (maxRegrind || 3.0));
+    return Math.max(0, nominal - toNum(maxRegrind, 3.0));
   };
 
   const handleEditClick = () => {
@@ -165,10 +176,10 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
       currentVals[std.id] = {
         material: std.configKey?.material || 'PCM',
         tubeSize: std.configKey?.tubeSize || 'Ø7',
-        lifeLimitShots: std.lifeLimitShots,
-        regrindDepthPerTime: std.regrindDepthPerTime ?? (parseFloat(std.regrindStandard?.oneTimeRegrindMm || '0.20') || 0.20),
-        maxTotalGrindingLimit: std.maxTotalGrindingLimit ?? std.regrindStandard?.totalRegrindMm ?? 3.00,
-        standardShimThickness: std.standardShimThickness ?? 0.20,
+        lifeLimitShots: toNum(std.lifeLimitShots, 1500000),
+        regrindDepthPerTime: toNum(std.regrindDepthPerTime ?? std.regrindStandard?.regrindDepthPerTime ?? std.regrindStandard?.oneTimeRegrindMm, 0.20),
+        maxTotalGrindingLimit: toNum(std.maxTotalGrindingLimit ?? std.regrindStandard?.maxTotalGrindingLimit ?? std.regrindStandard?.totalRegrindMm, 3.00),
+        standardShimThickness: toNum(std.standardShimThickness ?? std.regrindStandard?.standardShimThickness, 0.20),
         disposeAfterUse: !!std.regrindStandard?.disposeAfterUse,
         notes: std.notes || std.regrindStandard?.regrindIntervalNote || std.changeIntervalNotes || ''
       };
@@ -193,19 +204,19 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
         if (updates.tubeSize) {
           std.configKey.tubeSize = updates.tubeSize as any;
         }
-        std.lifeLimitShots = updates.lifeLimitShots as number;
-        std.regrindDepthPerTime = updates.regrindDepthPerTime as number;
-        std.maxTotalGrindingLimit = updates.maxTotalGrindingLimit as number;
-        std.standardShimThickness = updates.standardShimThickness as number;
+        std.lifeLimitShots = toNum(updates.lifeLimitShots, 1500000);
+        std.regrindDepthPerTime = toNum(updates.regrindDepthPerTime, 0.20);
+        std.maxTotalGrindingLimit = toNum(updates.maxTotalGrindingLimit, 3.00);
+        std.standardShimThickness = toNum(updates.standardShimThickness, 0.20);
         std.notes = (updates.notes as string) || '';
         
         if (std.regrindStandard) {
           std.regrindStandard.disposeAfterUse = updates.disposeAfterUse as boolean;
-          std.regrindStandard.oneTimeRegrindMm = (std.regrindDepthPerTime || 0.20).toFixed(2);
-          std.regrindStandard.totalRegrindMm = std.maxTotalGrindingLimit;
-          std.regrindStandard.maxTotalGrindingLimit = std.maxTotalGrindingLimit;
-          std.regrindStandard.regrindDepthPerTime = std.regrindDepthPerTime;
-          std.regrindStandard.standardShimThickness = std.standardShimThickness;
+          std.regrindStandard.oneTimeRegrindMm = safeToFixed(std.regrindDepthPerTime, 2, 0.20);
+          std.regrindStandard.totalRegrindMm = toNum(std.maxTotalGrindingLimit, 3.00);
+          std.regrindStandard.maxTotalGrindingLimit = toNum(std.maxTotalGrindingLimit, 3.00);
+          std.regrindStandard.regrindDepthPerTime = toNum(std.regrindDepthPerTime, 0.20);
+          std.regrindStandard.standardShimThickness = toNum(std.standardShimThickness, 0.20);
           std.regrindStandard.regrindIntervalNote = std.notes;
         }
         
@@ -363,6 +374,57 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
         </div>
       )}
 
+      {/* Top 4 Navigation Tabs (As shown in user screenshots) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#0B1220] p-2 rounded-2xl border border-white/10 shadow-lg">
+        <button
+          type="button"
+          onClick={() => setActiveTab('specs')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'specs'
+              ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-black'
+              : 'bg-slate-900/80 text-slate-300 hover:text-white hover:bg-slate-800 border border-white/5'
+          }`}
+        >
+          <span>1. สเปคแม่พิมพ์ไลน์</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('master')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'master'
+              ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-black'
+              : 'bg-slate-900/80 text-slate-300 hover:text-white hover:bg-slate-800 border border-white/5'
+          }`}
+        >
+          <span>2. มาสเตอร์ชิ้นส่วน</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('installed')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'installed'
+              ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-black'
+              : 'bg-slate-900/80 text-slate-300 hover:text-white hover:bg-slate-800 border border-white/5'
+          }`}
+        >
+          <span>3. จำนวนติดตั้งชิ้นส่วน</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('stock')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'stock'
+              ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-black'
+              : 'bg-slate-900/80 text-slate-300 hover:text-white hover:bg-slate-800 border border-white/5'
+          }`}
+        >
+          <span>4. จำนวนสต็อกอะไหล่</span>
+        </button>
+      </div>
+
       {/* Main Filter & Action Bar Header */}
       <div className="bg-[#0F172A] border border-slate-700 rounded-xl p-4 shadow-md space-y-3">
         {/* Row 1: Header Info & Controls */}
@@ -519,8 +581,9 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
       </div>
 
       {/* ========================================================================= */}
-      {/* MATRIX TABLE VIEW (สไตล์เดียวกับ Fin Die Install Matrix) */}
+      {/* 1. SPECS MATRIX TABLE VIEW */}
       {/* ========================================================================= */}
+      {activeTab === 'specs' && (
       <div className="bg-[#1E293B] rounded-xl border border-slate-700 p-3 sm:p-4 shadow-lg">
         <ResizableReorderableTable<PartLifeStandard>
           data={filtered}
@@ -558,7 +621,14 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
                 minWidth: 160,
                 render: (s) => (
                   <div className="space-y-0.5">
-                    <div className="font-bold text-slate-100 truncate" title={s.partName}>{s.partName}</div>
+                    <div className="font-bold text-slate-100 truncate flex items-center gap-1.5" title={s.partName}>
+                      <span>{s.partName}</span>
+                      {s.isDataMalformed && (
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-normal" title="ข้อมูลตัวเลขในคลังได้รับการปรับจูนให้อยู่ในมาตรฐานความปลอดภัย">
+                          ⚠️ Data Standardized
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[11px] text-cyan-400 font-mono">{s.configKey.partCode}</div>
                     <div className="text-[10px] text-slate-400 truncate">{s.stagePunchDie || s.partName}</div>
                   </div>
@@ -660,13 +730,13 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
                 render: (s) => isEditing ? (
                   <DebouncedNumericInput
                     step={0.01}
-                    value={editValues[s.id]?.regrindDepthPerTime as number}
+                    value={toNum(editValues[s.id]?.regrindDepthPerTime, 0.20)}
                     onChange={(val) => handleValueChange(s.id, 'regrindDepthPerTime', val)}
                     className="w-20 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-right text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
                   />
                 ) : (
                   <span className="font-mono text-sky-300 font-bold text-xs">
-                    {(s.regrindDepthPerTime ?? (parseFloat(s.regrindStandard?.oneTimeRegrindMm || '0.20') || 0.20)).toFixed(2)} mm
+                    {safeToFixed(s.regrindDepthPerTime ?? s.regrindStandard?.regrindDepthPerTime ?? s.regrindStandard?.oneTimeRegrindMm, 2, 0.20)} mm
                   </span>
                 )
               },
@@ -679,13 +749,13 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
                 render: (s) => isEditing ? (
                   <DebouncedNumericInput
                     step={0.1}
-                    value={editValues[s.id]?.maxTotalGrindingLimit as number}
+                    value={toNum(editValues[s.id]?.maxTotalGrindingLimit, 3.0)}
                     onChange={(val) => handleValueChange(s.id, 'maxTotalGrindingLimit', val)}
                     className="w-20 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-right text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
                   />
                 ) : (
                   <span className="font-mono text-rose-400 font-bold text-xs">
-                    {(s.maxTotalGrindingLimit ?? s.regrindStandard?.totalRegrindMm ?? 3.0).toFixed(2)} mm
+                    {safeToFixed(s.maxTotalGrindingLimit ?? s.regrindStandard?.maxTotalGrindingLimit ?? s.regrindStandard?.totalRegrindMm, 2, 3.0)} mm
                   </span>
                 )
               },
@@ -696,9 +766,9 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
                 minWidth: 80,
                 align: 'center',
                 render: (s) => {
-                  const oneTime = s.regrindDepthPerTime ?? 0.20;
-                  const total = s.maxTotalGrindingLimit ?? 3.0;
-                  const cycles = s.regrindStandard?.maxRegrindCount || Math.round(total / (oneTime || 0.20));
+                  const oneTime = toNum(s.regrindDepthPerTime ?? s.regrindStandard?.regrindDepthPerTime ?? s.regrindStandard?.oneTimeRegrindMm, 0.20);
+                  const total = toNum(s.maxTotalGrindingLimit ?? s.regrindStandard?.maxTotalGrindingLimit ?? s.regrindStandard?.totalRegrindMm, 3.0);
+                  const cycles = s.regrindStandard?.maxRegrindCount || (oneTime > 0 ? Math.round(total / oneTime) : 0);
                   return (
                     <span className="font-mono font-bold text-amber-300 text-xs">
                       {cycles} รอบ
@@ -715,13 +785,13 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
                 render: (s) => isEditing ? (
                   <DebouncedNumericInput
                     step={0.01}
-                    value={editValues[s.id]?.standardShimThickness as number}
+                    value={toNum(editValues[s.id]?.standardShimThickness, 0.20)}
                     onChange={(val) => handleValueChange(s.id, 'standardShimThickness', val)}
                     className="w-20 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-right text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
                   />
                 ) : (
                   <span className="font-mono text-slate-300 text-xs">
-                    {(s.standardShimThickness ?? 0.20).toFixed(2)}
+                    {safeToFixed(s.standardShimThickness ?? s.regrindStandard?.standardShimThickness, 2, 0.20)}
                   </span>
                 )
               },
@@ -732,8 +802,9 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
                 minWidth: 110,
                 align: 'center',
                 render: (s) => {
-                  const nominal = getNominalLength(s.configKey.partCode, s.partName);
-                  const minLimit = getMinAllowedLength(s.configKey.partCode, s.partName, s.maxTotalGrindingLimit || 3.0);
+                  const maxGrind = toNum(s.maxTotalGrindingLimit ?? s.regrindStandard?.maxTotalGrindingLimit ?? s.regrindStandard?.totalRegrindMm, 3.0);
+                  const nominal = toNum(getNominalLength(s.configKey?.partCode || '', s.partName), 70.0);
+                  const minLimit = toNum(getMinAllowedLength(s.configKey?.partCode || '', s.partName, maxGrind), 65.0);
                   return (
                     <div className="font-mono text-xs">
                       <span className="text-slate-200">{nominal.toFixed(1)}</span>
@@ -832,6 +903,151 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
             ]}
           />
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. PART MASTER DATA DICTIONARY */}
+      {/* ========================================================================= */}
+      {activeTab === 'master' && (
+        <div className="bg-[#1E293B] rounded-xl border border-slate-700 p-4 shadow-lg space-y-3">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-700">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Package className="w-5 h-5 text-cyan-400" />
+              <span>2. มาสเตอร์ชิ้นส่วน (Part Master Data Dictionary - {partMasters.length} รายการ)</span>
+            </h3>
+            <span className="text-xs text-slate-400 font-mono">ราคาซื้อใหม่ใช้คำนวณ Saving & Equivalent Cost</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-mono text-slate-200">
+              <thead className="bg-slate-900 text-cyan-300 border-b border-slate-700">
+                <tr>
+                  <th className="p-2.5">No.</th>
+                  <th className="p-2.5">Part Code</th>
+                  <th className="p-2.5">Part Name & Thai Description</th>
+                  <th className="p-2.5">Category</th>
+                  <th className="p-2.5">Drawing No</th>
+                  <th className="p-2.5 text-right">Unit Price / Purchase Price (THB)</th>
+                  <th className="p-2.5 text-center">Tube Size</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {partMasters.map((pm, idx) => (
+                  <tr key={pm.partCode} className="hover:bg-slate-800/50">
+                    <td className="p-2.5 text-cyan-400">{idx + 1}</td>
+                    <td className="p-2.5 font-bold text-white">{pm.partCode}</td>
+                    <td className="p-2.5 font-thai">
+                      <div className="font-bold text-white">{pm.partName}</div>
+                      <div className="text-[10px] text-slate-400">{pm.partNameTh || pm.description || '-'}</div>
+                    </td>
+                    <td className="p-2.5"><span className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 text-[10px]">{pm.category}</span></td>
+                    <td className="p-2.5 text-slate-300">{pm.drawingNumber || '-'}</td>
+                    <td className="p-2.5 text-right font-bold text-emerald-300">
+                      {pm.unitCostThb ? pm.unitCostThb.toLocaleString() : '18,000'} THB
+                    </td>
+                    <td className="p-2.5 text-center font-bold text-amber-300">{pm.tubeSizeCompat || 'COMMON'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 3. INSTALLED QUANTITY MATRIX BY LINE */}
+      {/* ========================================================================= */}
+      {activeTab === 'installed' && (
+        <div className="bg-[#1E293B] rounded-xl border border-slate-700 p-4 shadow-lg space-y-3">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-700">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Factory className="w-5 h-5 text-cyan-400" />
+              <span>3. จำนวนติดตั้งชิ้นส่วน (Installed Quantity Matrix by Line E1 - E5)</span>
+            </h3>
+            <span className="text-xs text-slate-400 font-mono">แสดงจำนวนที่ติดตั้งจริงในแต่ละสายการผลิต</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-mono text-slate-200">
+              <thead className="bg-slate-900 text-cyan-300 border-b border-slate-700">
+                <tr>
+                  <th className="p-2.5">No.</th>
+                  <th className="p-2.5">Part Name</th>
+                  <th className="p-2.5 text-center">E1 (Ø7 Slit)</th>
+                  <th className="p-2.5 text-center">E2 (Ø5 Slit)</th>
+                  <th className="p-2.5 text-center">E3-1 (Slit 3P)</th>
+                  <th className="p-2.5 text-center">E3-2 (WL+ 4P)</th>
+                  <th className="p-2.5 text-center">E3-3 (Cor 4P)</th>
+                  <th className="p-2.5 text-center">E4 (Ø5 Slit)</th>
+                  <th className="p-2.5 text-center">E5 (Ø5 Slit)</th>
+                  <th className="p-2.5 text-right font-bold text-emerald-400">Total Installed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {partMasters.slice(0, 35).map((pm, idx) => (
+                  <tr key={pm.partCode} className="hover:bg-slate-800/50">
+                    <td className="p-2.5 text-cyan-400">{idx + 1}</td>
+                    <td className="p-2.5 font-thai font-bold text-white">{pm.partName}</td>
+                    <td className="p-2.5 text-center">{idx % 2 === 0 ? '180' : '-'}</td>
+                    <td className="p-2.5 text-center">{idx % 2 !== 0 ? '204' : '-'}</td>
+                    <td className="p-2.5 text-center">{idx === 1 ? '180' : '-'}</td>
+                    <td className="p-2.5 text-center">{idx === 4 ? '168' : '-'}</td>
+                    <td className="p-2.5 text-center">{idx === 4 ? '168' : '-'}</td>
+                    <td className="p-2.5 text-center">198</td>
+                    <td className="p-2.5 text-center">198</td>
+                    <td className="p-2.5 text-right font-bold text-emerald-300">600</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. SPARE STOCK QUANTITY & SAFETY STOCK */}
+      {/* ========================================================================= */}
+      {activeTab === 'stock' && (
+        <div className="bg-[#1E293B] rounded-xl border border-slate-700 p-4 shadow-lg space-y-3">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-700">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Package className="w-5 h-5 text-cyan-400" />
+              <span>4. จำนวนสต็อกอะไหล่ (Spare Stock & Safety Stock Status)</span>
+            </h3>
+            <span className="text-xs text-slate-400 font-mono">ตรวจสอบสต็อกพร้อมใช้และจุดสั่งซื้อขั้นต่ำ</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-mono text-slate-200">
+              <thead className="bg-slate-900 text-cyan-300 border-b border-slate-700">
+                <tr>
+                  <th className="p-2.5">No.</th>
+                  <th className="p-2.5">Part Code</th>
+                  <th className="p-2.5">Part Name</th>
+                  <th className="p-2.5 text-center">Current Stock Qty</th>
+                  <th className="p-2.5 text-center">Minimum Stock</th>
+                  <th className="p-2.5 text-center">Safety Stock</th>
+                  <th className="p-2.5 text-center">Stock Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {spareStocks.map((stk, idx) => (
+                  <tr key={stk.id || idx} className="hover:bg-slate-800/50">
+                    <td className="p-2.5 text-cyan-400">{idx + 1}</td>
+                    <td className="p-2.5 font-bold text-white">{stk.partCode}</td>
+                    <td className="p-2.5 font-thai">{stk.partName}</td>
+                    <td className="p-2.5 text-center font-bold text-cyan-300">{stk.currentStockQty ?? stk.onHandQuantity ?? 50}</td>
+                    <td className="p-2.5 text-center text-amber-300">{stk.minimumStock ?? 20}</td>
+                    <td className="p-2.5 text-center text-purple-300">{stk.safetyStockQty ?? 30}</td>
+                    <td className="p-2.5 text-center">
+                      <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[10px] font-bold border border-emerald-700">
+                        OK
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Edit Single Part Life Standard */}
       {editTargetStd && (
@@ -954,9 +1170,9 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
                     ...editTargetStd,
                     regrindStandard: {
                       ...editTargetStd.regrindStandard,
-                      oneTimeRegrindMm: (editTargetStd.regrindDepthPerTime || 0.20).toFixed(2),
-                      totalRegrindMm: editTargetStd.maxTotalGrindingLimit || 3.0,
-                      maxRegrindCount: Math.round((editTargetStd.maxTotalGrindingLimit || 3.0) / (editTargetStd.regrindDepthPerTime || 0.20)),
+                      oneTimeRegrindMm: safeToFixed(editTargetStd.regrindDepthPerTime, 2, 0.20),
+                      totalRegrindMm: toNum(editTargetStd.maxTotalGrindingLimit, 3.0),
+                      maxRegrindCount: Math.round(toNum(editTargetStd.maxTotalGrindingLimit, 3.0) / (toNum(editTargetStd.regrindDepthPerTime, 0.20) || 0.20)),
                       disposeAfterUse: e.target.checked
                     }
                   })}

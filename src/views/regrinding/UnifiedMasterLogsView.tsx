@@ -120,14 +120,28 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
 
       // 5. Status filter
       if (tableStatusFilter !== 'ALL') {
-        if (tableStatusFilter === 'COMPLETED' || tableStatusFilter === 'READY TO USE') {
-          if (rec.status !== 'READY TO USE' && rec.status !== 'COMPLETED' && rec.inspectionResult !== 'PASSED') return false;
+        const isUrgent = Boolean((rec.note && (rec.note.includes('ด่วน') || rec.note.toLowerCase().includes('urgent'))) || 
+                                 (rec.remarks && rec.remarks.includes('ด่วน')));
+        const isShifted = Boolean((rec.note && rec.note.includes('เลื่อน')) || 
+                                  (rec.remarks && rec.remarks.includes('เลื่อน')) || 
+                                  rec.status === 'HOLD');
+
+        if (tableStatusFilter === 'EMERGENCY') {
+          if (!isUrgent) return false;
+        } else if (tableStatusFilter === 'COMPLETED') {
+          if (rec.status !== 'COMPLETED') return false;
+        } else if (tableStatusFilter === 'READY TO USE') {
+          if (rec.status !== 'READY TO USE' && rec.status !== 'READY') return false;
+        } else if (tableStatusFilter === 'POSTPONED') {
+          if (!isShifted) return false;
         } else if (tableStatusFilter === 'WAITING REGRIND' || tableStatusFilter === 'ACTIVE') {
           if (rec.status !== 'WAITING REGRIND' && rec.status !== 'IN_PROCESS' && rec.status !== 'PENDING') return false;
         } else if (tableStatusFilter === 'AWAITING_INSPECTION') {
           if (rec.inspectionResult !== 'PENDING' && rec.inspectionStatus !== 'PENDING' && rec.status !== 'HOLD' && rec.status !== 'WAITING REGRIND') return false;
-        } else if (tableStatusFilter === 'URGENT_CRITICAL') {
-          if (rec.status !== 'MAXIMUM REGRIND' && rec.status !== 'SCRAP' && !rec.note?.toLowerCase().includes('urgent') && !rec.note?.includes('ด่วน')) return false;
+        } else if (tableStatusFilter === 'SCRAP') {
+          if (rec.status !== 'SCRAP' && rec.status !== 'SCRAPPED') return false;
+        } else if (tableStatusFilter === 'MAXIMUM REGRIND') {
+          if (rec.status !== 'MAXIMUM REGRIND') return false;
         } else if (rec.status !== tableStatusFilter) {
           return false;
         }
@@ -308,20 +322,21 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             ))}
           </select>
 
-          {/* Status Filter */}
+          {/* Status Filter (5 Core Operational States + Standards) */}
           <select
             value={tableStatusFilter}
             onChange={e => setTableStatusFilter(e.target.value)}
             className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:border-cyan-500 focus:outline-none font-bold cursor-pointer"
           >
-            <option value="ALL">ทุกสถานะ (All Status)</option>
-            <option value="WAITING REGRIND">🟡 WAITING REGRIND (กำลังทำ / รอเจียร)</option>
-            <option value="READY TO USE">🟢 READY TO USE (เจียรเสร็จ / ผ่าน QC)</option>
-            <option value="AWAITING_INSPECTION">🔵 AWAITING QC (รอตรวจวัด QC / HOLD)</option>
-            <option value="URGENT_CRITICAL">🔴 URGENT (งานด่วน / ครบลิมิต / คัดทิ้ง)</option>
-            <option value="MAXIMUM REGRIND">🟠 MAXIMUM REGRIND (ครบลิมิต)</option>
-            <option value="SCRAP">🔴 SCRAP (คัดทิ้ง)</option>
-            <option value="HOLD">⚪ HOLD (ระงับ)</option>
+            <option value="ALL">ทุกสถานะ (All Statuses)</option>
+            <option value="EMERGENCY">🚨 งานด่วน #1 (Urgent Job)</option>
+            <option value="READY TO USE">🔵 เจียรเสร็จแล้ว (READY TO USE)</option>
+            <option value="COMPLETED">🟢 งานเสร็จแล้ว (COMPLETED / CLOSED)</option>
+            <option value="POSTPONED">🟡 เลื่อน (POSTPONED / SHIFTED)</option>
+            <option value="SCRAP">❌ ยกเลิก / คัดทิ้ง (SCRAP)</option>
+            <option value="WAITING REGRIND">⏳ รอคิวเจียร (WAITING REGRIND)</option>
+            <option value="AWAITING_INSPECTION">🔍 รอตรวจวัด QC (AWAITING QC)</option>
+            <option value="MAXIMUM REGRIND">🟠 ครบลิมิตเจียร (MAX REGRIND)</option>
           </select>
 
           {/* Date Range Filter */}
@@ -391,7 +406,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                 <th className="p-2.5 text-right">เจียรออก (mm)</th>
                 <th className="p-2.5 text-right">หลังเจียร (mm)</th>
                 <th className="p-2.5 text-center">รอบที่ / สูงสุด</th>
-                <th className="p-2.5 text-center">ตรวจ QC</th>
+                <th className="p-2.5 text-right">จำนวน (Qty)</th>
                 <th className="p-2.5 text-center">จัดการ</th>
               </tr>
             </thead>
@@ -404,49 +419,74 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                 </tr>
               ) : (
                 filteredHistory.slice(0, tablePageSize).map((rec, idx) => (
-                  <tr key={rec.id || idx} className="hover:bg-white/[0.04] transition-colors">
+                  <tr key={rec.id ? `log-${rec.id}-${idx}` : `idx-${idx}`} className="hover:bg-white/[0.04] transition-colors">
                     <td className="p-2.5 text-center font-bold text-cyan-400/80">
                       {idx + 1}
                     </td>
 
-                    {/* Status Column */}
+                    {/* Status Column with 5 Core Distinct Identifiers */}
                     <td className="p-2.5 text-center">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono ${
-                          rec.status === 'READY TO USE' || rec.status === 'COMPLETED'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            : rec.status === 'MAXIMUM REGRIND'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                            : rec.status === 'SCRAP' || rec.status === 'SCRAPPED'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : rec.status === 'WAITING REGRIND'
-                            ? 'bg-amber-950 text-amber-300 border border-amber-500/40'
-                            : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                        }`}
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            rec.status === 'READY TO USE' || rec.status === 'COMPLETED'
-                              ? 'bg-emerald-400'
-                              : rec.status === 'SCRAP' || rec.status === 'SCRAPPED'
-                              ? 'bg-rose-400'
-                              : rec.status === 'MAXIMUM REGRIND'
-                              ? 'bg-orange-400'
-                              : 'bg-amber-400'
-                          }`}
-                        />
-                        <span>
-                          {rec.status === 'READY TO USE' || rec.status === 'COMPLETED'
-                            ? 'เจียรแล้ว (READY)'
-                            : rec.status === 'SCRAP' || rec.status === 'SCRAPPED'
-                            ? 'ตัดทิ้ง (SCRAP)'
-                            : rec.status === 'MAXIMUM REGRIND'
-                            ? 'ครบลิมิต (MAX)'
-                            : rec.status === 'WAITING REGRIND'
-                            ? 'รอเจียร (WAITING)'
-                            : rec.status}
-                        </span>
-                      </span>
+                      {(() => {
+                        const isUrgent = Boolean((rec.note && (rec.note.includes('ด่วน') || rec.note.toLowerCase().includes('urgent'))) || 
+                                                 (rec.remarks && rec.remarks.includes('ด่วน')));
+                        const isShifted = Boolean((rec.note && rec.note.includes('เลื่อน')) || 
+                                                  (rec.remarks && rec.remarks.includes('เลื่อน')));
+
+                        if (isUrgent) {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-rose-600 text-white border border-rose-400 shadow-sm animate-pulse">
+                              <span>🚨</span>
+                              <span>ด่วน #1</span>
+                            </span>
+                          );
+                        }
+                        if (rec.status === 'COMPLETED') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              <span>งานเสร็จแล้ว (COMPLETED)</span>
+                            </span>
+                          );
+                        }
+                        if (rec.status === 'READY TO USE' || rec.status === 'READY') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-sky-500/20 text-sky-300 border border-sky-400/40">
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                              <span>เจียรเสร็จ (READY)</span>
+                            </span>
+                          );
+                        }
+                        if (isShifted || rec.status === 'HOLD') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              <span>เลื่อน (SHIFTED)</span>
+                            </span>
+                          );
+                        }
+                        if (rec.status === 'SCRAP' || rec.status === 'SCRAPPED') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-600/40">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                              <span>ยกเลิก/คัดทิ้ง (SCRAP)</span>
+                            </span>
+                          );
+                        }
+                        if (rec.status === 'MAXIMUM REGRIND') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-orange-500/20 text-orange-300 border border-orange-500/40">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                              <span>ครบลิมิต (MAX)</span>
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-800 text-slate-300 border border-slate-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                            <span>{rec.status === 'WAITING REGRIND' ? 'รอเจียร (WAITING)' : rec.status}</span>
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     <td className="p-2.5">
@@ -506,20 +546,8 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                       <span className="text-slate-500 text-[10px]"> / {rec.maxAllowedCycles || 4}</span>
                     </td>
 
-                    <td className="p-2.5 text-center">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          rec.inspectionResult === 'PASSED' || rec.inspectionResult === 'PASS'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : rec.inspectionResult === 'CONDITIONAL'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            : rec.inspectionResult === 'FAILED' || rec.inspectionResult === 'FAIL'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}
-                      >
-                        {rec.inspectionResult || rec.inspectionStatus || 'PASS'}
-                      </span>
+                    <td className="p-2.5 text-right text-xs font-bold text-slate-200">
+                      1
                     </td>
 
                     <td className="p-2.5 text-center">

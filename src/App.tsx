@@ -5,22 +5,20 @@ import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
-// Direct View Imports for instant synchronous rendering
-import { TvDashboardView } from './components/tv/TvDashboardView';
-import { ReplacementEntryView } from './views/ReplacementEntryView';
-import { UnifiedToolingMasterView } from './views/UnifiedToolingMasterView';
-import { LoginView } from './views/LoginView';
-import { RegrindPartControlView } from './views/RegrindPartControlView';
+// In-Scope Core Views for Fin Die Regrinding & Cost Saving Management
+import { CostSavingManagementView } from './views/CostSavingManagementView';
 import { SmartQueueAndCalendarScheduleView } from './views/regrinding/SmartQueueAndCalendarScheduleView';
+import { RegrindingEntryView } from './views/RegrindingEntryView';
 import { UnifiedMasterLogsView } from './views/regrinding/UnifiedMasterLogsView';
+import { ToolingMasterSpecsView } from './views/regrinding/ToolingMasterSpecsView';
+import { LoginView } from './views/LoginView';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User>(storageService.getCurrentUser());
-  const [activeRoute, setActiveRoute] = useState<string>('tv-monitoring');
+  const [activeRoute, setActiveRoute] = useState<string>('cost-saving-management');
   const [targetLineId, setTargetLineId] = useState<ProductionLineId>('E1');
   const [targetLogStatusFilter, setTargetLogStatusFilter] = useState<string>('ALL');
   const [settings, setSettings] = useState<SystemSettings>(storageService.getSettings());
-  const [isTvFullscreen, setIsTvFullscreen] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   useEffect(() => {
@@ -32,17 +30,6 @@ export default function App() {
       unsub();
     };
   }, []);
-
-  // Sync with browser native fullscreen exit (e.g. Esc key)
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      if (!document.fullscreenElement && isTvFullscreen) {
-        setIsTvFullscreen(false);
-      }
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [isTvFullscreen]);
 
   const handleNavigate = (route: string, lineId?: ProductionLineId, logStatusFilter?: string) => {
     setActiveRoute(route);
@@ -56,46 +43,29 @@ export default function App() {
     }
   };
 
-  const handleToggleFullscreen = () => {
-    const nextState = !isTvFullscreen;
-    setIsTvFullscreen(nextState);
-    if (nextState) {
-      try {
-        if (document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen().catch(() => {});
-        }
-      } catch (_) {}
-    } else {
-      try {
-        if (document.fullscreenElement && document.exitFullscreen) {
-          document.exitFullscreen().catch(() => {});
-        }
-      } catch (_) {}
-    }
-  };
-
   const renderActiveView = () => {
     switch (activeRoute) {
-      case 'tv-monitoring':
+      case 'cost-saving-management':
+      case 'cost-saving':
+      case 'cost-dashboard':
+      case 'cost-reports':
+      case 'dashboard':
       case 'reports':
-        return (
-          <TvDashboardView
-            initialLineId={targetLineId}
-            isFullscreenMode={isTvFullscreen}
-            onToggleFullscreen={handleToggleFullscreen}
-            onNavigate={handleNavigate}
-          />
-        );
+        return <CostSavingManagementView onNavigate={handleNavigate} />;
+
       case 'smart-queue-schedule':
-      case 'regrind-entry':
+      case 'regrind-queue':
       case 'regrinding-control':
-      case 'regrind-part-control':
-      case 'regrinding-management':
         return <SmartQueueAndCalendarScheduleView onNavigate={handleNavigate} />;
-      case 'regrind-calendar-matrix':
-        return <RegrindPartControlView initialLineId={targetLineId} onNavigate={handleNavigate} />;
+
+      case 'regrind-entry':
+      case 'regrind-record':
+      case 'quality-inspection':
+        return <RegrindingEntryView />;
+
       case 'unified-logs-view':
       case 'regrind-logs':
+      case 'repair-history':
       case 'audit-trail':
         return (
           <UnifiedMasterLogsView 
@@ -104,53 +74,25 @@ export default function App() {
             onNavigate={handleNavigate} 
           />
         );
-      case 'replacement-entry':
-      case 'lock-position':
-      case 'die-layout':
-        return <ReplacementEntryView initialLineId={targetLineId} />;
-      case 'unified-tooling-setup':
-      case 'part-master':
-      case 'install-quantity-setup':
-      case 'spare-stock':
-        return <UnifiedToolingMasterView initialTab="specs" />;
-      case 'life-standard-setup':
-        return <UnifiedToolingMasterView initialTab="regrind-standards" />;
-      case 'line-configuration':
-        return <UnifiedToolingMasterView initialTab="specs" />;
+
+      case 'tooling-specs':
+      case 'regrind-standards':
+        return <ToolingMasterSpecsView />;
+
       case 'login':
         return (
           <LoginView
             onLoginSuccess={(u) => {
               setCurrentUser(u);
-              setActiveRoute('tv-monitoring');
+              setActiveRoute('cost-saving-management');
             }}
           />
         );
+
       default:
-        return (
-          <TvDashboardView
-            initialLineId={targetLineId}
-            isFullscreenMode={isTvFullscreen}
-            onToggleFullscreen={handleToggleFullscreen}
-          />
-        );
+        return <CostSavingManagementView onNavigate={handleNavigate} />;
     }
   };
-
-  if (isTvFullscreen && activeRoute === 'tv-monitoring') {
-    return (
-      <div className="fixed inset-0 z-50 overflow-hidden flex flex-col h-screen w-screen max-h-screen max-w-screen p-0 m-0 theme-dark bg-[#000000] text-slate-100 font-sans">
-        <ErrorBoundary>
-          <TvDashboardView
-            initialLineId={targetLineId}
-            isFullscreenMode={true}
-            onToggleFullscreen={handleToggleFullscreen}
-            onNavigate={handleNavigate}
-          />
-        </ErrorBoundary>
-      </div>
-    );
-  }
 
   return (
     <div className="h-screen max-h-screen overflow-hidden flex flex-col ios-spring theme-dark liquid-backdrop text-slate-100 font-sans selection:bg-cyan-500 selection:text-slate-950">

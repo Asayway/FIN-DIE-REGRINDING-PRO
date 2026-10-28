@@ -593,7 +593,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {dayExistingTickets.map((t, idx) => (
                       <button
-                        key={t.id}
+                        key={`${t.id}-${idx}`}
                         type="button"
                         onClick={() => onSelectExistingTicket?.(t)}
                         className="px-2 py-0.5 bg-slate-900 border border-white/15 text-slate-200 hover:border-cyan-400 text-xs font-mono font-bold cursor-pointer transition-colors rounded-md"

@@ -115,9 +115,9 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             จำลองการสแกนทูลลิ่งในคิว (Quick Test Barcodes):
           </span>
           <div className="flex flex-wrap gap-1.5">
-            {tickets.slice(0, 3).map(t => (
+            {tickets.slice(0, 3).map((t, idx) => (
               <button
-                key={t.id}
+                key={`${t.id}-${idx}`}
                 type="button"
                 onClick={() => handleSimulateScan(t.qrCode)}
                 className="text-[10px] font-mono px-2 py-1 rounded bg-slate-100 hover:bg-cyan-100 dark:bg-slate-800 dark:hover:bg-cyan-950/60 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-cyan-400 transition-all"

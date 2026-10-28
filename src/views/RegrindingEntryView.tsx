@@ -952,8 +952,8 @@ export const RegrindingEntryView: React.FC = () => {
                 {historyRecords.filter(r => r.partCode === selectedPartCode).length === 0 ? (
                   <p className="text-xs text-slate-500 italic py-2">No previous regrind history found for this part.</p>
                 ) : (
-                  historyRecords.filter(r => r.partCode === selectedPartCode).map(h => (
-                    <div key={h.id} className="p-2.5 bg-slate-950 border border-slate-800 rounded text-xs space-y-1">
+                  historyRecords.filter(r => r.partCode === selectedPartCode).map((h, idx) => (
+                    <div key={`${h.id}-${idx}`} className="p-2.5 bg-slate-950 border border-slate-800 rounded text-xs space-y-1">
                       <div className="flex justify-between items-center font-mono">
                         <span className="text-indigo-300 font-bold">{h.jobCode}</span>
                         <span className="text-slate-400">{h.regrindDate || h.createdDateTime?.substring(0, 10)}</span>
@@ -1152,7 +1152,7 @@ export const RegrindingEntryView: React.FC = () => {
                   </tr>
                 ) : (
                   filteredHistory.slice(0, 10).map((rec, idx) => (
-                    <tr key={rec.id} className="hover:bg-slate-800/40 transition-colors">
+                    <tr key={`${rec.id}-${idx}`} className="hover:bg-slate-800/40 transition-colors">
                       <td className="p-3 text-center font-mono font-bold text-cyan-400/80">
                         {idx + 1}
                       </td>

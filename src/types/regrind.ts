@@ -1,6 +1,14 @@
 import { ProductionLineId, UserRole } from './index';
 
-export type RegrindQueueStatus = 'PENDING' | 'IN_PROCESS' | 'PAUSED' | 'READY' | 'SCRAP';
+export type RegrindQueueStatus = 
+  | 'PENDING' 
+  | 'IN_PROCESS' 
+  | 'PAUSED' 
+  | 'READY' 
+  | 'SCRAP' 
+  | 'COMPLETED' 
+  | 'POSTPONED' 
+  | 'CANCELLED';
 
 export type DefectReasonCode = 
   | 'NORMAL_WEAR'

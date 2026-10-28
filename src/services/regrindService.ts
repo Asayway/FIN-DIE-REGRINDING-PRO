@@ -140,14 +140,24 @@ class RegrindService {
 
   // --- Queue Tickets & Sequencing Model ---
   private normalizeTickets(tickets: RegrindWorkTicket[]): RegrindWorkTicket[] {
+    const seenIds = new Set<string>();
+    const deduplicatedTickets = (tickets || []).map((t, idx) => {
+      if (!t.id || seenIds.has(t.id)) {
+        const uniqueId = t.id ? `${t.id}-dup-${idx + 1}` : `RGD-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}-${idx + 1}`;
+        return { ...t, id: uniqueId };
+      }
+      seenIds.add(t.id);
+      return t;
+    });
+
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
     const todayDay = now.getDate();
 
     // Separate active vs completed/scrapped
-    const active = tickets.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED');
-    const inactive = tickets.filter(t => t.status === 'READY' || t.status === 'SCRAP');
+    const active = deduplicatedTickets.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED');
+    const inactive = deduplicatedTickets.filter(t => t.status === 'READY' || t.status === 'SCRAP' || t.status === 'COMPLETED' || t.status === 'CANCELLED');
 
     // Sort active: Emergency first, then by existing queueOrder (or index fallback)
     active.sort((a, b) => {
@@ -697,6 +707,174 @@ class RegrindService {
     };
   }
 
+  // 3.1 Quick Status: Mark Job Completed with QC PASS User Confirmation (ยืนยันจบงาน)
+  public confirmJobCompletionWithQcPass(ticketId: string, technicianName?: string, verifierName?: string): { success: boolean; message: string } {
+    try {
+      const tickets = this.getQueueTickets();
+      const idx = tickets.findIndex(t => t.id === ticketId);
+      if (idx === -1) return { success: false, message: 'ไม่พบใบงานในระบบ' };
+
+      const ticket = tickets[idx];
+      if (ticket.status === 'COMPLETED') {
+        return { success: false, message: 'ใบงานนี้ได้รับการปิดงานและบันทึกผล QC PASS เรียบร้อยแล้ว' };
+      }
+
+      if (!ticket.jobCode || !ticket.partName) {
+        return { success: false, message: 'ข้อมูลสำคัญไม่ครบถ้วน (Job ID หรือ Part No. หายไป)' };
+      }
+
+      const nowIso = new Date().toISOString();
+      ticket.status = 'COMPLETED';
+      ticket.completedDate = nowIso;
+      ticket.updatedAt = nowIso;
+      (ticket as any).qcStatus = 'APPROVED';
+      (ticket as any).qcVerdict = 'PASS';
+      (ticket as any).qcSource = 'User Confirmation';
+      if (technicianName) ticket.assignedTechnician = technicianName;
+      ticket.verifiedBy = verifierName || ticket.verifiedBy || 'QC Inspector (User Confirmation)';
+      ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}ยืนยันจบงานสำเร็จ (COMPLETED / QC PASS)`;
+
+      this.saveQueueTickets(tickets);
+
+      if (!ticket.addedToSpareStock) {
+        ticket.addedToSpareStock = true;
+        this.adjustSpareStockInWarehouse(ticket.partCode, 1);
+      }
+
+      storageService.addAuditLog(
+        'REGRIND',
+        `Job Completion Confirmed (QC PASS): Ticket ${ticket.jobCode} (${ticket.partName}) marked COMPLETED with QC PASS (Source: User Confirmation).`,
+        `ยืนยันจบงาน (QC PASS): ใบงาน ${ticket.jobCode} (${ticket.partName}) ปิดงานสำเร็จพร้อมบันทึกผล QC PASS โดยผู้ใช้งาน`,
+        ticket.lineId
+      );
+
+      this.notify();
+
+      return {
+        success: true,
+        message: `✅ ยืนยันจบงานสำเร็จ: ${ticket.jobCode} (${ticket.partName}) สถานะ: COMPLETED / QC PASS เรียบร้อยแล้ว`
+      };
+    } catch (err) {
+      console.error('confirmJobCompletionWithQcPass error:', err);
+      return { success: false, message: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง' };
+    }
+  }
+
+  // Support Reopen / Correct Record
+  public reopenTicket(ticketId: string, reason: string = 'แก้ไขข้อมูลย้อนหลัง'): { success: boolean; message: string } {
+    try {
+      const tickets = this.getQueueTickets();
+      const idx = tickets.findIndex(t => t.id === ticketId);
+      if (idx === -1) return { success: false, message: 'ไม่พบใบงานในระบบ' };
+
+      const ticket = tickets[idx];
+      ticket.status = 'IN_PROCESS';
+      ticket.updatedAt = new Date().toISOString();
+      ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เปิดงานซ่อมใหม่ (Reopened: ${reason})`;
+
+      this.saveQueueTickets(tickets);
+
+      storageService.addAuditLog(
+        'REGRIND',
+        `Ticket Reopened: ${ticket.jobCode} (${ticket.partName}) reopened. Reason: ${reason}`,
+        `เปิดงานซ่อมใหม่: ใบงาน ${ticket.jobCode} (${ticket.partName}) ถูกเปิดใช้งานอีกครั้ง (เหตุผล: ${reason})`,
+        ticket.lineId
+      );
+
+      this.notify();
+
+      return {
+        success: true,
+        message: `🔄 เปิดงานซ่อม ${ticket.jobCode} กลับมาสถานะกำลังดำเนินการ (In-Process) เรียบร้อยแล้ว`
+      };
+    } catch (err) {
+      console.error('reopenTicket error:', err);
+      return { success: false, message: 'เกิดข้อผิดพลาดในการเปิดงานซ่อมใหม่' };
+    }
+  }
+
+  // 3.2 Quick Status: Mark Grinding Done (เจียรเสร็จแล้ว - Ready to use / Ready in stock)
+  public markTicketAsReady(ticketId: string, technicianName?: string): { success: boolean; message: string } {
+    const tickets = this.getQueueTickets();
+    const idx = tickets.findIndex(t => t.id === ticketId);
+    if (idx === -1) return { success: false, message: 'Ticket not found' };
+
+    const ticket = tickets[idx];
+    ticket.status = 'READY';
+    ticket.updatedAt = new Date().toISOString();
+    if (!ticket.completedDate) ticket.completedDate = new Date().toISOString();
+    if (technicianName) ticket.assignedTechnician = technicianName;
+    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เจียรเสร็จแล้ว พร้อมใช้งาน`;
+
+    this.saveQueueTickets(tickets);
+
+    storageService.addAuditLog(
+      'REGRIND',
+      `Grinding Ready: Ticket ${ticket.jobCode} (${ticket.partName}) grinding completed (READY).`,
+      `เจียรเสร็จแล้ว: ใบงาน ${ticket.jobCode} (${ticket.partName}) ลับคมเสร็จพร้อมใช้งาน (READY)`,
+      ticket.lineId
+    );
+
+    return {
+      success: true,
+      message: `🛠️ บันทึกสถานะ "เจียรเสร็จแล้ว" สำหรับ ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
+    };
+  }
+
+  // 3.3 Quick Status: Mark Postponed (เลื่อนคิว / เลื่อนวัน)
+  public markTicketAsPostponed(ticketId: string, newDateStr?: string, reason?: string): { success: boolean; message: string } {
+    const tickets = this.getQueueTickets();
+    const idx = tickets.findIndex(t => t.id === ticketId);
+    if (idx === -1) return { success: false, message: 'Ticket not found' };
+
+    const ticket = tickets[idx];
+    ticket.status = 'POSTPONED';
+    ticket.shiftedCount = (ticket.shiftedCount || 0) + 1;
+    if (newDateStr) ticket.scheduledDate = newDateStr;
+    ticket.updatedAt = new Date().toISOString();
+    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เลื่อนกำหนดการ${newDateStr ? ` เป็น ${newDateStr}` : ''}${reason ? ` (${reason})` : ''}`;
+
+    this.saveQueueTickets(tickets);
+
+    storageService.addAuditLog(
+      'REGRIND',
+      `Ticket Postponed: ${ticket.jobCode} (${ticket.partName}) shifted/postponed${newDateStr ? ` to ${newDateStr}` : ''}.`,
+      `เลื่อนคิวงาน: ใบงาน ${ticket.jobCode} (${ticket.partName}) ถูกเลื่อนกำหนดการ${newDateStr ? ` เป็น ${newDateStr}` : ''}`,
+      ticket.lineId
+    );
+
+    return {
+      success: true,
+      message: `🟡 เลื่อนคิวงาน ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
+    };
+  }
+
+  // 3.4 Quick Status: Mark Cancelled (ยกเลิกงาน)
+  public markTicketAsCancelled(ticketId: string, reason?: string): { success: boolean; message: string } {
+    const tickets = this.getQueueTickets();
+    const idx = tickets.findIndex(t => t.id === ticketId);
+    if (idx === -1) return { success: false, message: 'Ticket not found' };
+
+    const ticket = tickets[idx];
+    ticket.status = 'CANCELLED';
+    ticket.updatedAt = new Date().toISOString();
+    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}ยกเลิกงาน${reason ? ` (${reason})` : ''}`;
+
+    this.saveQueueTickets(tickets);
+
+    storageService.addAuditLog(
+      'REGRIND',
+      `Ticket Cancelled: ${ticket.jobCode} (${ticket.partName}) cancelled. Reason: ${reason || 'User cancelled'}.`,
+      `ยกเลิกงาน: ใบงาน ${ticket.jobCode} (${ticket.partName}) ถูกยกเลิก`,
+      ticket.lineId
+    );
+
+    return {
+      success: true,
+      message: `🚫 ยกเลิกใบงาน ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
+    };
+  }
+
   // 4. Direct Scrap Action
   public scrapItem(
     ticketId: string,
@@ -763,8 +941,21 @@ class RegrindService {
     const tickets = this.getQueueTickets();
     const master = this.findMasterByPartName(params.partName) || this.findMasterByPartName(params.partCode);
 
-    const newId = `RGD-${new Date().getFullYear()}-${String(tickets.length + 1).padStart(4, '0')}`;
-    const jobCode = `JOB-RGD-${new Date().getFullYear()}-${String(tickets.length + 1).padStart(3, '0')}`;
+    const year = new Date().getFullYear();
+    let maxNum = 0;
+    tickets.forEach(t => {
+      const match = t.id?.match(/RGD-\d{4}-(\d+)/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    const nextNum = Math.max(tickets.length + 1, maxNum + 1);
+    let newId = `RGD-${year}-${String(nextNum).padStart(4, '0')}`;
+    if (tickets.some(t => t.id === newId)) {
+      newId = `RGD-${year}-${String(nextNum).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
+    }
+    const jobCode = `JOB-RGD-${year}-${String(nextNum).padStart(3, '0')}`;
     const qrCode = `QR-${params.lineId}-${params.positionId || 'P'}-${Date.now().toString().slice(-4)}`;
 
     const nominal = master?.nominalLengthMm || 70.00;
@@ -825,8 +1016,21 @@ class RegrindService {
     const tickets = this.getQueueTickets();
     const master = this.findMasterByPartName(data.partName || '') || this.findMasterByPartName(data.partCode || '');
 
-    const newId = `RGD-${new Date().getFullYear()}-${String(tickets.length + 1).padStart(4, '0')}`;
-    const jobCode = `JOB-RGD-${new Date().getFullYear()}-${String(tickets.length + 1).padStart(3, '0')}`;
+    const year = new Date().getFullYear();
+    let maxNum = 0;
+    tickets.forEach(t => {
+      const match = t.id?.match(/RGD-\d{4}-(\d+)/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    const nextNum = Math.max(tickets.length + 1, maxNum + 1);
+    let newId = `RGD-${year}-${String(nextNum).padStart(4, '0')}`;
+    if (tickets.some(t => t.id === newId)) {
+      newId = `RGD-${year}-${String(nextNum).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
+    }
+    const jobCode = `JOB-RGD-${year}-${String(nextNum).padStart(3, '0')}`;
     const qrCode = data.qrCode || `QR-${data.lineId || 'E1'}-${Date.now().toString().slice(-4)}`;
 
     const nominal = master?.nominalLengthMm || data.nominalLengthMm || 70.00;

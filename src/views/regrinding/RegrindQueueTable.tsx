@@ -98,9 +98,12 @@ export const RegrindQueueTable: React.FC<RegrindQueueTableProps> = ({
         IN_PROCESS: 2,
         PAUSED: 3,
         READY: 4,
-        SCRAP: 5
+        COMPLETED: 5,
+        POSTPONED: 6,
+        CANCELLED: 7,
+        SCRAP: 8
       };
-      return statusOrder[a.status] - statusOrder[b.status];
+      return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
     });
   }, [tickets, activeStatusFilter, lineFilter, searchQuery, selectedGlobalPart]);
 
@@ -255,7 +258,7 @@ export const RegrindQueueTable: React.FC<RegrindQueueTableProps> = ({
                 </td>
               </tr>
             ) : (
-              filteredTickets.map(ticket => {
+              filteredTickets.map((ticket, idx) => {
                 const minLimit = ticket.minAllowedLengthMm || 65.00;
                 const currentLen = ticket.lengthAfterGrindMm || ticket.previousLengthMm || ticket.nominalLengthMm;
                 const lifeProgressPct = Math.min(
@@ -266,7 +269,7 @@ export const RegrindQueueTable: React.FC<RegrindQueueTableProps> = ({
 
                 return (
                   <tr
-                    key={ticket.id}
+                    key={`${ticket.id}-${idx}`}
                     className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group"
                   >
                     {/* Part & Line Position */}

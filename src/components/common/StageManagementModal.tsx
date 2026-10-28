@@ -399,7 +399,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                     filteredParts.map((part, idx) => {
                       const currentStg = deriveLogicalStage(part.partName, part.stageName, stageGroups);
                       return (
-                        <tr key={part.partCode || idx} className="hover:bg-[#162234] transition-colors">
+                        <tr key={part.partCode ? `part-${part.partCode}` : `idx-${idx}`} className="hover:bg-[#162234] transition-colors">
                           <td className="p-3 text-center text-slate-400 font-bold">{idx + 1}</td>
                           <td className="p-3 font-bold text-white text-sm">{part.partName}</td>
                           <td className="p-3">

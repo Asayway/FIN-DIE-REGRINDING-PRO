@@ -34,7 +34,8 @@ import {
   DowntimeLogEntry,
   DowntimeCategory,
   DowntimeSummaryByLine,
-  Downtime30DayReport
+  Downtime30DayReport,
+  PartWorkpiecePhoto
 } from '../types';
 
 import {
@@ -62,6 +63,13 @@ import {
 } from '../data/seedData';
 
 import { calculatePartMetrics, getPartProgressiveRank } from './calculationService';
+
+export function parseSafeNumber(val: any): number | undefined {
+  if (val === null || val === undefined || val === '') return undefined;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : undefined;
+  const parsed = parseFloat(String(val));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 import { safeStorage } from './safeStorage';
 
 const STORAGE_KEYS = {
@@ -91,6 +99,7 @@ const STORAGE_KEYS = {
   ACTIVE_E3_FIN_DIE: 'fin_press_active_e3_fin_die',
   STAGE_GROUPS: 'fin_press_custom_stage_groups',
   TV_DISPLAY_CONFIGS: 'fin_press_tv_display_configs',
+  PART_WORKPIECE_PHOTOS: 'fin_press_part_workpiece_photos_v1',
   SEED_INITIALIZED: 'fin_press_seed_init_v12_stages_2025'
 };
 
@@ -884,15 +893,36 @@ class StorageService {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.filter(Boolean).map(std => ({
-          ...std,
-          regrindStandard: std.regrindStandard || {
-            oneTimeRegrindMm: '0.20',
-            totalRegrindMm: 3.0,
-            maxRegrindCount: 7,
-            disposeAfterUse: false
-          }
-        }));
+        return parsed.filter(Boolean).map(std => {
+          const depth = parseSafeNumber(std.regrindDepthPerTime) ?? parseSafeNumber(std.regrindStandard?.regrindDepthPerTime) ?? parseSafeNumber(std.regrindStandard?.oneTimeRegrindMm) ?? 0.20;
+          const maxGrind = parseSafeNumber(std.maxTotalGrindingLimit) ?? parseSafeNumber(std.regrindStandard?.maxTotalGrindingLimit) ?? parseSafeNumber(std.regrindStandard?.totalRegrindMm) ?? 3.00;
+          const shim = parseSafeNumber(std.standardShimThickness) ?? parseSafeNumber(std.regrindStandard?.standardShimThickness) ?? 0.20;
+          const shots = parseSafeNumber(std.lifeLimitShots) ?? 1500000;
+
+          const hasInvalidNumeric = (
+            (std.regrindDepthPerTime !== undefined && parseSafeNumber(std.regrindDepthPerTime) === undefined) ||
+            (std.maxTotalGrindingLimit !== undefined && parseSafeNumber(std.maxTotalGrindingLimit) === undefined)
+          );
+
+          return {
+            ...std,
+            lifeLimitShots: shots,
+            regrindDepthPerTime: depth,
+            maxTotalGrindingLimit: maxGrind,
+            standardShimThickness: shim,
+            isDataMalformed: hasInvalidNumeric,
+            regrindStandard: {
+              oneTimeRegrindMm: depth.toFixed(2),
+              totalRegrindMm: maxGrind,
+              maxTotalGrindingLimit: maxGrind,
+              regrindDepthPerTime: depth,
+              standardShimThickness: shim,
+              maxRegrindCount: std.regrindStandard?.maxRegrindCount || Math.round(maxGrind / (depth || 0.20)),
+              disposeAfterUse: !!(std.regrindStandard?.disposeAfterUse),
+              regrindIntervalNote: std.regrindStandard?.regrindIntervalNote || std.notes || ''
+            }
+          };
+        });
       }
       return INITIAL_PART_LIFE_STANDARDS;
     } catch {
@@ -1068,7 +1098,16 @@ class StorageService {
       const raw = safeStorage.getItem(STORAGE_KEYS.REGRINDS);
       if (!raw) return INITIAL_REGRIND_RECORDS;
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : INITIAL_REGRIND_RECORDS;
+      if (!Array.isArray(parsed)) return INITIAL_REGRIND_RECORDS;
+      const seenIds = new Set<string>();
+      return parsed.map((r, idx) => {
+        if (!r.id || seenIds.has(r.id)) {
+          const uniqueId = r.id ? `${r.id}-dup-${idx + 1}` : `RGD-REC-${Date.now()}-${idx + 1}`;
+          return { ...r, id: uniqueId };
+        }
+        seenIds.add(r.id);
+        return r;
+      });
     } catch {
       return INITIAL_REGRIND_RECORDS;
     }
@@ -1079,7 +1118,15 @@ class StorageService {
     if (!raw) return INITIAL_REGRIND_MASTER_STANDARDS;
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_REGRIND_MASTER_STANDARDS;
+      if (!Array.isArray(parsed) || parsed.length === 0) return INITIAL_REGRIND_MASTER_STANDARDS;
+      return parsed.map(std => ({
+        ...std,
+        nominalLengthMm: parseSafeNumber(std.nominalLengthMm) ?? 70.0,
+        minAllowedLengthMm: parseSafeNumber(std.minAllowedLengthMm) ?? 65.0,
+        grindingAmountPerTimeMm: parseSafeNumber(std.grindingAmountPerTimeMm) ?? 0.25,
+        totalGrindingAllowanceMm: parseSafeNumber(std.totalGrindingAllowanceMm) ?? 3.0,
+        maxRegrindCount: parseSafeNumber(std.maxRegrindCount) ?? 4
+      }));
     } catch {
       return INITIAL_REGRIND_MASTER_STANDARDS;
     }
@@ -2592,7 +2639,19 @@ class StorageService {
     }
 
     const regrinds = this.getRegrindRecords();
-    const newId = `RGD-${new Date().getFullYear()}-${String(regrinds.length + 1).padStart(4, '0')}`;
+    let maxNum = 0;
+    regrinds.forEach(r => {
+      const match = r.id?.match(/RGD-\d{4}-(\d+)/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    const nextNum = Math.max(regrinds.length + 1, maxNum + 1);
+    let newId = `RGD-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}`;
+    if (regrinds.some(r => r.id === newId)) {
+      newId = `RGD-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
+    }
     const prevLength = record.previousLength !== undefined ? Number(record.previousLength) : (std ? std.nominalLengthMm : 50.0);
     const mmRemoved = record.actualGrindingRemovedMm !== undefined ? Number(record.actualGrindingRemovedMm) : (std ? std.grindingAmountPerTimeMm : 0.25);
     const curLength = record.currentLength !== undefined ? Number(record.currentLength) : Math.max(0, prevLength - mmRemoved);
@@ -4296,6 +4355,160 @@ class StorageService {
   public saveTvDisplayConfigs(configs: Record<ProductionLineId, string[]>): void {
     safeStorage.setItem(STORAGE_KEYS.TV_DISPLAY_CONFIGS, JSON.stringify(configs));
     this.notify();
+  }
+
+  // ==========================================
+  // REAL WORKPIECE / TOOLING PHOTOS MANAGEMENT
+  // ==========================================
+  public getAllPartWorkpiecePhotos(): Record<string, PartWorkpiecePhoto[]> {
+    const raw = safeStorage.getItem(STORAGE_KEYS.PART_WORKPIECE_PHOTOS);
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+
+  public getPartWorkpiecePhotos(partKey: string): PartWorkpiecePhoto[] {
+    if (!partKey) return [];
+    const all = this.getAllPartWorkpiecePhotos();
+    const cleanKey = partKey.trim().toUpperCase();
+    
+    // Direct match or partial match
+    let photos = all[cleanKey] || [];
+    if (photos.length === 0) {
+      // Look for matched keys without hyphens or case variations
+      const foundEntry = Object.entries(all).find(([k]) => 
+        k.toUpperCase() === cleanKey || 
+        cleanKey.includes(k.toUpperCase()) || 
+        k.toUpperCase().includes(cleanKey)
+      );
+      if (foundEntry) {
+        photos = foundEntry[1] || [];
+      }
+    }
+    return photos;
+  }
+
+  public savePartWorkpiecePhoto(
+    partKey: string, 
+    photoData: Omit<PartWorkpiecePhoto, 'id' | 'partKey' | 'uploadedAt'>
+  ): PartWorkpiecePhoto {
+    const all = this.getAllPartWorkpiecePhotos();
+    const cleanKey = partKey.trim().toUpperCase();
+    const list = all[cleanKey] || [];
+    
+    const newId = `PHOTO-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const isFirst = list.length === 0;
+    
+    const newPhoto: PartWorkpiecePhoto = {
+      ...photoData,
+      id: newId,
+      partKey: cleanKey,
+      uploadedAt: new Date().toISOString(),
+      isPrimary: photoData.isPrimary ?? isFirst
+    };
+
+    // If marked primary, unset other primaries
+    let updatedList = list;
+    if (newPhoto.isPrimary) {
+      updatedList = updatedList.map(p => ({ ...p, isPrimary: false }));
+    }
+    
+    updatedList = [newPhoto, ...updatedList];
+    all[cleanKey] = updatedList;
+    
+    safeStorage.setItem(STORAGE_KEYS.PART_WORKPIECE_PHOTOS, JSON.stringify(all));
+    this.notify();
+    return newPhoto;
+  }
+
+  public updatePartWorkpiecePhoto(photoId: string, updates: Partial<PartWorkpiecePhoto>): boolean {
+    const all = this.getAllPartWorkpiecePhotos();
+    let updated = false;
+
+    Object.keys(all).forEach(k => {
+      const idx = all[k].findIndex(p => p.id === photoId);
+      if (idx !== -1) {
+        all[k][idx] = { ...all[k][idx], ...updates };
+        updated = true;
+      }
+    });
+
+    if (updated) {
+      safeStorage.setItem(STORAGE_KEYS.PART_WORKPIECE_PHOTOS, JSON.stringify(all));
+      this.notify();
+    }
+    return updated;
+  }
+
+  public deletePartWorkpiecePhoto(photoId: string): boolean {
+    const all = this.getAllPartWorkpiecePhotos();
+    let deleted = false;
+
+    Object.keys(all).forEach(k => {
+      const before = all[k].length;
+      all[k] = all[k].filter(p => p.id !== photoId);
+      if (all[k].length < before) {
+        deleted = true;
+        // If deleted photo was primary, make the first one primary
+        if (all[k].length > 0 && !all[k].some(p => p.isPrimary)) {
+          all[k][0].isPrimary = true;
+        }
+      }
+    });
+
+    if (deleted) {
+      safeStorage.setItem(STORAGE_KEYS.PART_WORKPIECE_PHOTOS, JSON.stringify(all));
+      this.notify();
+    }
+    return deleted;
+  }
+
+  public setPrimaryPartWorkpiecePhoto(partKey: string, photoId: string): void {
+    const all = this.getAllPartWorkpiecePhotos();
+    const cleanKey = partKey.trim().toUpperCase();
+    if (!all[cleanKey]) return;
+
+    all[cleanKey] = all[cleanKey].map(p => ({
+      ...p,
+      isPrimary: p.id === photoId
+    }));
+
+    safeStorage.setItem(STORAGE_KEYS.PART_WORKPIECE_PHOTOS, JSON.stringify(all));
+    this.notify();
+  }
+
+  public exportFullBackupJSON(): string {
+    const backupData = {
+      version: 'FIN_DIE_REGRIND_PRO_V2.4',
+      exportTimestamp: new Date().toISOString(),
+      partMasters: this.getPartMasters(),
+      lifeStandards: this.getLifeStandards(),
+      regrindMasterStandards: this.getRegrindMasterStandards(),
+      regrindRecords: this.getRegrindRecords(),
+      auditLogs: this.getAuditLogs(),
+      settings: this.getSettings()
+    };
+    return JSON.stringify(backupData, null, 2);
+  }
+
+  public importFullBackupJSON(jsonStr: string): { success: boolean; message: string } {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (!parsed || typeof parsed !== 'object') {
+        return { success: false, message: 'รูปแบบไฟล์ JSON ไม่ถูกต้อง' };
+      }
+      if (Array.isArray(parsed.partMasters)) this.savePartMasters(parsed.partMasters);
+      if (Array.isArray(parsed.lifeStandards)) this.saveLifeStandards(parsed.lifeStandards);
+      if (Array.isArray(parsed.regrindRecords)) safeStorage.setItem(STORAGE_KEYS.REGRINDS, JSON.stringify(parsed.regrindRecords));
+      this.addAuditLog('SYSTEM', 'Restored system database from full JSON backup file');
+      this.notify();
+      return { success: true, message: 'นำเข้าข้อมูลสำรอง (Full Backup Restore) สำเร็จเรียบร้อยแล้ว' };
+    } catch (e: any) {
+      return { success: false, message: `เกิดข้อผิดพลาดในการนำเข้าไฟล์: ${e?.message || 'Unknown error'}` };
+    }
   }
 }
 

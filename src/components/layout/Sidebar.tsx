@@ -1,17 +1,14 @@
 import React from 'react';
 import {
-  Tv,
-  Wrench,
-  Database,
   ChevronLeft,
   ChevronRight,
-  RotateCcw,
-  Sparkles,
-  Layers,
-  BarChart3,
   Flame,
-  Calendar,
-  FileText
+  FileText,
+  TrendingUp,
+  FilePlus,
+  Sliders,
+  DollarSign,
+  ShieldCheck
 } from 'lucide-react';
 import { UserRole, AppTheme } from '../../types';
 import { useTranslation, useLanguage, LanguageCode } from '../../i18n';
@@ -46,49 +43,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
   collapsed = false,
   onToggleCollapse
 }) => {
-  const { t } = useTranslation();
   const { language } = useLanguage();
   const isTh = language === 'TH';
 
   const sections: NavSection[] = [
     {
-      title: isTh ? 'OVERVIEW (ภาพรวม)' : 'OVERVIEW',
+      title: isTh ? 'COST SAVING & DASHBOARD' : 'COST SAVING & DASHBOARD',
       items: [
         {
-          id: 'tv-monitoring',
-          label: isTh ? 'แดชบอร์ด' : 'Dashboard',
-          icon: BarChart3
+          id: 'cost-saving-management',
+          label: isTh ? 'ต้นทุนและผลประหยัด' : 'Cost & Saving Analytics',
+          icon: TrendingUp,
+          badge: 'SAVING'
         }
       ]
     },
     {
-      title: isTh ? 'REGRIND (งานเจียระไน)' : 'REGRIND CONTROL',
+      title: isTh ? 'REGRINDING & REPAIR WORK' : 'REGRINDING & REPAIR WORK',
       items: [
         {
           id: 'smart-queue-schedule',
-          label: isTh ? 'คิวงานเจียร' : 'Job Queue',
+          label: isTh ? 'คิวงานเจียร & ตารางนัด' : 'Regrind Job Queue',
           icon: Flame,
           badge: 'QUEUE'
         },
         {
-          id: 'regrind-calendar-matrix',
-          label: isTh ? 'สรุปแผนงานเจียร' : 'Regrind Plan Summary',
-          icon: Calendar
+          id: 'regrind-entry',
+          label: isTh ? 'บันทึกงานเจียร & ตรวจ QC' : 'Regrind Record & QC',
+          icon: FilePlus
         },
         {
           id: 'unified-logs-view',
-          label: isTh ? 'ประวัติการเจียร' : 'Regrind Logs',
+          label: isTh ? 'ประวัติงานซ่อมและเจียร' : 'Repair & Regrind Logs',
           icon: FileText
         }
       ]
     },
     {
-      title: isTh ? 'MASTER DATA (ฐานข้อมูล)' : 'MASTER DATA',
+      title: isTh ? 'ENGINEERING STANDARDS' : 'ENGINEERING STANDARDS',
       items: [
         {
-          id: 'unified-tooling-setup',
-          label: isTh ? 'สเปคแม่พิมพ์' : 'Tooling Specs',
-          icon: Database
+          id: 'tooling-specs',
+          label: isTh ? 'สเปคมาตรฐานการเจียร' : 'Tooling Regrind Specs',
+          icon: Sliders
         }
       ]
     }
@@ -110,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         className={`flex flex-col flex-shrink-0 ios-spring select-none h-auto my-2 ml-2 mb-2 rounded-3xl z-40 bg-[#0c1018]/85 backdrop-blur-2xl border border-white/10 shadow-2xl text-white font-sans ${
           collapsed 
             ? 'hidden md:flex md:w-14' 
-            : 'fixed inset-y-2 left-2 w-56 md:relative md:inset-auto md:w-52 lg:w-56'
+            : 'fixed inset-y-2 left-2 w-56 md:relative md:inset-auto md:w-56 lg:w-60'
         }`}
       >
         {/* Top Toggle Button Inside Sidebar */}
@@ -132,7 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         {/* Navigation Links */}
-        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-3 custom-scrollbar bg-transparent">
+        <div className="flex-1 overflow-y-auto py-2.5 px-2 space-y-4 custom-scrollbar bg-transparent">
           {sections.map((section, sIdx) => (
             <div key={sIdx} className="space-y-1">
               {!collapsed && (
@@ -168,22 +165,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         }`}
                       />
                       {!collapsed && (
-                        <div className="flex-1 min-w-0 flex items-center justify-between">
-                          <div className="truncate">
-                            <div className={`text-[12px] tracking-tight truncate leading-tight ${
-                              isActive ? 'text-cyan-200 font-bold' : 'text-slate-200 group-hover:text-white'
-                            }`}>
-                              {item.label}
-                            </div>
-                          </div>
+                        <div className="flex-1 flex items-center justify-between min-w-0">
+                          <span className="truncate text-xs font-semibold">{item.label}</span>
                           {item.badge && (
-                            <span
-                              className={`ml-1 text-[8.5px] font-mono px-2 py-0.5 rounded-full border font-bold ${
-                                isActive
-                                  ? 'bg-cyan-950/80 text-cyan-300 border-cyan-400/40 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                                  : 'bg-white/[0.06] text-slate-300 border-white/10'
-                              }`}
-                            >
+                            <span className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                               {item.badge}
                             </span>
                           )}
@@ -196,6 +181,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           ))}
         </div>
+
+        {/* Footer info */}
+        {!collapsed && (
+          <div className="p-2.5 border-t border-white/10 text-[10px] text-slate-400 text-center font-mono">
+            FIN DIE REGRIND PRO v2.4
+          </div>
+        )}
       </aside>
     </>
   );

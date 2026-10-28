@@ -537,13 +537,13 @@ export const HistoryCalendarView: React.FC<HistoryCalendarViewProps> = ({
           {/* Ticket Logs List */}
           {selectedDayLog.tickets.length > 0 ? (
             <div className="space-y-2.5">
-              {selectedDayLog.tickets.map(ticket => {
+              {selectedDayLog.tickets.map((ticket, idx) => {
                 const isScrapped = ticket.status === 'SCRAP' || ticket.isScrapped;
                 const minLimit = ticket.minAllowedLengthMm || 65.0;
 
                 return (
                   <div
-                    key={ticket.id}
+                    key={`${ticket.id}-${idx}`}
                     className={`p-3.5 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${
                       isScrapped
                         ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/60'

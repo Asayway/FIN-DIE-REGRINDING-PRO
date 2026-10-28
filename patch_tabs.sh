@@ -1,2 +1,0 @@
-sed -i 's/initialTab = '\''unified-settings'\''/initialTab = '\''spreadsheet'\''/g' src/views/UnifiedToolingMasterView.tsx
-sed -i 's/useState<'\''unified-settings'\'' | '\''standards'\'' | '\''master'\'' | '\''install'\''>(initialTab)/useState<'\''spreadsheet'\'' | '\''unified-settings'\'' | '\''standards'\'' | '\''master'\'' | '\''install'\''>(initialTab)/g' src/views/UnifiedToolingMasterView.tsx
