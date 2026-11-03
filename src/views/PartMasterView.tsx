@@ -768,24 +768,43 @@ export const PartMasterView: React.FC = () => {
       updatedParts.forEach((pm, idx) => {
         const rowEdit = editValues[pm.partCode];
         if (rowEdit) {
+          const isDispose = (rowEdit.perGrindMm || '').toString().toLowerCase().includes('dispose');
           const updatedPm: PartMaster = {
             ...pm,
             partName: rowEdit.partName,
+            partNameTh: rowEdit.partName,
             stageName: rowEdit.stage,
             purchasePriceThb: rowEdit.purchasePriceThb,
             purchasePriceUsd: rowEdit.purchasePriceUsd,
             expectedShotLife: rowEdit.expectedShotLife,
-            supplier: rowEdit.supplier
+            supplier: rowEdit.supplier,
+            maintenanceType: isDispose ? 'DISPOSE' : 'REGRIND'
           };
           (updatedPm as any).newSpecMm = rowEdit.newSpecMm;
           (updatedPm as any).scrapLimitMm = rowEdit.scrapLimitMm;
+          (updatedPm as any).regrindStandard = {
+            perGrindMm: rowEdit.perGrindMm,
+            totalGrindMm: rowEdit.totalGrindMm,
+            regrindCycles: rowEdit.regrindCycles,
+            note: rowEdit.note
+          };
+          (updatedPm as any).shotLifeCycle = {
+            e1_pcm: rowEdit.e1_pcm,
+            e2_gold: rowEdit.e2_gold,
+            e3_1_pcm: rowEdit.e3_1_pcm,
+            e3_2_gold: rowEdit.e3_2_gold,
+            e3_3_gold: rowEdit.e3_3_gold,
+            e4_bare: rowEdit.e4_bare,
+            e5_bare: rowEdit.e5_bare,
+            partsSpec: `${Number(rowEdit.newSpecMm || 0).toFixed(2)} mm`,
+            lowerSpecScrapLimit: `${Number(rowEdit.scrapLimitMm || 0).toFixed(2)} mm`
+          };
           
           updatedParts[idx] = updatedPm;
 
           const lsIdx = updatedStds.findIndex(s => (s as any).partCode === pm.partCode || s.configKey?.partCode === pm.partCode || s.id === pm.partCode);
           if (lsIdx >= 0) {
             const ls = updatedStds[lsIdx];
-            const isDispose = (rowEdit.perGrindMm || '').toString().toLowerCase().includes('dispose');
             const updatedLs: PartLifeStandard = {
               ...ls,
               partName: rowEdit.partName,
@@ -815,14 +834,65 @@ export const PartMasterView: React.FC = () => {
             (updatedLs as any).scrapLimit = `${rowEdit.scrapLimitMm}`;
             
             updatedStds[lsIdx] = updatedLs;
+          } else {
+            const code = pm.partCode;
+            const newLs: PartLifeStandard = {
+              id: `STD-ALL-${code}`,
+              configKey: {
+                lineId: 'ALL',
+                configurationId: `CFG-ALL-${code}`,
+                dieCode: 'FD-ALL',
+                finType: 'Slit (half)',
+                material: 'PCM' as any,
+                thicknessMm: 0.10,
+                tubeSize: 'Ø7' as any,
+                partCode: code,
+                position: 'ALL',
+                effectiveDate: new Date().toISOString().substring(0, 10)
+              },
+              compositeKeyString: `ALL|PCM|0.10mm|Ø7|${code}`,
+              partName: rowEdit.partName,
+              stagePunchDie: rowEdit.stage,
+              lifeLimitShots: millionToShots(rowEdit.e1_pcm),
+              regrindDepthPerTime: parseFloat(rowEdit.perGrindMm) || 0.05,
+              maxTotalGrindingLimit: parseFloat(rowEdit.totalGrindMm) || 0.50,
+              standardShimThickness: 0.20,
+              notes: rowEdit.note,
+              regrindStandard: {
+                oneTimeRegrindMm: rowEdit.perGrindMm,
+                totalRegrindMm: rowEdit.totalGrindMm,
+                maxRegrindCount: typeof rowEdit.regrindCycles === 'number' ? rowEdit.regrindCycles : parseInt(rowEdit.regrindCycles) || 10,
+                disposeAfterUse: isDispose,
+                regrindIntervalNote: rowEdit.note
+              },
+              createdBy: 'System Admin',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+            (newLs as any).shotLifeStandards = {
+              'E1': millionToShots(rowEdit.e1_pcm),
+              'E2': millionToShots(rowEdit.e2_gold),
+              'E3-1': millionToShots(rowEdit.e3_1_pcm),
+              'E3-2': millionToShots(rowEdit.e3_2_gold),
+              'E3-3': millionToShots(rowEdit.e3_3_gold),
+              'E4': millionToShots(rowEdit.e4_bare),
+              'E5': millionToShots(rowEdit.e5_bare),
+            };
+            (newLs as any).newSpecMm = rowEdit.newSpecMm;
+            (newLs as any).scrapLimitMm = rowEdit.scrapLimitMm;
+            (newLs as any).scrapLimit = `${rowEdit.scrapLimitMm}`;
+            updatedStds.push(newLs);
           }
         }
       });
 
       storageService.savePartMastersBulk(updatedParts, updatedStds);
+      setPartMasters(updatedParts);
+      setLifeStandards(updatedStds);
 
-      showToast(`บันทึกการแก้ไขข้อมูลตาราง ${partMasters.length} รายการลงในฐานข้อมูลเรียบร้อยแล้ว`);
+      showToast(`บันทึกการแก้ไขข้อมูลตาราง ${updatedParts.length} รายการลงในฐานข้อมูลเรียบร้อยแล้ว (อัปเดต 100%)`, 'success');
       setIsEditing(false);
+      setEditValues({});
       setHasUnsavedChanges(false);
       loadDatabaseData();
     } catch (err: any) {
@@ -891,8 +961,45 @@ export const PartMasterView: React.FC = () => {
   };
 
   // Export to Excel Function (.xlsx)
+  // Export to Excel Function (.xlsx) - Guarantees 100% up-to-date data
   const handleExportCSV = () => {
-    exportPartMasterExcel(filteredItems);
+    // If currently editing, apply the editValues draft onto items so export is 100% synchronized with current screen edits
+    const itemsToExport = filteredItems.map(item => {
+      const edit = editValues[item.partCode];
+      if (isEditing && edit) {
+        return {
+          ...item,
+          partName: edit.partName ?? item.partName,
+          stage: edit.stage ?? item.stage,
+          newSpecMm: typeof edit.newSpecMm === 'number' ? edit.newSpecMm : parseFloat(edit.newSpecMm) || item.newSpecMm,
+          scrapLimitMm: typeof edit.scrapLimitMm === 'number' ? edit.scrapLimitMm : parseFloat(edit.scrapLimitMm) || item.scrapLimitMm,
+          shotLifeCycle: {
+            ...item.shotLifeCycle,
+            e1_pcm: edit.e1_pcm,
+            e2_gold: edit.e2_gold,
+            e3_1_pcm: edit.e3_1_pcm,
+            e3_2_gold: edit.e3_2_gold,
+            e3_3_gold: edit.e3_3_gold,
+            e4_bare: edit.e4_bare,
+            e5_bare: edit.e5_bare,
+            partsSpec: `${Number(edit.newSpecMm || 0).toFixed(2)} mm`,
+            lowerSpecScrapLimit: `${Number(edit.scrapLimitMm || 0).toFixed(2)} mm`
+          },
+          regrindStandard: {
+            ...item.regrindStandard,
+            perGrindMm: edit.perGrindMm,
+            totalGrindMm: edit.totalGrindMm,
+            regrindCycles: edit.regrindCycles,
+            note: edit.note
+          },
+          purchasePriceThb: edit.purchasePriceThb ?? item.purchasePriceThb,
+          purchasePriceUsd: edit.purchasePriceUsd ?? item.purchasePriceUsd,
+          supplier: edit.supplier ?? item.supplier
+        };
+      }
+      return item;
+    });
+    exportPartMasterExcel(itemsToExport);
   };
 
   return (
@@ -1029,6 +1136,15 @@ export const PartMasterView: React.FC = () => {
               <>
                 <button
                   type="button"
+                  onClick={handleExportCSV}
+                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-200 border border-[#666666] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Export ข้อมูลล่าสุดขณะนี้เป็นไฟล์ Excel (.xlsx)"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-[#00FF00]" />
+                  <span>Export Excel (.xlsx)</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleCancelEdit}
                   className="px-3 py-1.5 bg-[#222222] hover:bg-[#333333] text-slate-300 text-xs font-bold border border-[#666666] flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
@@ -1038,7 +1154,7 @@ export const PartMasterView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSaveBatchEdit}
-                  className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-[#00FF00]/20"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>บันทึกการแก้ไข ({hasUnsavedChanges ? 'มีการเปลี่ยนแปลง' : 'พร้อมบันทึก'})</span>
@@ -2174,30 +2290,6 @@ export const PartMasterView: React.FC = () => {
                             </button>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedPartForQrModal(item);
-                            }}
-                            className="p-1 bg-[#111111] hover:bg-cyan-950 text-cyan-400 hover:text-cyan-300 border border-[#555555] hover:border-cyan-400 transition-colors cursor-pointer"
-                            title="พิมพ์ฉลาก QR Code & Barcode (Idea 5 & 7)"
-                          >
-                            <QrCode className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStartInlineEdit(item);
-                            }}
-                            className="p-1 bg-[#111111] hover:bg-[#333333] text-[#00FF00] border border-[#555555] hover:border-[#00FF00] transition-colors cursor-pointer"
-                            title="แก้ไขข้อมูลชิ้นส่วนพาร์ทแบบ Inline (Edit Part Row)"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          
                           <button
                             type="button"
                             onClick={(e) => {

@@ -608,14 +608,28 @@ export interface RegrindingRecord {
   partInstanceOrLot?: string;
   partCode: string;
   partName: string;
+  drawingNo?: string;
+  drawingNumber?: string;
   serialNumber?: string;
   lineId: ProductionLineId;
   lineLastUsed?: ProductionLineId;
   dieCode?: string;
   finDie?: string;
-  previousLength?: number; // in mm
-  currentLength?: number; // in mm
+  quantity?: number;
+  newSpecMm?: number;
+  previousLength?: number; // in mm (Current length before regrind)
+  currentLength?: number; // in mm (Height after regrind)
+  beforeGrindMm?: number;
+  afterGrindMm?: number;
   actualGrindingRemovedMm?: number;
+  grindAmountMm?: number;
+  scrapLimitMm?: number;
+  defectReason?: string;
+  laborTimeMinutes?: number; // Labor time strictly in minutes (e.g. 60, 90)
+  laborCostThb?: number; // Labor cost in THB (laborTimeMinutes / 60 * hourlyRate)
+  newPartPriceThb?: number; // Purchase price of new part in THB
+  netSavingThb?: number; // Net saving THB (newPartPriceThb - (laborCostThb + sparePartsCost))
+  savingPercent?: number | string; // Saving %
   regrindCountBefore?: number;
   regrindCountAfter?: number;
   remainingRegrindCount?: number;

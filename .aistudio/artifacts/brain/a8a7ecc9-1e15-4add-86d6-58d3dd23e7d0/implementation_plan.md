@@ -1,37 +1,69 @@
-# แผนการพัฒนา: ปรับปรุงหน้าสเปคแม่พิมพ์ไลน์ผลิตแบบ Unified Matrix Table รวมทุกไลน์ในหน้าเดียว
+# Implementation Plan: Concise Localized Headers & 100% Synchronized Queue Ticket Modal
 
-## 1. วัตถุประสงค์ (Objective)
-ปรับปรุงหน้า **"1. สเปคแม่พิมพ์ไลน์" (`LineDieSpecificationView.tsx`)** ให้สามารถตั้งค่าสเปกแม่พิมพ์และสถานะการทำงานของทุกไลน์ผลิต (**E1, E2, E3-1, E3-2, E3-3, E4, E5 รวม 7 ไลน์**) ในรูปแบบตาราง **Unified Matrix Table** กะทัดรัด ครบถ้วนในหน้าจอเดียว และลบแถบการสลับแยกแต่ละไลน์เดี่ยวออกตามความต้องการของผู้ใช้
-
----
-
-## 2. รายละเอียดการปรับปรุง (Implementation Details)
-
-### 2.1 ลบแถบเลือกไลน์แยกเดี่ยว (Remove Individual Line Tabs)
-- นำแถบเลือก `LINE: ALL LINES | E1 | E2 | E3-1 | E3-2 | E3-3 | E4 | E5` ออก
-- นำการ์ดขนาดใหญ่แบบแยกแสดงทีละไลน์ออกทั้งหมด เพื่อไม่ให้เปลืองพื้นที่หน้าจอ
-
-### 2.2 ออกแบบ Unified All-Lines Matrix Table (ตารางรวม 7 ไลน์ในหน้าเดียว)
-สร้างตารางกะทัดรัด (Industrial Compact Dark Table) โดยแต่ละแถวแสดง 1 ไลน์ผลิต ประกอบด้วยคอลัมน์:
-1. **Line ID & Tag (ไลน์ผลิต)**: รหัสไลน์ (E1, E2, E3-1, E3-2, E3-3, E4, E5) พร้อม Badge สีระบุประเภท (เช่น Ø7 Slit, Ø5 Slit, WL+ 4P ฯลฯ)
-2. **Operational Status (สถานะการผลิต)**: ดรอปดาวน์เลือกสถานะ `🟢 RUNNING`, `🟡 IDLE`, `🔧 MAINTENANCE`, `🔴 STOPPED` พร้อม Badge สีเตือนชัดเจน
-3. **Tube Size (ขนาดท่อ)**: ตัวเลือกดรอปดาวน์ (Ø7, Ø5, Ø9.52, Ø8, Ø6.35)
-4. **Fin Type (ลายฟิน)**: ตัวเลือกดรอปดาวน์ (Slit Old, Slit (half), New Slit, Louver, Wide Louver, New Corrugate ฯลฯ)
-5. **Pitch / Die Spec (ระยะพิตช์)**: ตัวเลือกดรอปดาวน์ (3P, 4P)
-6. **Fin Material (ชนิดฟอยล์/วัสดุ)**: ดรอปดาวน์ (PCM 0.1mm, BARE 0.1mm, GOLD 0.1mm)
-7. **Die Code & Name (รหัสแม่พิมพ์)**: กล่องป้อนข้อมูลตัวอักษรแบบ Compact Font
-8. **Default SPM (ความเร็วรอบ)**: กล่องป้อนตัวเลข SPM
-9. **E3 Active Fin Die Selector**: แถบควบคุมสถานะการเปิดใช้งาน Fin Die ของเครื่อง E3 (E3-1, E3-2, E3-3) แบบกะทัดรัดในตัว
-
-### 2.3 การเชื่อมโยงข้อมูลและการบันทึก (Data Sync & Storage)
-- เมื่อผู้ใช้เปลี่ยนค่าใน Dropdown หรือแก้ไข Text Input ระบบจะเรียก `handleFieldChange` หรือ `handleStatusChange` อัปเดตข้อมูลลง `storageService` ทันที
-- เมื่อเลือกสถานะของ E3 ไลน์ใดเป็น `RUNNING` จะสลับ Active E3 Die ให้อัตโนมัติ พร้อมแจ้งเตือน Toast Message
-- รองรับปุ่ม Quick Action เช่น รีเซ็ตค่าเริ่มต้น (Reset Defaults) หรือ บันทึกภาพรวม (Save All)
+We will refine the Unified Master Logs view to make column headers concise and clean in both Thai and English, and connect the "จัดการ" (Actions) eye button directly to the editable `UnifiedRegrindJobModal` (ใบลงคิวงาน) for 100% synchronized data updates.
 
 ---
 
-## 3. ขั้นตอนการตรวจสอบและทดสอบ (Verification & Testing)
-1. ตรวจสอบว่าหน้าจอแสดงผลทั้ง 7 ไลน์พร้อมกันครบถ้วนในตารางเดียว ไม่ต้องกดแท็บเปลี่ยนไลน์
-2. ทดสอบการเปลี่ยนสถานะผ่าน Dropdown แต่ละไลน์ (RUNNING, IDLE, MAINTENANCE, STOPPED) ว่าเปลี่ยนสีและบันทึกถูกต้อง
-3. ทดสอบการแก้ไข Tube Size, Fin Type, Pitch, Material, Die Code, SPM
-4. รัน `lint_applet` และ `compile_applet` เพื่อยืนยันว่าไม่มีข้อผิดพลาด
+## 1. Objectives & Scope
+
+### A. Concise Localized Column Headers (TH / EN)
+- Condense the 20 table column headers into short, clean, crisp labels.
+- Support dual-language toggling based on active system language (`TH` / `EN` / `DUAL`):
+  1. `#`
+  2. `สถานะ` / `Status`
+  3. `Job Code`
+  4. `วันที่` / `Date`
+  5. `ไลน์` / `Line`
+  6. `แม่พิมพ์` / `Die Code`
+  7. `ชื่อชิ้นงาน` / `Part Name`
+  8. `Drawing` / `Drawing Code`
+  9. `จำนวน` / `Qty`
+  10. `สเปคซื้อใหม่` / `New Spec`
+  11. `ก่อนเจียร` / `Current Height`
+  12. `หลังเจียร` / `Height After`
+  13. `ระยะ Min` / `Scrap Limit`
+  14. `สาเหตุ` / `Defect Reason`
+  15. `เวลาเจียร (นาที)` / `Labor Time (Min)`
+  16. `ค่าแรง` / `Labor Cost`
+  17. `ราคาซื้อใหม่` / `New Price`
+  18. `ประหยัดสุทธิ` / `Net Saving`
+  19. `Saving %`
+  20. `ช่างเจียร` / `Operator`
+  21. `หมายเหตุ` / `Remarks`
+  22. `จัดการ` / `Actions`
+
+### B. 100% Synchronized Queue Ticket Modal (`UnifiedRegrindJobModal`)
+- When the user clicks the action button (`Eye` icon) in any table row:
+  - Find or reconstruct the corresponding `RegrindWorkTicket` (ใบลงคิวงาน) linked by `jobCode` or `id`.
+  - Open `UnifiedRegrindJobModal` in edit mode populated with all exact ticket parameters.
+  - Upon saving in `UnifiedRegrindJobModal`, update both:
+    1. The queue ticket in `regrindService`
+    2. The master log record in `storageService`
+  - Re-render table and update stats instantly with 100% data consistency.
+
+---
+
+## 2. Target Files & Changes
+
+1. **`src/views/regrinding/UnifiedMasterLogsView.tsx`**:
+   - Add current system language state (`language` from `storageService.getSettings().language`).
+   - Replace table header text with concise localized dictionaries (TH vs EN).
+   - In row action handler, look up matching `RegrindWorkTicket` via `regrindService.getQueueTickets()` (or derive ticket if legacy) and set `editingTicket` + open `UnifiedRegrindJobModal`.
+   - Re-subscribe to storage/regrind service updates.
+
+2. **`src/services/regrindService.ts`**:
+   - Ensure `updateQueueTicket` and `recordRegrind` keep master log entries and queue tickets synchronized 100%.
+
+3. **`src/utils/excelExport.ts`**:
+   - Update `exportRegrindingHistoryExcel` column headers to match the localized concise names according to the selected language.
+
+---
+
+## 3. Verification Plan
+
+1. **Build & Type Checking**:
+   - Run `compile_applet` and `lint_applet` to verify 0 errors.
+2. **Interactive Testing**:
+   - Open Unified Master Logs table, test language toggle between TH and EN.
+   - Click "จัดการ" (Actions) button on a row to verify the `UnifiedRegrindJobModal` opens as an editable ticket.
+   - Modify dimensions, technician, or remarks, then save. Confirm table row and modal data update 100% synchronously.

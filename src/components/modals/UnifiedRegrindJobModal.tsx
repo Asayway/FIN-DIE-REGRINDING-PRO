@@ -253,13 +253,17 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
     setGrindDepthMm(Number((previousLengthMm - val).toFixed(3)));
   };
 
-  const DEFECT_REASONS_LIST: { code: DefectReasonCode; label: string; icon: string; desc: string }[] = [
-    { code: 'NORMAL_WEAR', label: 'สึกหรอตามรอบปกติ (Normal Wear)', icon: '🟢', desc: 'ครบชั่วโมงทำงาน / ครบโควตารอบการปั๊ม' },
-    { code: 'BURR_EXCESSIVE', label: 'ครีบฟินสูงเกินเกณฑ์ (Excessive Burr)', icon: '⚠️', desc: 'ชิ้นงานมีครีบคมเกินสเปค ต้องลับคมพั้นช์' },
-    { code: 'CHIPPED', label: 'คมพั้นช์บิ่น/กะเทาะ (Edge Chipped)', icon: '🔴', desc: 'ปลายคมบิ่น ต้องเจียรปาดหน้าเปิดคมใหม่' },
-    { code: 'GALLING_SCRATCHED', label: 'ผิวเป็นรอย/เศษติด (Galling)', icon: '🟡', desc: 'มีเศษอะลูมิเนียมเกาะ หรือผิวสเตชั่นเป็นรอย' },
-    { code: 'OUT_OF_TOLERANCE', label: 'ขนาดหลุดเกณฑ์ (Out of Spec)', icon: '🟠', desc: 'ขนาดมิติชิ้นงานหลุดค่าพิกัดมาตรฐาน' },
-    { code: 'BROKEN', label: 'แตกหัก/เสียหายหนัก (Broken)', icon: '🛑', desc: 'อะไหล่แตกหัก ชำรุด แนะนำคัดทิ้ง (Scrap)' },
+  const sysSettings = storageService.getSettings();
+  const sysLanguage = sysSettings?.language || 'TH';
+  const isEnglish = sysLanguage === 'EN';
+
+  const DEFECT_REASONS_LIST: { code: DefectReasonCode; labelTh: string; labelEn: string; icon: string; descTh: string; descEn: string }[] = [
+    { code: 'NORMAL_WEAR', labelTh: 'สึกหรอปกติ (Normal Wear)', labelEn: 'Normal Wear', icon: '🟢', descTh: 'ครบชั่วโมงทำงาน / ครบโควตารอบการปั๊ม', descEn: 'Normal EOL wear cycle limit' },
+    { code: 'BURR_EXCESSIVE', labelTh: 'ครีบสูงเกิน (Excessive Burr)', labelEn: 'Excessive Burr', icon: '⚠️', descTh: 'ชิ้นงานมีครีบคมเกินสเปค ต้องลับคมพั้นช์', descEn: 'Burr height exceeding product spec' },
+    { code: 'CHIPPED', labelTh: 'คมบิ่น/กะเทาะ (Edge Chipped)', labelEn: 'Edge Chipped', icon: '🔴', descTh: 'ปลายคมบิ่น ต้องเจียรปาดหน้าเปิดคมใหม่', descEn: 'Micro-fractures on cutting edge' },
+    { code: 'GALLING_SCRATCHED', labelTh: 'ผิวเป็นรอย/เศษติด (Galling)', labelEn: 'Galling Scratched', icon: '🟡', descTh: 'มีเศษอะลูมิเนียมเกาะ หรือผิวสเตชั่นเป็นรอย', descEn: 'Aluminum sticking or galling scratches' },
+    { code: 'OUT_OF_TOLERANCE', labelTh: 'หลุดสเปค Min (Out of Spec)', labelEn: 'Out of Tolerance', icon: '🟠', descTh: 'ขนาดมิติชิ้นงานหลุดค่าพิกัดมาตรฐาน', descEn: 'Dimensional tolerance limit breached' },
+    { code: 'BROKEN', labelTh: 'แตกหักชำรุด (Broken)', labelEn: 'Broken / Damaged', icon: '🛑', descTh: 'อะไหล่แตกหัก ชำรุด แนะนำคัดทิ้ง (Scrap)', descEn: 'Severe fracture or broken part' },
   ];
 
   const GRIND_STEP_PRESETS = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30];
@@ -283,7 +287,19 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
 
     const mode = typeof targetMode === 'string' ? targetMode : (targetMode === true ? 'START_NOW' : executionMode);
     const isStartImmediate = mode === 'START_NOW';
-    const isScrap = mode === 'SCRAP_NOW';
+    
+    // Auto-Scrap Rule: If calculated dimension is below min spec or cycles exceed max allowed,
+    // the system automatically designates this as SCRAP and bypasses QC inspection.
+    const isAutoScrapTriggered = isUnderMinLength || isOverMaxCycle;
+    const isScrap = mode === 'SCRAP_NOW' || isAutoScrapTriggered;
+
+    const scrapReasonCalculated = isUnderMinLength
+      ? `ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร): ความยาวหลังเจียร (${resultLengthMm.toFixed(2)} mm) ต่ำกว่าสเปค Min (${minAllowedLengthMm.toFixed(2)} mm)`
+      : isOverMaxCycle
+      ? `ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร): รอบการเจียร (${nextCycle} ครั้ง) เกินขีดจำกัดสูงสุด (${maxRegrindAllowed} ครั้ง)`
+      : (remarks || 'ชำรุดคัดทิ้งตามคำสั่งช่าง');
+
+    const effectiveRemarks = isScrap ? scrapReasonCalculated : remarks;
 
     const parsedDate = new Date(scheduledDate);
     const year = parsedDate.getFullYear() || 2026;
@@ -310,9 +326,9 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         regrindCountBefore,
         regrindCountAfter: nextCycle,
         maxRegrindAllowed,
-        defectReason,
-        defectNotes: remarks,
-        remarks,
+        defectReason: isScrap ? (isUnderMinLength ? 'OUT_OF_TOLERANCE' : 'NORMAL_WEAR') : defectReason,
+        defectNotes: effectiveRemarks,
+        remarks: effectiveRemarks,
         laborHours,
         sparePartsUsed,
         sparePartsCost,
@@ -321,9 +337,9 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       });
 
       if (isScrap) {
-        const scr = regrindService.scrapItem(existingTicket.id, defectReason, remarks || 'ชำรุดคัดทิ้ง', technician);
+        const scr = regrindService.scrapItem(existingTicket.id, isUnderMinLength ? 'OUT_OF_TOLERANCE' : defectReason, scrapReasonCalculated, technician);
         regrindService.incrementDailyMatrixCount(year, month, 'DEFECT_SCRAP', partName, day, quantity);
-        onSaved(scr.message, res.ticket);
+        onSaved(`❌ ${scr.message} (ครบลิมิตเจียร - คัดทิ้งอัตโนมัติไม่ต้องผ่าน QC)`, res.ticket);
       } else if (isStartImmediate) {
         const startRes = regrindService.startGrinding(existingTicket.id, technician, { etaMinutes: 30 });
         regrindService.incrementDailyMatrixCount(year, month, 'REPAIR', partName, day, quantity);
@@ -348,9 +364,9 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       targetCompletionDate: `${scheduledDate}T17:00:00.000Z`,
       urgency: isEmergency ? 'EMERGENCY' : 'NORMAL',
       isEmergency,
-      defectReason,
-      defectNotes: remarks || (isEmergency ? `งานด่วนแทรกคิว #1` : `กำหนดเจียร ${scheduledDate}`),
-      remarks: remarks || `บันทึกงานเจียร ${scheduledDate}`,
+      defectReason: isScrap ? (isUnderMinLength ? 'OUT_OF_TOLERANCE' : 'NORMAL_WEAR') : defectReason,
+      defectNotes: effectiveRemarks || (isEmergency ? `งานด่วนแทรกคิว #1` : `กำหนดเจียร ${scheduledDate}`),
+      remarks: effectiveRemarks || `บันทึกงานเจียร ${scheduledDate}`,
       nominalLengthMm,
       minAllowedLengthMm,
       previousLengthMm,
@@ -374,7 +390,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
     }
 
     if (isScrap) {
-      regrindService.scrapItem(createdTicket.id, defectReason, remarks, technician);
+      regrindService.scrapItem(createdTicket.id, isUnderMinLength ? 'OUT_OF_TOLERANCE' : defectReason, scrapReasonCalculated, technician);
       regrindService.incrementDailyMatrixCount(
         year,
         month,
@@ -410,10 +426,10 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         inspectionStatus: 'FAILED_SCRAPPED',
         performedBy: technician,
         regrindDate: scheduledDate,
-        note: remarks || `คัดทิ้งชำรุด (Scrap) จำนวน ${quantity} ชิ้น`,
+        note: scrapReasonCalculated,
         status: 'SCRAP'
       });
-      onSaved(`🗑️ บันทึกคัดทิ้ง ${createdTicket.jobCode} (${partName}) เรียบร้อย`, createdTicket);
+      onSaved(`❌ บันทึกคัดทิ้ง ${createdTicket.jobCode} (${partName}) เรียบร้อย (ครบลิมิตเจียร - คัดทิ้งอัตโนมัติไม่ต้องผ่าน QC)`, createdTicket);
     } else if (isStartImmediate) {
       // Start Grinding Immediately upon creation
       const startRes = regrindService.startGrinding(createdTicket.id, technician, { etaMinutes: 30 });
@@ -425,6 +441,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         day,
         quantity
       );
+      const calcLaborMinutes = Math.round((laborHours || 1) * 60);
       storageService.recordRegrind({
         lineId,
         lineLastUsed: lineId,
@@ -433,6 +450,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         partCode,
         partName,
         partInstanceOrLot: serialOrLot,
+        quantity,
         previousLength: previousLengthMm,
         currentLength: resultLengthMm,
         actualGrindingRemovedMm: grindDepthMm,
@@ -445,13 +463,18 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         supplierOrInternalProcess: 'INTERNAL_TOOL_ROOM',
         vendorName: 'Internal Fin Die Tool Room (In-House)',
         workOrder: createdTicket.jobCode,
-        cost: 2500,
+        cost: Math.round((calcLaborMinutes / 60) * 180) + (sparePartsCost || 0),
+        laborHours,
+        laborTimeMinutes: calcLaborMinutes,
+        sparePartsUsed,
+        sparePartsCost,
         surfaceRoughnessRa: 0.12,
         hardnessHrc: 63.0,
         inspectionResult: 'PENDING',
         inspectionStatus: 'PENDING',
         performedBy: technician,
         regrindDate: scheduledDate,
+        defectReason,
         note: remarks || `เริ่มดำเนินการเจียรทันที (In-Process) โดยช่าง ${technician}`,
         status: 'REGRINDING'
       });
@@ -469,6 +492,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         day,
         quantity
       );
+      const calcLaborMinutes = Math.round((laborHours || 1) * 60);
       storageService.recordRegrind({
         lineId,
         lineLastUsed: lineId,
@@ -477,6 +501,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         partCode,
         partName,
         partInstanceOrLot: serialOrLot,
+        quantity,
         previousLength: previousLengthMm,
         currentLength: resultLengthMm,
         actualGrindingRemovedMm: grindDepthMm,
@@ -489,13 +514,18 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         supplierOrInternalProcess: 'INTERNAL_TOOL_ROOM',
         vendorName: 'Internal Fin Die Tool Room (In-House)',
         workOrder: createdTicket.jobCode,
-        cost: 2500,
+        cost: Math.round((calcLaborMinutes / 60) * 180) + (sparePartsCost || 0),
+        laborHours,
+        laborTimeMinutes: calcLaborMinutes,
+        sparePartsUsed,
+        sparePartsCost,
         surfaceRoughnessRa: 0.12,
         hardnessHrc: 63.0,
         inspectionResult: 'PENDING',
         inspectionStatus: 'PENDING',
         performedBy: technician,
         regrindDate: scheduledDate,
+        defectReason,
         note: remarks || `ลงคิวงานเจียร กำหนดส่ง ${scheduledDate}`,
         status: 'WAITING REGRIND'
       });
@@ -525,7 +555,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       <div
         className={`bg-[#0b101b] border-2 ${
           isEmergency ? 'border-rose-500/70 shadow-[0_0_50px_rgba(244,63,94,0.3)]' : 'border-cyan-500/50 shadow-[0_0_50px_rgba(6,182,212,0.15)]'
-        } rounded-2xl sm:rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden text-slate-200 shadow-2xl animate-scaleIn`}
+        } rounded-2xl sm:rounded-3xl max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden text-slate-200 shadow-2xl animate-scaleIn`}
         onClick={e => e.stopPropagation()}
       >
         {/* Sleek Header (Fixed Top) */}
@@ -581,45 +611,45 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         </div>
 
         {/* Scrollable Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-4 custom-scrollbar text-xs">
-          {/* Main Grid Wrapper: 2 Columns for Desktop, 1 Column for Mobile */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-start">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-3 sm:p-4 pb-6 space-y-3 custom-scrollbar text-xs">
+          {/* Main Grid Wrapper: 2 Columns for Desktop */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-stretch">
             
             {/* LEFT COLUMN: Inputs (7/12 cols) */}
-            <div className="lg:col-span-7 space-y-3">
+            <div className="lg:col-span-7 flex flex-col justify-between space-y-2.5">
               
               {/* Mode Switcher */}
-              <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950/50 rounded-lg border border-white/10">
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950/60 rounded-xl border border-white/10 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsEmergency(false)}
-                  className={`py-0.5 rounded-md font-black text-[9px] flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                  className={`py-1 rounded-lg font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                     !isEmergency
                       ? 'bg-gradient-to-r from-cyan-500 to-cyan-400 text-slate-950 shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
-                  <span>🟢 คิวปกติ</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>🟢 คิวปกติ (Normal Queue)</span>
                 </button>
  
                 <button
                   type="button"
                   onClick={() => setIsEmergency(true)}
-                  className={`py-0.5 rounded-md font-black text-[9px] flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                  className={`py-1 rounded-lg font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                     isEmergency
                       ? 'bg-gradient-to-r from-rose-600 to-rose-500 text-white shadow-md'
                       : 'text-slate-300 hover:text-rose-300 hover:bg-white/5'
                   }`}
                 >
-                  <Zap className="w-2.5 h-2.5 shrink-0" />
-                  <span>🚨 คิวด่วน #1</span>
+                  <Zap className="w-3.5 h-3.5 shrink-0" />
+                  <span>🚨 คิวด่วน #1 (Urgent Emergency)</span>
                 </button>
               </div>
 
               {/* Same-day existing queues preview (if any) */}
               {dayExistingTickets.length > 0 && !existingTicket && (
-                <div className="p-2 rounded-lg bg-slate-950/90 border border-white/15 space-y-1 text-[10px]">
+                <div className="p-2 rounded-xl bg-slate-950/90 border border-white/15 space-y-1 text-xs shrink-0">
                   <span className="text-slate-300 font-bold block flex items-center gap-1.5">
                     <CalendarIcon className="w-3.5 h-3.5 text-cyan-400" />
                     คิววันที่ {scheduledDate} ({dayExistingTickets.length} คิว):
@@ -630,7 +660,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                         key={`${t.id}-${idx}`}
                         type="button"
                         onClick={() => onSelectExistingTicket?.(t)}
-                        className="px-2 py-0.5 bg-slate-900 border border-white/15 text-slate-200 hover:border-cyan-400 text-[10px] font-mono font-bold cursor-pointer transition-colors rounded"
+                        className="px-2 py-0.5 bg-slate-900 border border-white/15 text-slate-200 hover:border-cyan-400 text-xs font-mono font-bold cursor-pointer transition-colors rounded"
                       >
                         #{t.queueOrder ?? idx + 1} {t.partName} ({t.lineId})
                       </button>
@@ -640,55 +670,63 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
               )}
 
               {/* Date, Line, Die, and Quantity combined in a high-visibility 4-column grid */}
-              <div className="p-1.5 rounded-lg bg-slate-950/85 border border-white/10 space-y-1">
-                <div className="grid grid-cols-4 gap-1.5">
+              <div className="p-2.5 rounded-xl bg-slate-950/90 border border-white/15 space-y-2 shrink-0">
+                <div className="grid grid-cols-4 gap-2">
                   <div className="col-span-1">
-                    <label className="block text-slate-200 font-extrabold mb-0.5 text-[8px]">📅 วันที่ <span className="text-rose-400">*</span></label>
+                    <label className="block text-slate-200 font-extrabold mb-1 text-[11px] sm:text-xs">
+                      📅 วันที่ <span className="text-rose-400">*</span>
+                    </label>
                     <input
                       type="date"
                       min="2025-01-01"
                       value={scheduledDate || ''}
                       onChange={e => setScheduledDate(e.target.value)}
-                      className={`w-full px-1.5 py-0.5 bg-slate-900 border ${
+                      className={`w-full px-2.5 py-1.5 bg-slate-900 border ${
                         isBefore2025
                           ? 'border-rose-500 text-rose-300'
                           : isHistoricalPastDate
                           ? 'border-amber-500 text-amber-300'
                           : 'border-slate-700 text-white'
-                      } rounded-md font-mono font-bold text-[9px] focus:border-cyan-400 focus:outline-none`}
+                      } rounded-lg font-mono font-bold text-xs sm:text-[13px] focus:border-cyan-400 focus:outline-none`}
                       required
                     />
                   </div>
 
                   <div className="col-span-1">
-                    <label className="block text-slate-200 font-extrabold mb-0.5 text-[8px]">🏭 ไลน์ <span className="text-rose-400">*</span></label>
+                    <label className="block text-slate-200 font-extrabold mb-1 text-[11px] sm:text-xs">
+                      🏭 ไลน์ <span className="text-rose-400">*</span>
+                    </label>
                     <select
                       value={lineId || 'E1'}
                       onChange={e => handleLineChange(e.target.value as ProductionLineId)}
-                      className="w-full px-1 py-0.5 bg-slate-900 border border-slate-700 rounded-md text-cyan-300 font-black text-[9px] focus:border-cyan-400 focus:outline-none"
+                      className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-cyan-300 font-black text-xs sm:text-[13px] focus:border-cyan-400 focus:outline-none cursor-pointer"
                     >
                       {LINES_LIST.map(l => <option key={l} value={l}>LINE {l}</option>)}
                     </select>
                   </div>
 
                   <div className="col-span-1">
-                    <label className="block text-slate-200 font-extrabold mb-0.5 text-[8px]">🔧 แม่พิมพ์</label>
+                    <label className="block text-slate-200 font-extrabold mb-1 text-[11px] sm:text-xs">
+                      🔧 แม่พิมพ์
+                    </label>
                     <input
                       type="text"
                       value={dieCode || ''}
                       readOnly
-                      className="w-full px-1 py-0.5 bg-slate-900 border border-slate-700 rounded-md text-slate-300 font-mono text-[9px]"
+                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 font-mono text-xs sm:text-[13px] font-bold"
                     />
                   </div>
 
                   <div className="col-span-1">
-                    <label className="block text-amber-300 font-black mb-0.5 text-[8px]">🔢 จำนวน</label>
+                    <label className="block text-amber-300 font-black mb-1 text-[11px] sm:text-xs">
+                      🔢 จำนวน
+                    </label>
                     <input
                       type="number"
                       min={1}
                       value={quantity ?? 1}
                       onChange={e => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full px-1 py-0.5 bg-slate-900 border border-slate-700 rounded-md text-amber-300 font-black text-[9px] focus:border-cyan-400 focus:outline-none"
+                      className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-amber-300 font-black text-xs sm:text-[13px] text-center focus:border-cyan-400 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -707,70 +745,70 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                 </div>
 
                 {/* Comprehensive Part Master & Cost Details Card */}
-                <div className="mt-2 p-2 rounded-xl bg-slate-950/90 border border-cyan-500/30 space-y-1.5 text-[10px] font-mono">
-                  <div className="flex items-center justify-between border-b border-white/5 pb-1 text-cyan-300 font-bold">
-                    <span className="flex items-center gap-1">
+                <div className="mt-2 p-2.5 sm:p-3 rounded-xl bg-slate-950/95 border border-cyan-500/40 space-y-2 font-mono shadow-md">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-1.5 text-cyan-300 font-bold">
+                    <span className="flex items-center gap-1.5 text-xs sm:text-[13px]">
                       <span>📊</span>
                       <span>รายละเอียดชิ้นส่วนและต้นทุน (Part Master & Cost Specs)</span>
                     </span>
-                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-bold">
                       LINE {lineId} Active
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-1.5 text-[9px]">
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">ไลน์ (Line):</span>
-                      <span className="text-white font-bold">LINE {lineId}</span>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">ไลน์ (Line):</span>
+                      <span className="text-white font-black text-xs sm:text-[13px]">LINE {lineId}</span>
                     </div>
 
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">ติดตั้ง (Install):</span>
-                      <span className="text-amber-400 font-bold">{quantity} ชิ้น</span>
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">ติดตั้ง (Install):</span>
+                      <span className="text-amber-400 font-black text-xs sm:text-[13px]">{quantity} ชิ้น</span>
                     </div>
 
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">ซื้อใหม่ (Price):</span>
-                      <span className="text-emerald-400 font-bold">฿{(selectedPartCostMaster.newPurchasePrice || 25000).toLocaleString()}</span>
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">ซื้อใหม่ (Price):</span>
+                      <span className="text-emerald-400 font-black text-xs sm:text-[13px]">฿{(selectedPartCostMaster.newPurchasePrice || 25000).toLocaleString()}</span>
                     </div>
 
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">Scrap Spec:</span>
-                      <span className="text-rose-400 font-bold">{minAllowedLengthMm.toFixed(2)} mm</span>
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">Scrap Spec:</span>
+                      <span className="text-rose-400 font-black text-xs sm:text-[13px]">{minAllowedLengthMm.toFixed(2)} mm</span>
                     </div>
 
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">Shot Life:</span>
-                      <span className="text-slate-300 font-bold">{((selectedPartCostMaster.expectedNewToolLife || 15000000) / 1000000).toFixed(1)}M</span>
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">Shot Life:</span>
+                      <span className="text-slate-200 font-bold text-xs sm:text-[13px]">{((selectedPartCostMaster.expectedNewToolLife || 15000000) / 1000000).toFixed(1)}M</span>
                     </div>
 
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">ผู้ผลิต:</span>
-                      <span className="text-slate-300 font-bold truncate block">
-                        {selectedPartCostMaster.supplier || 'In-House'}
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">ผู้ผลิต:</span>
+                      <span className="text-slate-200 font-bold text-xs sm:text-[13px] truncate block">
+                        {selectedPartCostMaster.supplier || 'KISUNG'}
                       </span>
                     </div>
 
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">ใหม่ (Nom):</span>
-                      <span className="text-cyan-400 font-bold">{nominalLengthMm.toFixed(2)}</span>
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">ใหม่ (Nom):</span>
+                      <span className="text-cyan-400 font-bold text-xs sm:text-[13px]">{nominalLengthMm.toFixed(2)} mm</span>
                     </div>
 
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">ปัจจุบัน (Cur):</span>
-                      <span className="text-amber-400 font-bold">{previousLengthMm.toFixed(2)}</span>
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">ปัจจุบัน (Cur):</span>
+                      <span className="text-amber-400 font-bold text-xs sm:text-[13px]">{previousLengthMm.toFixed(2)} mm</span>
                     </div>
 
-                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
-                      <span className="text-slate-500 block text-[8px]">หลังเจียร (Aft):</span>
-                      <span className="text-emerald-400 font-bold">{resultLengthMm.toFixed(2)}</span>
+                    <div className="bg-slate-900/80 p-2 rounded-lg border border-white/10 flex flex-col justify-between">
+                      <span className="text-slate-400 block text-[10px] sm:text-[11px] font-medium leading-tight">หลังเจียร (Aft):</span>
+                      <span className="text-emerald-400 font-black text-xs sm:text-[13px]">{resultLengthMm.toFixed(2)} mm</span>
                     </div>
                   </div>
 
-                  <div className="pt-1 border-t border-white/5 flex items-center justify-between text-[9px] font-bold text-slate-400">
-                    <span>รอบเจียรที่เหลือ:</span>
-                    <span className="text-cyan-400 px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20">
-                      {remainingCycles} ครั้ง (จาก {maxRegrindAllowed})
+                  <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-xs font-bold text-slate-300">
+                    <span>รอบเจียรที่เหลือ (Remaining Cycles):</span>
+                    <span className="text-cyan-300 font-mono text-xs px-2.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 font-black">
+                      {remainingCycles} ครั้ง (จาก {maxRegrindAllowed} ครั้ง)
                     </span>
                   </div>
                 </div>
@@ -778,7 +816,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
 
               {/* Historical Past Date Info Indicator */}
               {isHistoricalPastDate && (
-                <div className="p-2.5 rounded-xl bg-amber-950/80 border border-amber-500/60 text-amber-200 text-xs flex items-center justify-between gap-2 animate-fadeIn">
+                <div className="p-2 rounded-xl bg-amber-950/80 border border-amber-500/60 text-amber-200 text-xs flex items-center justify-between gap-2 shrink-0">
                   <div className="flex items-center gap-1.5 font-semibold">
                     <CalendarIcon className="w-4 h-4 text-amber-400 shrink-0" />
                     <span>📅 ลงบันทึกข้อมูลย้อนหลัง (Historical Record) วันที่ {scheduledDate}</span>
@@ -791,7 +829,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
 
               {/* Alert if date is before Jan 2025 */}
               {isBefore2025 && (
-                <div className="p-2.5 rounded-xl bg-rose-950/85 border border-rose-500/70 text-rose-200 text-xs flex items-center justify-between gap-2 animate-fadeIn">
+                <div className="p-2 rounded-xl bg-rose-950/85 border border-rose-500/70 text-rose-200 text-xs flex items-center justify-between gap-2 shrink-0">
                   <div className="flex items-center gap-1.5 font-semibold">
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
                     <span>ไม่อนุญาตให้ลงวันที่ย้อนหลังเกิน Jan 2025</span>
@@ -807,51 +845,72 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
               )}
 
               {/* SECTION 3: ⚠️ DEFECT REASONS */}
-              <div className="p-2 rounded-lg bg-slate-950/85 border border-white/10">
-                <label className="block text-slate-100 font-extrabold text-[9px] mb-1">
-                  ⚠️ สาเหตุการส่งเจียร / สภาพปัญหา (Reason) <span className="text-rose-400">*</span>
+              <div className="p-2.5 rounded-xl bg-slate-950/90 border border-white/15 shrink-0">
+                <label className="block text-slate-100 font-extrabold text-xs sm:text-[13px] mb-2 flex items-center gap-1.5">
+                  <span>⚠️</span>
+                  <span>
+                    {isEnglish
+                      ? 'Regrind & Defect Reason'
+                      : sysLanguage === 'DUAL'
+                      ? 'สาเหตุการส่งเจียร / Defect Reason'
+                      : 'สาเหตุการส่งเจียร / สภาพปัญหา'}
+                  </span>
+                  <span className="text-rose-400">*</span>
                 </label>
-                <div className="grid grid-cols-3 gap-1">
-                  {DEFECT_REASONS_LIST.map(item => (
-                    <button
-                      key={item.code}
-                      type="button"
-                      onClick={() => setDefectReason(item.code)}
-                      className={`p-1 border rounded-lg text-center transition-all cursor-pointer ${
-                        defectReason === item.code
-                          ? 'bg-cyan-500/10 border-cyan-400 text-cyan-200'
-                          : 'bg-slate-900/50 border-slate-800 text-slate-500 hover:border-slate-600'
-                      }`}
-                    >
-                      <div className="text-xs">{item.icon}</div>
-                      <div className="text-[7.5px] font-bold leading-tight mt-0.5 uppercase">{item.code.replace('_', ' ')}</div>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-3 gap-2">
+                  {DEFECT_REASONS_LIST.map(item => {
+                    const isSelected = defectReason === item.code;
+                    const displayLabel = isEnglish
+                      ? item.labelEn
+                      : sysLanguage === 'DUAL'
+                      ? item.labelTh
+                      : item.labelTh;
+                    const displayDesc = isEnglish ? item.descEn : item.descTh;
+                    return (
+                      <button
+                        key={item.code}
+                        type="button"
+                        onClick={() => setDefectReason(item.code)}
+                        className={`py-2 px-2 border rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-md ring-1 ring-cyan-400/50 font-black'
+                            : 'bg-slate-900/80 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:bg-slate-850 hover:text-white font-bold'
+                        }`}
+                        title={displayDesc}
+                      >
+                        <span className="text-base shrink-0">{item.icon}</span>
+                        <span className="text-[10.5px] sm:text-xs font-black leading-tight uppercase truncate">
+                          {displayLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
  
-              {/* SECTION 4: 📝 REMARKS */}
-              <div className="p-2 rounded-lg bg-slate-950/85 border border-white/10 space-y-1.5">
-                <label className="block text-slate-200 font-extrabold text-[9px] leading-none">
-                  📝 หมายเหตุ (Remarks)
+              {/* SECTION 4: 📝 REMARKS (Aligned with Labor Time block on the right) */}
+              <div className="p-2.5 rounded-xl bg-slate-950/90 border border-white/15 space-y-2 shrink-0">
+                <label className="block text-slate-200 font-extrabold text-xs sm:text-[13px] leading-tight flex items-center gap-1.5">
+                  <span>📝</span>
+                  <span>หมายเหตุ / รายละเอียดงานเพิ่มเติม (Remarks)</span>
                 </label>
                 <input
                   type="text"
                   value={remarks || ''}
                   onChange={e => setRemarks(e.target.value)}
-                  placeholder="ระบุรายละเอียด..."
-                  className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded-md text-white font-semibold text-[10px] focus:border-cyan-400 focus:outline-none"
+                  placeholder="ระบุรายละเอียด เช่น ลับคมด้วยหิน CBN #400..."
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-semibold text-xs sm:text-[13px] focus:border-cyan-400 focus:outline-none shadow-inner"
                 />
-                <div className="flex items-center gap-1 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {DEFAULT_REMARKS_PRESETS.map((preset, i) => (
                     <button
                       key={i}
                       type="button"
                       onClick={() => setRemarks(preset)}
-                      className={`px-1.5 py-0.5 rounded-md text-[8px] border cursor-pointer transition-all ${
+                      className={`px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold border cursor-pointer transition-all ${
                         remarks === preset
-                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 font-bold'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 font-black'
+                          : 'bg-white/5 border-white/10 text-slate-300 hover:text-white hover:bg-white/10'
                       }`}
                     >
                       {preset}
@@ -863,7 +922,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
             </div>
 
             {/* RIGHT COLUMN: Calculations & Remaining Data (5/12 cols) */}
-            <div className="lg:col-span-5 space-y-3">
+            <div className="lg:col-span-5 flex flex-col justify-between space-y-2.5">
               
               {/* SECTION 2: 📐 COMPLETE SPEC & REGRIND BREAKDOWN CALCULATOR */}
               <div className="p-3.5 rounded-2xl bg-gradient-to-b from-slate-900/95 to-slate-950 border-2 border-cyan-500/35 shadow-lg space-y-2.5">

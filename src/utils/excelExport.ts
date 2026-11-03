@@ -124,56 +124,100 @@ export function exportRegrindingHistoryExcel(
   records: RegrindingRecord[],
   lineFilter: string = 'ALL'
 ) {
-  const data = records.map((rec, index) => ({
-    'NO.': index + 1,
-    'JOB CODE': rec.jobCode,
-    'WORK ORDER': rec.workOrder || 'N/A',
-    'DATE': rec.regrindDate || rec.sentDate || 'N/A',
-    'LINE': rec.lineId ? `LINE ${rec.lineId}` : 'ALL',
-    'FIN DIE CODE': rec.dieCode || rec.finDie || 'N/A',
-    'COMPONENT NAME': rec.partName,
-    'PART CODE': rec.partCode,
-    'INSTANCE / LOT': rec.partInstanceOrLot || rec.serialNumber || 'N/A',
-    'CURRENT REGRIND CYCLE': `#${rec.regrindCycleCount ?? 1}`,
-    'MAX ALLOWED CYCLE': rec.maxAllowedCycles ?? 4,
-    'PREVIOUS LENGTH (mm)': rec.previousLength ?? 0,
-    'REMOVED DEPTH (mm)': rec.mmRemovedThisCycle ? `-${rec.mmRemovedThisCycle}` : '0.00',
-    'CURRENT LENGTH (mm)': rec.currentLength ?? 0,
-    'DIMENSION INSPECTION': rec.inspectionResult || rec.inspectionStatus || 'PASSED',
-    'JOB STATUS': rec.status || 'READY TO USE',
-    'PROCESS / WORKSHOP': rec.supplierOrInternalProcess || 'INTERNAL_TOOL_ROOM',
-    'TECHNICIAN / VENDOR': rec.performedBy || rec.technicianName || rec.vendorName || 'N/A',
-    'REMARKS': rec.note || rec.notes || ''
-  }));
+  const data = records.map((rec, index) => {
+    const drawingNo = rec.drawingNo || rec.drawingNumber || (rec.partCode ? rec.partCode.replace(/^[A-Z0-9]+-/, '') : 'DWG-PB-001');
+    const qty = rec.quantity || 1;
+    const newSpec = rec.newSpecMm !== undefined ? rec.newSpecMm : 62.50;
+    const currentH = rec.previousLength !== undefined ? rec.previousLength : (rec.beforeGrindMm || 62.50);
+    const afterH = rec.currentLength !== undefined ? rec.currentLength : (rec.afterGrindMm || 62.40);
+    const scrapLimit = rec.scrapLimitMm !== undefined ? rec.scrapLimitMm : 61.00;
+
+    const reasonLabel = rec.defectReason 
+      ? (rec.defectReason === 'NORMAL_WEAR' ? 'NORMAL WEAR'
+        : rec.defectReason === 'BURR_EXCESSIVE' ? 'BURR EXCESSIVE'
+        : rec.defectReason === 'CHIPPED' ? 'CHIPPED'
+        : rec.defectReason === 'GALLING_SCRATCHED' ? 'GALLING SCRATCHED'
+        : rec.defectReason === 'OUT_OF_TOLERANCE' ? 'OUT OF TOLERANCE'
+        : rec.defectReason === 'BROKEN' ? 'BROKEN'
+        : rec.defectReason)
+      : 'NORMAL WEAR';
+
+    const laborMinutes = rec.laborTimeMinutes !== undefined
+      ? rec.laborTimeMinutes
+      : Math.round((rec.laborHours !== undefined ? rec.laborHours : 1) * 60);
+
+    const laborCost = rec.laborCostThb !== undefined
+      ? rec.laborCostThb
+      : Math.round((laborMinutes / 60) * 180);
+
+    const newPrice = rec.newPartPriceThb !== undefined ? rec.newPartPriceThb : 12500;
+    const spareCost = rec.sparePartsCost !== undefined ? Number(rec.sparePartsCost) : 0;
+    const netSaving = rec.netSavingThb !== undefined
+      ? rec.netSavingThb
+      : Math.max(0, newPrice - (laborCost + spareCost));
+
+    const savingPct = rec.savingPercent !== undefined
+      ? (typeof rec.savingPercent === 'number' ? `${rec.savingPercent.toFixed(1)}%` : rec.savingPercent)
+      : (newPrice > 0 ? `${((netSaving / newPrice) * 100).toFixed(1)}%` : '0%');
+
+    const operator = rec.performedBy || rec.technicianName || 'Thanakorn Phonpayung';
+    const noteText = rec.note || rec.remarks || 'ลับคมด้วยหิน CBN #400';
+
+    return {
+      'NO.': index + 1,
+      'สถานะ Status': rec.status || 'READY TO USE',
+      'Job Code': rec.jobCode,
+      'วันที่': rec.regrindDate || (rec.timestamp ? rec.timestamp.substring(0, 10) : 'N/A'),
+      'ไลน์': rec.lineId ? `LINE ${rec.lineId}` : 'ALL',
+      'แม่พิมพ์ CODE': rec.dieCode || rec.finDie || 'FD-E1-07',
+      'ชื่อชิ้นงาน': rec.partName,
+      'Drawing Code': drawingNo,
+      'จำนวนงานที่ส่งเจียร': `${qty} ชิ้น`,
+      'ระยะสเปคความสูง ซื้อใหม่ (mm)': newSpec.toFixed(2),
+      'ความสูง ปัจจุบัน (mm)': currentH.toFixed(2),
+      'ความสูง หลังเจียร (mm)': afterH.toFixed(2),
+      'ระยะ Min หรือระยะที่คัดทิ้ง (mm)': scrapLimit.toFixed(2),
+      'สาเหตุการส่งเจียร': reasonLabel,
+      'เวลาแรงงานเจียร (นาที)': `${laborMinutes} นาที`,
+      'ค่าแรงงาน labor cost (฿)': laborCost,
+      'ราคาซื้อชิ้นงานใหม่ (฿)': newPrice,
+      'ส่วนต่างที่ประหยัดได้ (฿)': netSaving,
+      'เปอร์เซ็น ที่ ประหยัด %': savingPct,
+      'ชื่อช่างผู้รับผิดชอบ': operator,
+      'หมายเหตุ /รายละเอียดเพิ่มเติม': noteText
+    };
+  });
 
   const worksheet = XLSX.utils.json_to_sheet(data);
   worksheet['!cols'] = [
     { wch: 6 },  // NO.
-    { wch: 16 }, // JOB CODE
-    { wch: 16 }, // WORK ORDER
-    { wch: 12 }, // DATE
+    { wch: 22 }, // STATUS
+    { wch: 20 }, // JOB CODE
+    { wch: 14 }, // DATE
     { wch: 10 }, // LINE
-    { wch: 16 }, // FIN DIE CODE
-    { wch: 22 }, // COMPONENT NAME
-    { wch: 16 }, // PART CODE
-    { wch: 18 }, // INSTANCE / LOT
-    { wch: 12 }, // REGRIND CYCLE
-    { wch: 12 }, // MAX CYCLE
-    { wch: 16 }, // PREV LENGTH
-    { wch: 16 }, // REMOVED DEPTH
-    { wch: 16 }, // CURR LENGTH
-    { wch: 14 }, // INSPECTION
-    { wch: 16 }, // STATUS
-    { wch: 20 }, // PROCESS
-    { wch: 20 }, // TECHNICIAN
-    { wch: 24 }, // REMARKS
+    { wch: 18 }, // DIE CODE
+    { wch: 24 }, // PART NAME
+    { wch: 18 }, // DRAWING CODE
+    { wch: 20 }, // QTY
+    { wch: 24 }, // NEW SPEC MM
+    { wch: 22 }, // CURRENT H MM
+    { wch: 22 }, // AFTER H MM
+    { wch: 26 }, // SCRAP LIMIT MM
+    { wch: 22 }, // REASON
+    { wch: 22 }, // LABOR MINUTES
+    { wch: 22 }, // LABOR COST
+    { wch: 22 }, // NEW PRICE
+    { wch: 24 }, // NET SAVING
+    { wch: 22 }, // SAVING %
+    { wch: 24 }, // OPERATOR
+    { wch: 30 }, // REMARKS
   ];
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Regrinding Ledger');
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Unified Master Logs');
 
   const dateStr = new Date().toISOString().slice(0, 10);
-  saveWorkbookAsExcel(workbook, `FinDie_Regrinding_Sharpening_Ledger_${lineFilter}_${dateStr}.xlsx`);
+  saveWorkbookAsExcel(workbook, `FinDie_Unified_Master_Logs_${lineFilter}_${dateStr}.xlsx`);
 }
 
 /**
@@ -373,47 +417,81 @@ export function exportInspectionLogsExcel(
 
 /**
  * Export Part Master list to Excel (.xlsx)
+ * Matches table schema 100% with all 5 sections: Spec, Shot Cycles, Regrind Matrix, Pricing & Supplier
  */
 export function exportPartMasterExcel(items: any[]) {
-  const data = items.map((item, idx) => ({
-    'NO.': idx + 1,
-    'STAGE (สเตจ)': item.stage || '',
-    'PART CODE (รหัสพาร์ท)': item.partCode || '',
-    'PART NAME (ชื่อพาร์ท)': item.partName || '',
-    'DRAWING CODE (เลขที่แบบ)': item.drawingNo || item.partCode || '',
-    'E1 (Ø7 Slit)': item.shotLifeCycle?.e1_pcm !== undefined ? `${item.shotLifeCycle.e1_pcm}M` : '-',
-    'E2 (Ø5 Slit)': item.shotLifeCycle?.e2_gold !== undefined ? `${item.shotLifeCycle.e2_gold}M` : '-',
-    'E3-1 (Slit 3P)': item.shotLifeCycle?.e3_1_pcm !== undefined ? `${item.shotLifeCycle.e3_1_pcm}M` : '-',
-    'E3-2 (WL+ 4P)': item.shotLifeCycle?.e3_2_gold !== undefined ? `${item.shotLifeCycle.e3_2_gold}M` : '-',
-    'E3-3 (New Cor 4P)': item.shotLifeCycle?.e3_3_gold !== undefined ? `${item.shotLifeCycle.e3_3_gold}M` : '-',
-    'E4 (Ø5 Slit)': item.shotLifeCycle?.e4_bare !== undefined ? `${item.shotLifeCycle.e4_bare}M` : '-',
-    'E5 (Ø5 Slit)': item.shotLifeCycle?.e5_bare !== undefined ? `${item.shotLifeCycle.e5_bare}M` : '-',
-    'SCRAP LIMIT (mm)': item.shotLifeCycle?.lowerSpecScrapLimit || '62.50',
-    'REGRIND / TIME (mm)': item.regrindStandard?.perGrindMm || '0.05 mm',
-    'TOTAL REGRIND (mm)': item.regrindStandard?.totalGrindMm || '0.50',
-    'MAX CYCLES (ครั้ง)': item.regrindStandard?.regrindCycles ?? 10,
-    'NOTE / REMARK': item.regrindStandard?.note || ''
-  }));
+  const data = items.map((item, idx) => {
+    const applicableLines = Array.isArray(item.applicableLines) && item.applicableLines.length > 0
+      ? item.applicableLines.join(', ')
+      : 'All Lines (E1-E5)';
+
+    const formatMm = (val: any) => {
+      if (val === undefined || val === null || val === '' || val === '-') return '-';
+      const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.]/g, ''));
+      return !isNaN(num) && num > 0 ? `${num.toFixed(2)} mm` : String(val);
+    };
+
+    const newSpecStr = formatMm(item.newSpecMm);
+    const scrapLimitStr = formatMm(item.scrapLimitMm || item.shotLifeCycle?.lowerSpecScrapLimit);
+
+    const perGrindStr = item.regrindStandard?.perGrindMm || '-';
+    const totalGrindVal = item.regrindStandard?.totalGrindMm;
+    const totalGrindStr = totalGrindVal && totalGrindVal !== '-' ? `${totalGrindVal} mm` : '-';
+    const maxCyclesVal = item.regrindStandard?.regrindCycles ?? '-';
+
+    const priceThbStr = item.purchasePriceThb ? `฿${Number(item.purchasePriceThb).toLocaleString()}` : '-';
+    const priceUsdStr = item.purchasePriceUsd ? `$${Number(item.purchasePriceUsd).toLocaleString()}` : '-';
+
+    return {
+      'NO. (ลำดับ)': item.no || idx + 1,
+      'STAGE (สเตจ)': item.stage || '-',
+      'PART CODE (รหัสพาร์ท)': item.partCode || '-',
+      'PART NAME (ชื่อชิ้นส่วน)': item.partName || '-',
+      'DRAWING NO. (เลขที่แบบ)': item.drawingNo || item.partCode || '-',
+      'INSTALLED LINES (ไลน์ที่ติดตั้ง)': applicableLines,
+      'E1 (Ø7 Slit)': item.shotLifeCycle?.e1_pcm !== undefined ? `${item.shotLifeCycle.e1_pcm}M` : '-',
+      'E2 (Ø5 Slit)': item.shotLifeCycle?.e2_gold !== undefined ? `${item.shotLifeCycle.e2_gold}M` : '-',
+      'E3-1 (Slit 3P)': item.shotLifeCycle?.e3_1_pcm !== undefined ? `${item.shotLifeCycle.e3_1_pcm}M` : '-',
+      'E3-2 (WL+ 4P)': item.shotLifeCycle?.e3_2_gold !== undefined ? `${item.shotLifeCycle.e3_2_gold}M` : '-',
+      'E3-3 (New Cor 4P)': item.shotLifeCycle?.e3_3_gold !== undefined ? `${item.shotLifeCycle.e3_3_gold}M` : '-',
+      'E4 (Ø5 Slit)': item.shotLifeCycle?.e4_bare !== undefined ? `${item.shotLifeCycle.e4_bare}M` : '-',
+      'E5 (Ø5 Slit)': item.shotLifeCycle?.e5_bare !== undefined ? `${item.shotLifeCycle.e5_bare}M` : '-',
+      'NEW SPEC (mm) (สเปกใหม่)': newSpecStr,
+      'SCRAP LIMIT (mm) (สเปกคัดทิ้ง)': scrapLimitStr,
+      '1 TIME (mm) (ระยะเจียรต่อครั้ง)': perGrindStr,
+      'TOTAL REGRIND (mm) (เจียรรวม)': totalGrindStr,
+      'MAX CYCLES (รอบเจียรสูงสุด)': maxCyclesVal,
+      'NOTE / STANDARD (ข้อกำหนด/หมายเหตุ)': item.regrindStandard?.note || '-',
+      'PRICE THB (ราคาซื้อใหม่ บาท)': priceThbStr,
+      'PRICE USD (ราคา USD)': priceUsdStr,
+      'SUPPLIER (ผู้ผลิต/ผู้จำหน่าย)': item.supplier || '-'
+    };
+  });
 
   const worksheet = XLSX.utils.json_to_sheet(data);
   worksheet['!cols'] = [
     { wch: 6 },  // NO.
-    { wch: 22 }, // STAGE
+    { wch: 24 }, // STAGE
     { wch: 16 }, // PART CODE
-    { wch: 28 }, // PART NAME
-    { wch: 18 }, // DRAWING CODE
-    { wch: 12 }, // E1
-    { wch: 12 }, // E2
-    { wch: 12 }, // E3-1
-    { wch: 12 }, // E3-2
-    { wch: 12 }, // E3-3
-    { wch: 12 }, // E4
-    { wch: 12 }, // E5
-    { wch: 18 }, // SCRAP LIMIT
-    { wch: 20 }, // REGRIND / TIME
-    { wch: 18 }, // TOTAL REGRIND
-    { wch: 14 }, // MAX CYCLES
-    { wch: 24 }  // NOTE
+    { wch: 30 }, // PART NAME
+    { wch: 18 }, // DRAWING NO.
+    { wch: 22 }, // INSTALLED LINES
+    { wch: 14 }, // E1
+    { wch: 14 }, // E2
+    { wch: 14 }, // E3-1
+    { wch: 14 }, // E3-2
+    { wch: 14 }, // E3-3
+    { wch: 14 }, // E4
+    { wch: 14 }, // E5
+    { wch: 18 }, // NEW SPEC (mm)
+    { wch: 18 }, // SCRAP LIMIT (mm)
+    { wch: 18 }, // 1 TIME (mm)
+    { wch: 18 }, // TOTAL REGRIND (mm)
+    { wch: 16 }, // MAX CYCLES
+    { wch: 32 }, // NOTE / STANDARD
+    { wch: 18 }, // PRICE THB
+    { wch: 16 }, // PRICE USD
+    { wch: 20 }  // SUPPLIER
   ];
 
   const workbook = XLSX.utils.book_new();

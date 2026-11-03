@@ -30,102 +30,10 @@ import { useLanguage } from '../../i18n';
 import { UnifiedRegrindJobModal } from '../../components/modals/UnifiedRegrindJobModal';
 import { QueueTicketDetailModal } from '../../components/modals/QueueTicketDetailModal';
 import { JobCompletionConfirmModal } from '../../components/modals/JobCompletionConfirmModal';
+import { getUnifiedStatusMeta, resolveUnifiedStatusKey, CanonicalStatusKey } from '../../utils/statusHelper';
 
 export const getTicketStatusMeta = (ticket: RegrindWorkTicket) => {
-  const isEmg = Boolean(ticket.isEmergency || ticket.urgency === 'EMERGENCY');
-  const isCompleted = ticket.status === 'COMPLETED';
-  const isReady = ticket.status === 'READY';
-  const isCancelled = ticket.status === 'CANCELLED' || ticket.status === 'SCRAP';
-  const isShifted = (ticket.shiftedCount || 0) > 0 || ticket.status === 'POSTPONED';
-  const isInProcess = ticket.status === 'IN_PROCESS';
-  const isPaused = ticket.status === 'PAUSED';
-
-  if (isEmg) {
-    return {
-      key: 'EMERGENCY',
-      label: 'งานด่วน #1',
-      badgeClass: 'bg-rose-600 text-white font-black animate-pulse shadow-md',
-      cardClass: 'bg-rose-950/45 border-rose-500/80 shadow-[0_0_15px_rgba(244,63,94,0.3)] ring-1 ring-rose-500/40 hover:border-rose-400',
-      pillClass: 'bg-rose-950/90 border-rose-500 text-rose-100 shadow-sm font-bold',
-      leftBar: 'bg-rose-500',
-      icon: '🚨'
-    };
-  }
-  if (isCompleted) {
-    return {
-      key: 'COMPLETED',
-      label: 'งานเสร็จแล้ว',
-      badgeClass: 'bg-emerald-500 text-slate-950 font-black shadow-sm',
-      cardClass: 'bg-emerald-950/30 border-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.15)] hover:border-emerald-400',
-      pillClass: 'bg-emerald-950/90 border-emerald-500 text-emerald-100 font-bold',
-      leftBar: 'bg-emerald-400',
-      icon: '🟢'
-    };
-  }
-  if (isReady) {
-    return {
-      key: 'READY',
-      label: 'เจียรเสร็จแล้ว (พร้อมใช้)',
-      badgeClass: 'bg-sky-400 text-slate-950 font-black shadow-sm',
-      cardClass: 'bg-sky-950/30 border-sky-400/60 shadow-[0_0_12px_rgba(56,189,248,0.15)] hover:border-sky-300',
-      pillClass: 'bg-sky-950/90 border-sky-400 text-sky-100 font-bold',
-      leftBar: 'bg-sky-400',
-      icon: '🔵'
-    };
-  }
-  if (isShifted) {
-    return {
-      key: 'SHIFTED',
-      label: 'เลื่อนคิว / เลื่อนวัน',
-      badgeClass: 'bg-amber-500 text-slate-950 font-black shadow-sm',
-      cardClass: 'bg-amber-950/35 border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.15)] hover:border-amber-400',
-      pillClass: 'bg-amber-950/90 border-amber-400 text-amber-100 font-bold',
-      leftBar: 'bg-amber-400',
-      icon: '🟡'
-    };
-  }
-  if (isCancelled) {
-    return {
-      key: 'CANCELLED',
-      label: 'ยกเลิก / คัดทิ้ง',
-      badgeClass: 'bg-rose-950 text-rose-300 border border-rose-500/50 font-bold',
-      cardClass: 'bg-slate-950/90 border-rose-900/50 opacity-80 hover:opacity-100',
-      pillClass: 'bg-slate-950 border-rose-800 text-rose-300/80 line-through',
-      leftBar: 'bg-slate-700',
-      icon: '❌'
-    };
-  }
-  if (isInProcess) {
-    return {
-      key: 'IN_PROCESS',
-      label: 'กำลังเจียร',
-      badgeClass: 'bg-cyan-400 text-slate-950 font-bold',
-      cardClass: 'bg-cyan-950/35 border-cyan-500/60 hover:border-cyan-400',
-      pillClass: 'bg-cyan-950/90 border-cyan-400 text-cyan-100 font-bold',
-      leftBar: 'bg-cyan-400',
-      icon: '⚙️'
-    };
-  }
-  if (isPaused) {
-    return {
-      key: 'PAUSED',
-      label: 'พักชั่วคราว',
-      badgeClass: 'bg-purple-500 text-white font-bold',
-      cardClass: 'bg-purple-950/30 border-purple-500/40 hover:border-purple-400',
-      pillClass: 'bg-purple-950/90 border-purple-400 text-purple-100',
-      leftBar: 'bg-purple-400',
-      icon: '⏸️'
-    };
-  }
-  return {
-    key: 'PENDING',
-    label: 'รอคิวเจียร',
-    badgeClass: 'bg-slate-800 text-slate-200 font-bold border border-white/10',
-    cardClass: 'bg-slate-950/70 border-white/10 hover:border-cyan-400/40',
-    pillClass: 'bg-slate-900 border-white/15 text-slate-200',
-    leftBar: 'bg-slate-600',
-    icon: '⏳'
-  };
+  return getUnifiedStatusMeta(ticket);
 };
 
 interface SmartQueueAndCalendarScheduleViewProps {
@@ -194,8 +102,8 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
   const [isDraggingSplitter, setIsDraggingSplitter] = useState<boolean>(false);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
 
-  // Status Filter for Queue & Schedule: All, Urgent, Queue/Active, Shifted, Regrind Ready, Job Completed, Cancelled
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'EMERGENCY' | 'ACTIVE' | 'SHIFTED' | 'READY' | 'COMPLETED' | 'CANCELLED'>('ALL');
+  // Status Filter for Queue & Schedule: All or 6 Canonical States
+  const [statusFilter, setStatusFilter] = useState<CanonicalStatusKey | 'ALL'>('ALL');
 
   const handleStartSplitterDrag = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -247,25 +155,38 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
     setTimeout(() => setBannerMessage(null), 5000);
   };
 
-  // Accurate counts across the 5 distinct operational states
+  // Accurate counts across the 6 Canonical Statuses
   const statusCounts = useMemo(() => {
     const list = selectedLineFilter === 'ALL' ? tickets : tickets.filter(t => t.lineId === selectedLineFilter);
-    return {
+    const counts = {
       all: list.length,
-      emergency: list.filter(t => t.isEmergency || t.urgency === 'EMERGENCY').length,
-      active: list.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED').length,
-      shifted: list.filter(t => (t.shiftedCount || 0) > 0 || t.status === 'POSTPONED').length,
-      ready: list.filter(t => t.status === 'READY').length,
-      completed: list.filter(t => t.status === 'COMPLETED').length,
-      cancelled: list.filter(t => t.status === 'CANCELLED' || t.status === 'SCRAP').length,
+      emergency: 0,
+      waiting: 0,
+      postponed: 0,
+      ready: 0,
+      completed: 0,
+      scrap: 0
     };
+
+    list.forEach(t => {
+      const k = resolveUnifiedStatusKey(t);
+      if (k === 'EMERGENCY') counts.emergency++;
+      else if (k === 'WAITING') counts.waiting++;
+      else if (k === 'POSTPONED') counts.postponed++;
+      else if (k === 'READY') counts.ready++;
+      else if (k === 'COMPLETED') counts.completed++;
+      else if (k === 'SCRAP') counts.scrap++;
+    });
+
+    return counts;
   }, [tickets, selectedLineFilter]);
 
   // Active Sorted Queue (All)
   const allActiveQueue = useMemo(() => {
     return tickets
       .filter(t => {
-        const isActive = t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED';
+        const k = resolveUnifiedStatusKey(t);
+        const isActive = k === 'EMERGENCY' || k === 'WAITING' || k === 'POSTPONED';
         if (!isActive) return false;
         if (selectedLineFilter !== 'ALL' && t.lineId !== selectedLineFilter) return false;
         return true;
@@ -273,7 +194,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
       .sort((a, b) => (a.queueOrder ?? 9999) - (b.queueOrder ?? 9999));
   }, [tickets, selectedLineFilter]);
 
-  // Active Displayed Queue (either filtered by selectedCalendarDate or All, and statusFilter)
+  // Active Displayed Queue (filtered by selectedCalendarDate and statusFilter)
   const displayedQueue = useMemo(() => {
     let list = tickets.filter(t => {
       if (selectedLineFilter !== 'ALL' && t.lineId !== selectedLineFilter) return false;
@@ -284,23 +205,15 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
       return true;
     });
 
-    if (statusFilter === 'EMERGENCY') {
-      list = list.filter(t => t.isEmergency || t.urgency === 'EMERGENCY');
-    } else if (statusFilter === 'ACTIVE') {
-      list = list.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED');
-    } else if (statusFilter === 'SHIFTED') {
-      list = list.filter(t => (t.shiftedCount || 0) > 0 || t.status === 'POSTPONED');
-    } else if (statusFilter === 'READY') {
-      list = list.filter(t => t.status === 'READY');
-    } else if (statusFilter === 'COMPLETED') {
-      list = list.filter(t => t.status === 'COMPLETED');
-    } else if (statusFilter === 'CANCELLED') {
-      list = list.filter(t => t.status === 'CANCELLED' || t.status === 'SCRAP');
+    if (statusFilter !== 'ALL') {
+      list = list.filter(t => resolveUnifiedStatusKey(t) === statusFilter);
     }
 
     return list.sort((a, b) => {
-      const aEmg = a.isEmergency || a.urgency === 'EMERGENCY' ? 0 : 1;
-      const bEmg = b.isEmergency || b.urgency === 'EMERGENCY' ? 0 : 1;
+      const aKey = resolveUnifiedStatusKey(a);
+      const bKey = resolveUnifiedStatusKey(b);
+      const aEmg = aKey === 'EMERGENCY' ? 0 : 1;
+      const bEmg = bKey === 'EMERGENCY' ? 0 : 1;
       if (aEmg !== bEmg) return aEmg - bEmg;
 
       const getStatusRank = (st: string, shifted?: number) => {
@@ -720,7 +633,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
             </div>
           </div>
 
-          {/* Status Filter Tabs Bar (5 Distinct Operational States) */}
+          {/* Status Filter Tabs Bar (6 Canonical Operational States) */}
           <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs custom-scrollbar">
             <button
               type="button"
@@ -743,7 +656,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
                   : 'bg-rose-950/30 text-rose-300 hover:bg-rose-900/40 border border-rose-500/20'
               }`}
             >
-              <span>🚨 งานด่วน</span>
+              <span>🚨 งานด่วน #1</span>
               <span className="text-[10px] px-1 py-0.2 rounded-full bg-rose-900/60 font-mono">
                 {statusCounts.emergency}
               </span>
@@ -751,31 +664,31 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
 
             <button
               type="button"
-              onClick={() => setStatusFilter(statusFilter === 'ACTIVE' ? 'ALL' : 'ACTIVE')}
+              onClick={() => setStatusFilter(statusFilter === 'WAITING' ? 'ALL' : 'WAITING')}
               className={`px-2 py-1 rounded-lg font-mono font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
-                statusFilter === 'ACTIVE'
-                  ? 'bg-cyan-500 text-slate-950 border border-cyan-300 shadow-sm font-bold'
+                statusFilter === 'WAITING'
+                  ? 'bg-slate-800 text-cyan-300 border border-cyan-400 shadow-sm font-bold'
                   : 'bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/40 border border-cyan-500/20'
               }`}
             >
-              <span>⏳ รอ/กำลังเจียร</span>
+              <span>⏳ รอคิวเจียร</span>
               <span className="text-[10px] px-1 py-0.2 rounded-full bg-cyan-900/60 font-mono">
-                {statusCounts.active}
+                {statusCounts.waiting}
               </span>
             </button>
 
             <button
               type="button"
-              onClick={() => setStatusFilter(statusFilter === 'SHIFTED' ? 'ALL' : 'SHIFTED')}
+              onClick={() => setStatusFilter(statusFilter === 'POSTPONED' ? 'ALL' : 'POSTPONED')}
               className={`px-2 py-1 rounded-lg font-mono font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
-                statusFilter === 'SHIFTED'
+                statusFilter === 'POSTPONED'
                   ? 'bg-amber-500 text-slate-950 border border-amber-300 shadow-sm font-black'
                   : 'bg-amber-950/30 text-amber-300 hover:bg-amber-900/40 border border-amber-500/20'
               }`}
             >
-              <span>🟡 เลื่อน</span>
+              <span>🟡 งานเลื่อน</span>
               <span className="text-[10px] px-1 py-0.2 rounded-full bg-amber-900/60 font-mono">
-                {statusCounts.shifted}
+                {statusCounts.postponed}
               </span>
             </button>
 
@@ -784,11 +697,11 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
               onClick={() => setStatusFilter(statusFilter === 'READY' ? 'ALL' : 'READY')}
               className={`px-2 py-1 rounded-lg font-mono font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
                 statusFilter === 'READY'
-                  ? 'bg-sky-400 text-slate-950 border border-sky-300 shadow-sm font-black'
+                  ? 'bg-sky-500 text-white border border-sky-300 shadow-sm font-black'
                   : 'bg-sky-950/30 text-sky-300 hover:bg-sky-900/40 border border-sky-400/20'
               }`}
             >
-              <span>🔵 เจียรเสร็จ</span>
+              <span>🔵 เจียรเสร็จแล้ว</span>
               <span className="text-[10px] px-1 py-0.2 rounded-full bg-sky-900/60 font-mono">
                 {statusCounts.ready}
               </span>
@@ -803,7 +716,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
                   : 'bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/40 border border-emerald-500/20'
               }`}
             >
-              <span>🟢 งานเสร็จ</span>
+              <span>🟢 งานเสร็จสมบูรณ์</span>
               <span className="text-[10px] px-1 py-0.2 rounded-full bg-emerald-900/60 font-mono">
                 {statusCounts.completed}
               </span>
@@ -811,16 +724,16 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
 
             <button
               type="button"
-              onClick={() => setStatusFilter(statusFilter === 'CANCELLED' ? 'ALL' : 'CANCELLED')}
+              onClick={() => setStatusFilter(statusFilter === 'SCRAP' ? 'ALL' : 'SCRAP')}
               className={`px-2 py-1 rounded-lg font-mono font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
-                statusFilter === 'CANCELLED'
+                statusFilter === 'SCRAP'
                   ? 'bg-rose-950 text-rose-200 border border-rose-500 shadow-sm font-bold'
                   : 'bg-white/[0.04] text-slate-400 hover:text-rose-300 border border-white/5'
               }`}
             >
-              <span>❌ ยกเลิก</span>
+              <span>❌ คัดทิ้ง (ครบลิมิต)</span>
               <span className="text-[10px] px-1 py-0.2 rounded-full bg-white/10 font-mono">
-                {statusCounts.cancelled}
+                {statusCounts.scrap}
               </span>
             </button>
           </div>
@@ -1072,7 +985,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
             </div>
           </div>
 
-          {/* Status Color Legend Strip */}
+          {/* Status Color Legend Strip (6 Canonical States) */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-white/10 text-[11px] font-mono flex-wrap">
             <span className="text-slate-400 font-sans font-bold flex items-center gap-1">
               🏷️ สัญลักษณ์สถานะ:
@@ -1080,20 +993,20 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
             <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-bold flex items-center gap-1 shadow-sm">
               <span>🚨</span> <span>งานด่วน #1</span>
             </span>
-            <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold flex items-center gap-1">
-              <span>⏳</span> <span>รอ/กำลังเจียร</span>
+            <span className="px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold flex items-center gap-1">
+              <span>⏳</span> <span>รอคิวเจียร</span>
             </span>
             <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black flex items-center gap-1 shadow-sm">
-              <span>🟡</span> <span>เลื่อนคิว</span>
+              <span>🟡</span> <span>งานเลื่อน</span>
             </span>
-            <span className="px-2 py-0.5 rounded bg-sky-400 text-slate-950 font-black flex items-center gap-1 shadow-sm">
-              <span>🔵</span> <span>เจียรเสร็จ</span>
+            <span className="px-2 py-0.5 rounded bg-sky-500 text-white font-black flex items-center gap-1 shadow-sm">
+              <span>🔵</span> <span>งานเจียรเสร็จแล้ว (รอตรวจ QC)</span>
             </span>
             <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-black flex items-center gap-1 shadow-sm">
-              <span>🟢</span> <span>งานเสร็จ</span>
+              <span>🟢</span> <span>งานเสร็จสมบูรณ์ (QC ผ่าน)</span>
             </span>
-            <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500/30 font-bold flex items-center gap-1">
-              <span>❌</span> <span>ยกเลิก</span>
+            <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-600 font-bold flex items-center gap-1">
+              <span>❌</span> <span>ยกเลิก / คัดทิ้ง (ครบลิมิต)</span>
             </span>
           </div>
 

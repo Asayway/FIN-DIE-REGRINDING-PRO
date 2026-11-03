@@ -14,6 +14,7 @@ import {
 import { RegrindWorkTicket } from '../../types/regrind';
 import { detectTubeSize } from '../common/LineFilteredPartCombobox';
 import { regrindService } from '../../services/regrindService';
+import { getUnifiedStatusMeta, resolveUnifiedStatusKey } from '../../utils/statusHelper';
 
 export interface QueueTicketDetailModalProps {
   ticket: RegrindWorkTicket | null;
@@ -39,12 +40,16 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
 }) => {
   if (!ticket) return null;
 
-  const isEmg = Boolean(ticket.isEmergency || ticket.urgency === 'EMERGENCY');
+  const statusMeta = getUnifiedStatusMeta(ticket);
+  const isReady = statusMeta.key === 'READY';
+  const isCompleted = statusMeta.key === 'COMPLETED';
+  const isScrap = statusMeta.key === 'SCRAP';
+  const isPostponed = statusMeta.key === 'POSTPONED';
+  const isEmg = statusMeta.key === 'EMERGENCY';
+  const isWaiting = statusMeta.key === 'WAITING';
   const isInProcess = ticket.status === 'IN_PROCESS';
   const isPaused = ticket.status === 'PAUSED';
-  const isReady = ticket.status === 'READY';
-  const isScrap = ticket.status === 'SCRAP';
-  const wasShifted = (ticket.shiftedCount || 0) > 0 && !isEmg;
+  const wasShifted = (ticket.shiftedCount || 0) > 0;
 
   const tubeSize = detectTubeSize(ticket.partCode, ticket.partName);
   const nominalMm = ticket.nominalLengthMm ?? 70.0;
@@ -159,36 +164,19 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
             </div>
           )}
 
-          {/* Quick Info Grid with 5 Clear Status Identifiers */}
+          {/* Quick Info Grid with 6 Standardized Status Identifiers */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono">
-            <div className={`p-2.5 rounded-xl border ${
-              isEmg 
-                ? 'bg-rose-950/40 border-rose-500/70 text-rose-300' 
-                : ticket.status === 'COMPLETED'
-                ? 'bg-emerald-950/40 border-emerald-500/70 text-emerald-300'
-                : isReady 
-                ? 'bg-sky-950/40 border-sky-400/70 text-sky-300' 
-                : (ticket.status === 'POSTPONED' || wasShifted)
-                ? 'bg-amber-950/40 border-amber-500/70 text-amber-300'
-                : (ticket.status === 'CANCELLED' || isScrap)
-                ? 'bg-slate-900 border-rose-900/60 text-rose-400'
-                : isInProcess 
-                ? 'bg-cyan-950/40 border-cyan-500/70 text-cyan-300' 
-                : isPaused 
-                ? 'bg-purple-950/40 border-purple-500/70 text-purple-300' 
-                : 'bg-slate-950 border-white/10 text-slate-300'
-            }`}>
+            <div className={`p-2.5 rounded-xl border ${statusMeta.cardClass}`}>
               <span className="text-[10px] text-slate-400 block font-sans">สถานะปัจจุบัน</span>
-              <strong className="text-xs font-black mt-0.5 block flex items-center gap-1">
-                {isEmg && <span>🚨 งานด่วน #1</span>}
-                {!isEmg && ticket.status === 'COMPLETED' && <span>🟢 งานเสร็จแล้ว (ประกอบเสร็จ)</span>}
-                {!isEmg && isReady && <span>🔵 เจียรเสร็จแล้ว (พร้อมใช้)</span>}
-                {!isEmg && (ticket.status === 'POSTPONED' || wasShifted) && <span>🟡 เลื่อนคิว / เลื่อนวัน</span>}
-                {!isEmg && (ticket.status === 'CANCELLED' || isScrap) && <span>❌ ยกเลิก / คัดทิ้ง</span>}
-                {!isEmg && isInProcess && <span>⚙️ กำลังเจียร</span>}
-                {!isEmg && isPaused && <span>⏸️ พักชั่วคราว</span>}
-                {!isEmg && ticket.status === 'PENDING' && !wasShifted && <span>⏳ รอคิวเจียร</span>}
+              <strong className="text-xs font-black mt-0.5 block flex items-center gap-1.5">
+                <span>{statusMeta.icon}</span>
+                <span>{statusMeta.label}</span>
               </strong>
+              {statusMeta.subLabel && (
+                <span className="text-[9.5px] text-slate-400 block truncate font-sans mt-0.5">
+                  {statusMeta.subLabel}
+                </span>
+              )}
             </div>
 
             <div className="p-2.5 rounded-xl bg-slate-950 border border-white/10">
@@ -211,12 +199,23 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Quick Status Action Toolbar (5 Distinct States) */}
-          <div className="p-2.5 rounded-xl bg-slate-900/90 border border-white/15 space-y-1.5">
-            <span className="text-[10.5px] font-bold text-slate-300 flex items-center justify-between">
-              <span>⚡ เปลี่ยนสถานะด่วน (Quick Status Update):</span>
-              <span className="text-[10px] font-mono text-cyan-400 font-normal">คลิกเพื่ออัปเดตสถานะทันที</span>
-            </span>
+          {/* Quick Status Action Toolbar (Standardized 6 States Workflow) */}
+          <div className="p-2.5 rounded-xl bg-slate-900/90 border border-white/15 space-y-2">
+            <div className="flex items-center justify-between text-[10.5px]">
+              <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                <span>⚡ ปรับสถานะงาน (Workflow Status Actions):</span>
+              </span>
+              <span className="text-[10px] font-mono text-cyan-400">
+                {isReady
+                  ? '🔵 เจียรเสร็จแล้ว → พร้อมตรวจ QC'
+                  : isCompleted
+                  ? '🟢 งานเสร็จสมบูรณ์แล้ว'
+                  : isScrap
+                  ? '❌ งานคัดทิ้ง (ไม่ต้องตรวจ QC)'
+                  : '⏳ เจียรให้เสร็จแล้วกด "เจียรเสร็จ" เพื่อส่งตรวจ QC'}
+              </span>
+            </div>
+
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-xs font-bold font-mono">
               {/* 1. งานด่วน */}
               <button
@@ -236,7 +235,7 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                 <span className="text-[11px]">งานด่วน #1</span>
               </button>
 
-              {/* 2. เลื่อน */}
+              {/* 2. งานเลื่อน */}
               <button
                 type="button"
                 onClick={() => {
@@ -244,17 +243,17 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                   if (onSelectTicket) onSelectTicket({ ...ticket, status: 'POSTPONED', shiftedCount: (ticket.shiftedCount || 0) + 1 });
                 }}
                 className={`px-2 py-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer transition-all ${
-                  ticket.status === 'POSTPONED' || wasShifted
+                  isPostponed
                     ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-md font-black'
                     : 'bg-amber-950/40 hover:bg-amber-900/50 text-amber-300 border-amber-500/30'
                 }`}
-                title="ปรับสถานะเป็น เลื่อนคิว / เลื่อนกำหนดการ"
+                title="ปรับสถานะเป็น งานเลื่อน (บันทึกประวัติตกค้างไว้ที่วันเดิม)"
               >
                 <span>🟡</span>
-                <span className="text-[11px]">เลื่อน</span>
+                <span className="text-[11px]">งานเลื่อน</span>
               </button>
 
-              {/* 3. เจียรเสร็จแล้ว */}
+              {/* 3. งานเจียรเสร็จแล้ว (พนักงานยืนยันว่าเจียรเสร็จแล้ว) */}
               <button
                 type="button"
                 onClick={() => {
@@ -263,18 +262,19 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                 }}
                 className={`px-2 py-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer transition-all ${
                   isReady
-                    ? 'bg-sky-400 text-slate-950 border-sky-200 shadow-md font-black'
+                    ? 'bg-sky-500 text-white border-sky-300 shadow-md font-black ring-2 ring-sky-400/50'
                     : 'bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 border-sky-400/30'
                 }`}
-                title="ทำเครื่องหมาย เจียรเสร็จแล้ว (พร้อมใช้งาน)"
+                title="พนักงานกดยืนยันว่าเจียรเสร็จแล้ว เพื่อส่งต่อเข้าขั้นตอนตรวจรับ QC"
               >
                 <span>🔵</span>
-                <span className="text-[11px]">เจียรเสร็จ</span>
+                <span className="text-[11px]">เจียรเสร็จแล้ว</span>
               </button>
 
-              {/* 4. ยืนยันจบงาน & QC PASS */}
+              {/* 4. ตรวจรับ QC / จบงาน (แสดง/เลือกได้หลังจากพนักงานยืนยันเจียรเสร็จแล้วเท่านั้น) */}
               <button
                 type="button"
+                disabled={!isReady && !isCompleted}
                 onClick={() => {
                   if (ticket.status === 'COMPLETED') {
                     if (window.confirm('ใบงานนี้ปิดแล้ว ต้องการเปิดงานซ่อมใหม่ (Reopen) หรือไม่?')) {
@@ -287,37 +287,59 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                     return;
                   }
 
+                  if (!isReady) {
+                    alert('⚠️ ขั้นตอนตรวจรับ QC จะดำเนินการได้หลังจากพนักงานกดยืนยันสถานะ "งานเจียรเสร็จแล้ว" ก่อนเท่านั้น');
+                    return;
+                  }
+
                   if (onCompleteTicket) {
                     onCompleteTicket(ticket);
                   }
                 }}
-                className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer transition-all font-bold ${
-                  ticket.status === 'COMPLETED'
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-md font-black'
-                    : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-500/50'
+                className={`px-2 py-1.5 rounded-lg border flex items-center justify-center gap-1 transition-all font-bold ${
+                  isCompleted
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-md font-black cursor-pointer'
+                    : isReady
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 shadow-lg animate-pulse ring-2 ring-emerald-400/50 cursor-pointer'
+                    : 'bg-slate-900 text-slate-500 border-white/5 opacity-50 cursor-not-allowed'
                 }`}
-                title="ยืนยันจบงาน (Confirm Job Completion & QC PASS)"
+                title={
+                  isCompleted
+                    ? 'งานเสร็จสมบูรณ์ (QC ผ่านแล้ว) คลิกเพื่อเปิดงานใหม่'
+                    : isReady
+                    ? 'ตรวจรับ QC และยืนยันจบงาน (QC Inspection)'
+                    : 'ต้องกดยืนยันเจียรเสร็จแล้วก่อน จึงจะตรวจรับ QC ได้'
+                }
               >
                 <span>🟢</span>
-                <span className="text-[11px]">{ticket.status === 'COMPLETED' ? 'COMPLETED / QC PASS' : 'ยืนยันจบงาน'}</span>
+                <span className="text-[11px] truncate">
+                  {isCompleted ? 'QC ผ่านสมบูรณ์' : isReady ? 'ตรวจรับ QC' : 'รอเจียรเสร็จ'}
+                </span>
               </button>
 
-              {/* 5. ยกเลิก */}
+              {/* 5. ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร) */}
               <button
                 type="button"
                 onClick={() => {
-                  regrindService.markTicketAsCancelled(ticket.id, 'ผู้ใช้ยกเลิกใบงาน');
-                  if (onSelectTicket) onSelectTicket({ ...ticket, status: 'CANCELLED', isEmergency: false });
+                  if (window.confirm(`ยืนยันการคัดทิ้ง / ยกเลิกใบงาน ${ticket.jobCode} (${ticket.partName})?`)) {
+                    regrindService.scrapItem(
+                      ticket.id,
+                      ticket.defectReason || 'OUT_OF_TOLERANCE',
+                      'คัดทิ้ง / ยกเลิก (ครบลิมิตเจียรหรือชำรุด)',
+                      ticket.assignedTechnician || 'Technician'
+                    );
+                    if (onSelectTicket) onSelectTicket({ ...ticket, status: 'SCRAP', isScrapped: true, isEmergency: false });
+                  }
                 }}
                 className={`px-2 py-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer transition-all ${
-                  ticket.status === 'CANCELLED' || isScrap
+                  isScrap
                     ? 'bg-rose-950 text-rose-200 border-rose-500 shadow-md font-bold'
                     : 'bg-slate-900 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border-white/10'
                 }`}
-                title="ยกเลิกใบงาน / คัดทิ้ง"
+                title="คัดทิ้ง (ครบลิมิตเจียร / ต่ำกว่าสเปค Min) ไม่ต้องผ่าน QC"
               >
                 <span>❌</span>
-                <span className="text-[11px]">ยกเลิก</span>
+                <span className="text-[11px]">คัดทิ้ง</span>
               </button>
             </div>
           </div>
@@ -430,34 +452,55 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
               )}
 
               {!isScrap && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (ticket.status === 'COMPLETED') {
-                      if (window.confirm('ใบงานนี้ปิดแล้ว ต้องการเปิดงานซ่อมใหม่ (Reopen) หรือไม่?')) {
-                        const res = regrindService.reopenTicket(ticket.id, 'เปิดงานซ่อมใหม่โดยผู้ใช้งาน');
-                        if (res.success && onSelectTicket) {
-                          onSelectTicket({ ...ticket, status: 'IN_PROCESS' });
-                        }
-                        alert(res.message);
-                      }
-                      return;
-                    }
+                <>
+                  {/* Step 1 for Technician: If not yet ready, technician confirms grinding is done */}
+                  {!isReady && !isCompleted && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        regrindService.markTicketAsReady(ticket.id);
+                        if (onSelectTicket) onSelectTicket({ ...ticket, status: 'READY', isEmergency: false });
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-md bg-sky-600 hover:bg-sky-500 text-white"
+                      title="ช่างกดยืนยันว่าเจียรเสร็จแล้ว (เพื่อส่งต่อเข้าขั้นตอนตรวจรับ QC)"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>🔵 ยืนยันเจียรเสร็จแล้ว</span>
+                    </button>
+                  )}
 
-                    if (onCompleteTicket) {
-                      onCompleteTicket(ticket);
-                    }
-                  }}
-                  className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-md ${
-                    ticket.status === 'COMPLETED'
-                      ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                      : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white'
-                  }`}
-                  title="ยืนยันจบงาน (Confirm Job Completion & QC PASS)"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{ticket.status === 'COMPLETED' ? 'COMPLETED / QC PASS' : 'ยืนยันจบงาน'}</span>
-                </button>
+                  {/* Step 2 for QC Inspector: Appears when grinding is confirmed READY */}
+                  {(isReady || isCompleted) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (ticket.status === 'COMPLETED') {
+                          if (window.confirm('ใบงานนี้ปิดแล้ว ต้องการเปิดงานซ่อมใหม่ (Reopen) หรือไม่?')) {
+                            const res = regrindService.reopenTicket(ticket.id, 'เปิดงานซ่อมใหม่โดยผู้ใช้งาน');
+                            if (res.success && onSelectTicket) {
+                              onSelectTicket({ ...ticket, status: 'IN_PROCESS' });
+                            }
+                            alert(res.message);
+                          }
+                          return;
+                        }
+
+                        if (onCompleteTicket) {
+                          onCompleteTicket(ticket);
+                        }
+                      }}
+                      className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-md ${
+                        ticket.status === 'COMPLETED'
+                          ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white ring-2 ring-emerald-400/50 animate-pulse'
+                      }`}
+                      title={ticket.status === 'COMPLETED' ? 'งานเสร็จสมบูรณ์ (QC ผ่านแล้ว)' : 'ตรวจรับ QC และยืนยันจบงาน (QC Inspection & Final Approval)'}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{ticket.status === 'COMPLETED' ? '🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)' : '🟢 ตรวจรับ QC / จบงาน'}</span>
+                    </button>
+                  )}
+                </>
               )}
 
               <button

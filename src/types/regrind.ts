@@ -113,6 +113,8 @@ export interface RegrindWorkTicket {
   partName: string;
   partCode: string;
   lineId: ProductionLineId;
+  dieCode?: string;
+  finDie?: string;
   stageName?: string;
   positionId?: string; // e.g. "P-04", "SLIT-02"
   picCategory: string;

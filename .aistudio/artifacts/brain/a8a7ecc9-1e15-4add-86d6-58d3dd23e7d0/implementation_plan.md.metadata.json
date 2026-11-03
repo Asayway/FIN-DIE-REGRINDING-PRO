@@ -1,6 +1,6 @@
 {
-  "summary": "แผนการปรับปรุงหน้าตั้งค่าสเปคแม่พิมพ์ไลน์ผลิต (Line & Die Specification View)\n1. ปรับเปลี่ยนโครงสร้างหน้าเป็น Unified Matrix Table รวมทั้ง 7 ไลน์ผลิต (E1, E2, E3-1, E3-2, E3-3, E4, E5) แสดงครบในหน้าจอเดียวโดยไม่ต้องเลื่อนหรือสลับแท็บ\n2. ลบปุ่มเลือกแยกไลน์เดี่ยว (Single Line Tabs) ออกตามที่ผู้ใช้ร้องขอ\n3. จัดคอลัมน์ตารางให้กระชับ ครบถ้วน: รหัสไลน์, สถานะผลิต (Dropdown: RUNNING, IDLE, MAINTENANCE, STOPPED), Tube Size, Fin Type, Pitch Spec, Fin Material, Die Code/Name, Default SPM และ E3 Active Die Selector\n4. รองรับการแก้ไขข้อมูลแบบ Real-time In-place และซิงก์ลง Storage/Database ทันที",
-  "updatedAt": "2026-11-03T11:26:21.367599972Z",
+  "summary": "Implementation plan for concise localized column headers and 100% synchronized editable queue ticket modal in Unified Master Logs.",
+  "updatedAt": "2026-11-03T15:44:15.535774007Z",
   "requestFeedback": true,
   "userFacing": true
 }

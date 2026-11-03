@@ -595,6 +595,24 @@ class StorageService {
             std.stagePunchDie = newStage;
             regrindChanged = true;
           }
+          if (part.regrindStandard) {
+            if ((std as any).regrindStandard) {
+              (std as any).regrindStandard.oneTimeRegrindMm = part.regrindStandard.perGrindMm;
+              (std as any).regrindStandard.totalRegrindMm = part.regrindStandard.totalGrindMm;
+              (std as any).regrindStandard.maxRegrindCount = part.regrindStandard.regrindCycles;
+              (std as any).regrindStandard.regrindIntervalNote = part.regrindStandard.note;
+              regrindChanged = true;
+            }
+          }
+          if ((part as any).newSpecMm !== undefined) {
+            (std as any).newSpecMm = (part as any).newSpecMm;
+            regrindChanged = true;
+          }
+          if ((part as any).scrapLimitMm !== undefined) {
+            (std as any).scrapLimitMm = (part as any).scrapLimitMm;
+            (std as any).scrapLimit = `${(part as any).scrapLimitMm}`;
+            regrindChanged = true;
+          }
         }
       });
 
@@ -2674,20 +2692,56 @@ class StorageService {
       computedStatus = 'HOLD';
     }
 
+    const calcLaborMinutes = record.laborTimeMinutes !== undefined
+      ? record.laborTimeMinutes
+      : Math.round((record.laborHours !== undefined ? record.laborHours : 1) * 60);
+    const calcLaborCost = record.laborCostThb !== undefined
+      ? record.laborCostThb
+      : Math.round((calcLaborMinutes / 60) * 180);
+    
+    // Find part master price if available
+    const partMasters = this.getPartMasters();
+    const pm = partMasters.find(p => p.partCode === record.partCode || p.partName === record.partName);
+    const calcNewPrice = record.newPartPriceThb !== undefined
+      ? record.newPartPriceThb
+      : (pm?.unitCostThb || pm?.purchasePriceThb || 12500);
+    
+    const calcSpareCost = record.sparePartsCost !== undefined ? Number(record.sparePartsCost) : 0;
+    const calcNetSaving = record.netSavingThb !== undefined
+      ? record.netSavingThb
+      : Math.max(0, calcNewPrice - (calcLaborCost + calcSpareCost));
+    const calcSavingPercent = calcNewPrice > 0
+      ? ((calcNetSaving / calcNewPrice) * 100).toFixed(1) + '%'
+      : '0%';
+
     const newRecord: RegrindingRecord = {
       id: newId,
       jobCode: record.jobCode || `JOB-RGD-${new Date().getFullYear()}-${String(regrinds.length + 1).padStart(3, '0')}`,
       partInstanceOrLot: record.partInstanceOrLot || record.serialNumber || `SN-${record.partCode || 'TOOL'}-${Date.now().toString().slice(-4)}`,
       partCode: record.partCode || (std ? std.partCode : 'P-TOOL-001'),
       partName: record.partName || (std ? std.partName : 'Tooling Element'),
+      drawingNo: record.drawingNo || record.drawingNumber || (pm?.drawingNumber || (record.partCode ? record.partCode.replace(/^[A-Z0-9]+-/, '') : 'DWG-PB-001')),
+      drawingNumber: record.drawingNo || record.drawingNumber || pm?.drawingNumber,
       serialNumber: record.partInstanceOrLot || record.serialNumber,
+      quantity: record.quantity !== undefined ? record.quantity : 1,
       lineId: (record.lineId as ProductionLineId) || (record.lineLastUsed as ProductionLineId) || 'E1',
       lineLastUsed: (record.lineLastUsed as ProductionLineId) || (record.lineId as ProductionLineId) || 'E1',
       dieCode: record.dieCode || record.finDie || 'FD-E1-07',
       finDie: record.finDie || record.dieCode || 'FD-E1-07',
+      newSpecMm: record.newSpecMm !== undefined ? record.newSpecMm : (std ? std.nominalLengthMm : prevLength),
       previousLength: prevLength,
       currentLength: curLength,
+      beforeGrindMm: prevLength,
+      afterGrindMm: curLength,
       actualGrindingRemovedMm: mmRemoved,
+      grindAmountMm: mmRemoved,
+      scrapLimitMm: record.scrapLimitMm !== undefined ? record.scrapLimitMm : minLength,
+      defectReason: record.defectReason || 'NORMAL_WEAR',
+      laborTimeMinutes: calcLaborMinutes,
+      laborCostThb: calcLaborCost,
+      newPartPriceThb: calcNewPrice,
+      netSavingThb: calcNetSaving,
+      savingPercent: calcSavingPercent,
       regrindCountBefore: regrindBefore,
       regrindCountAfter: regrindAfter,
       remainingRegrindCount: remainingCount,
@@ -2696,10 +2750,10 @@ class StorageService {
       supplierOrInternalProcess: record.supplierOrInternalProcess || 'INTERNAL_TOOL_ROOM',
       vendorName: record.vendorName || (record.supplierOrInternalProcess === 'EXTERNAL_VENDOR' ? 'External Tooling Specialist' : 'Internal Die Tool Room'),
       workOrder: record.workOrder || `WO-RGD-${new Date().getFullYear()}-${String(Math.floor(100 + Math.random() * 900))}`,
-      cost: record.cost !== undefined ? Number(record.cost) : 3500,
-      laborHours: record.laborHours !== undefined ? Number(record.laborHours) : 0,
+      cost: record.cost !== undefined ? Number(record.cost) : calcLaborCost,
+      laborHours: Number((calcLaborMinutes / 60).toFixed(2)),
       sparePartsUsed: record.sparePartsUsed || '',
-      sparePartsCost: record.sparePartsCost !== undefined ? Number(record.sparePartsCost) : 0,
+      sparePartsCost: calcSpareCost,
       performedBy: record.performedBy || user.name,
       verifiedBy: record.verifiedBy || (isInspectionPassed ? user.name : 'Pending Inspector'),
       evidence: record.evidence,

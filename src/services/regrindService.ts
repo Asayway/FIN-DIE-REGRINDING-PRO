@@ -356,6 +356,88 @@ class RegrindService {
     tickets[idx] = updatedTicket;
     this.saveQueueTickets(tickets);
 
+    // Synchronize 100% with Master Log Records in storageService
+    try {
+      const regrinds = storageService.getRegrindRecords();
+      const recIdx = regrinds.findIndex(r => 
+        r.jobCode === updatedTicket.jobCode || 
+        r.workOrder === updatedTicket.jobCode || 
+        r.id === updatedTicket.id ||
+        r.id === ticketId
+      );
+
+      const pm = storageService.getPartMasters().find(p => p.partCode === updatedTicket.partCode || p.partName === updatedTicket.partName);
+      const calcNewPrice = pm?.unitCostThb || pm?.purchasePriceThb || 12500;
+      const calcLaborMinutes = Math.round((updatedTicket.laborHours !== undefined ? updatedTicket.laborHours : 1) * 60);
+      const calcLaborCost = Math.round((calcLaborMinutes / 60) * 180);
+      const calcSpareCost = updatedTicket.sparePartsCost || 0;
+      const calcNetSaving = Math.max(0, calcNewPrice - (calcLaborCost + calcSpareCost));
+      const calcSavingPercent = calcNewPrice > 0 ? `${((calcNetSaving / calcNewPrice) * 100).toFixed(1)}%` : '0%';
+
+      if (recIdx !== -1) {
+        regrinds[recIdx] = {
+          ...regrinds[recIdx],
+          lineId: (updatedTicket.lineId as ProductionLineId) || regrinds[recIdx].lineId,
+          dieCode: (updatedTicket as any).dieCode || (updatedTicket as any).finDie || regrinds[recIdx].dieCode,
+          partCode: updatedTicket.partCode || regrinds[recIdx].partCode,
+          partName: updatedTicket.partName || regrinds[recIdx].partName,
+          quantity: updatedTicket.quantity || regrinds[recIdx].quantity || 1,
+          previousLength: updatedTicket.previousLengthMm !== undefined ? updatedTicket.previousLengthMm : regrinds[recIdx].previousLength,
+          currentLength: updatedTicket.lengthAfterGrindMm !== undefined ? updatedTicket.lengthAfterGrindMm : regrinds[recIdx].currentLength,
+          actualGrindingRemovedMm: updatedTicket.grindDepthMm !== undefined ? updatedTicket.grindDepthMm : regrinds[recIdx].actualGrindingRemovedMm,
+          regrindCountBefore: updatedTicket.regrindCountBefore !== undefined ? updatedTicket.regrindCountBefore : regrinds[recIdx].regrindCountBefore,
+          regrindCountAfter: updatedTicket.regrindCountAfter !== undefined ? updatedTicket.regrindCountAfter : regrinds[recIdx].regrindCountAfter,
+          maxAllowedCycles: updatedTicket.maxRegrindAllowed !== undefined ? updatedTicket.maxRegrindAllowed : regrinds[recIdx].maxAllowedCycles,
+          performedBy: updatedTicket.assignedTechnician || regrinds[recIdx].performedBy,
+          regrindDate: updatedTicket.scheduledDate || regrinds[recIdx].regrindDate,
+          defectReason: updatedTicket.defectReason || regrinds[recIdx].defectReason,
+          laborTimeMinutes: calcLaborMinutes,
+          laborHours: updatedTicket.laborHours,
+          laborCostThb: calcLaborCost,
+          newPartPriceThb: calcNewPrice,
+          sparePartsCost: calcSpareCost,
+          sparePartsUsed: updatedTicket.sparePartsUsed,
+          netSavingThb: calcNetSaving,
+          savingPercent: calcSavingPercent,
+          note: updatedTicket.remarks || updatedTicket.defectNotes || regrinds[recIdx].note,
+          status: updatedTicket.status === 'READY' || updatedTicket.status === 'COMPLETED' ? 'READY TO USE' : (updatedTicket.status === 'SCRAP' ? 'SCRAP' : (updatedTicket.isEmergency ? 'WAITING REGRIND' : regrinds[recIdx].status))
+        };
+        safeStorage.setItem('fin_press_regrinds', JSON.stringify(regrinds));
+      } else {
+        // Record new entry if not existing
+        storageService.recordRegrind({
+          id: updatedTicket.id,
+          jobCode: updatedTicket.jobCode,
+          lineId: updatedTicket.lineId,
+          dieCode: updatedTicket.dieCode,
+          partCode: updatedTicket.partCode,
+          partName: updatedTicket.partName,
+          quantity: updatedTicket.quantity,
+          previousLength: updatedTicket.previousLengthMm,
+          currentLength: updatedTicket.lengthAfterGrindMm,
+          actualGrindingRemovedMm: updatedTicket.grindDepthMm,
+          regrindCountBefore: updatedTicket.regrindCountBefore,
+          regrindCountAfter: updatedTicket.regrindCountAfter,
+          maxAllowedCycles: updatedTicket.maxRegrindAllowed,
+          performedBy: updatedTicket.assignedTechnician,
+          regrindDate: updatedTicket.scheduledDate,
+          defectReason: updatedTicket.defectReason,
+          laborTimeMinutes: calcLaborMinutes,
+          laborHours: updatedTicket.laborHours,
+          laborCostThb: calcLaborCost,
+          newPartPriceThb: calcNewPrice,
+          sparePartsCost: calcSpareCost,
+          sparePartsUsed: updatedTicket.sparePartsUsed,
+          netSavingThb: calcNetSaving,
+          savingPercent: calcSavingPercent,
+          note: updatedTicket.remarks || updatedTicket.defectNotes,
+          status: updatedTicket.status === 'READY' || updatedTicket.status === 'COMPLETED' ? 'READY TO USE' : (updatedTicket.status === 'SCRAP' ? 'SCRAP' : 'WAITING REGRIND')
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to sync updated ticket to storageService regrinds:', err);
+    }
+
     if (willBeEmergency && !wasEmergency) {
       const emgRes = this.markTicketAsEmergency(ticketId, {
         preemptActiveJob: updates.preemptActiveJob ?? true,
@@ -726,6 +808,10 @@ class RegrindService {
       const ticket = tickets[idx];
       if (ticket.status === 'COMPLETED') {
         return { success: false, message: 'ใบงานนี้ได้รับการปิดงานและบันทึกผล QC PASS เรียบร้อยแล้ว' };
+      }
+
+      if (ticket.status === 'SCRAP' || ticket.isScrapped) {
+        return { success: false, message: 'ชิ้นส่วนนี้ถูกคัดทิ้ง (Scrap) แล้ว ไม่ต้องผ่านขั้นตอนตรวจรับ QC' };
       }
 
       if (!ticket.jobCode || !ticket.partName) {

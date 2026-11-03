@@ -20,6 +20,7 @@ import {
   Ruler
 } from 'lucide-react';
 import { ProductionLineId } from '../../types';
+import { getUnifiedStatusMeta, resolveUnifiedStatusKey, CanonicalStatusKey } from '../../utils/statusHelper';
 
 interface RegrindQueueTableProps {
   tickets: RegrindWorkTicket[];
@@ -58,8 +59,11 @@ export const RegrindQueueTable: React.FC<RegrindQueueTableProps> = ({
         return false;
       }
       // Status filter
-      if (activeStatusFilter !== 'ALL' && t.status !== activeStatusFilter) {
-        return false;
+      if (activeStatusFilter !== 'ALL') {
+        const itemKey = resolveUnifiedStatusKey(t);
+        if (itemKey !== activeStatusFilter && t.status !== activeStatusFilter) {
+          return false;
+        }
       }
       // Line filter
       if (lineFilter !== 'ALL' && t.lineId !== lineFilter) {
@@ -107,37 +111,14 @@ export const RegrindQueueTable: React.FC<RegrindQueueTableProps> = ({
     });
   }, [tickets, activeStatusFilter, lineFilter, searchQuery, selectedGlobalPart]);
 
-  const getStatusBadge = (status: RegrindQueueStatus) => {
-    switch (status) {
-      case 'PENDING':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-            รอเจียร (Pending)
-          </span>
-        );
-      case 'IN_PROCESS':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-100 text-sky-900 dark:bg-sky-950/80 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
-            <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
-            กำลังเจียร (In-Process)
-          </span>
-        );
-      case 'READY':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            พร้อมใช้ (Ready)
-          </span>
-        );
-      case 'SCRAP':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-900 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-            <AlertOctagon className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-            ทิ้ง / หมดสเปค (Scrap)
-          </span>
-        );
-    }
+  const getStatusBadge = (ticketOrStatus: RegrindWorkTicket | RegrindQueueStatus) => {
+    const meta = getUnifiedStatusMeta(typeof ticketOrStatus === 'string' ? { status: ticketOrStatus } : ticketOrStatus);
+    return (
+      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold shadow-xs ${meta.pillClass || meta.badgeClass}`}>
+        <span>{meta.icon}</span>
+        <span>{meta.shortLabel}</span>
+      </span>
+    );
   };
 
   return (
@@ -199,10 +180,12 @@ export const RegrindQueueTable: React.FC<RegrindQueueTableProps> = ({
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-100 dark:border-slate-800">
         {[
           { id: 'ALL', label: 'ทั้งหมด (All Tickets)', count: tickets.length },
-          { id: 'PENDING', label: 'รอเจียร (Pending)', count: tickets.filter(t => t.status === 'PENDING').length },
-          { id: 'IN_PROCESS', label: 'กำลังเจียร (In-Process)', count: tickets.filter(t => t.status === 'IN_PROCESS').length },
-          { id: 'READY', label: 'สต๊อกพร้อมใช้ (Ready)', count: tickets.filter(t => t.status === 'READY').length },
-          { id: 'SCRAP', label: 'ทิ้ง / หมดสเปค (Scrap)', count: tickets.filter(t => t.status === 'SCRAP' || t.isScrapped).length }
+          { id: 'EMERGENCY', label: '🚨 งานด่วน #1', count: tickets.filter(t => resolveUnifiedStatusKey(t) === 'EMERGENCY').length },
+          { id: 'WAITING', label: '⏳ รอคิวเจียร', count: tickets.filter(t => resolveUnifiedStatusKey(t) === 'WAITING').length },
+          { id: 'POSTPONED', label: '🟡 งานเลื่อน', count: tickets.filter(t => resolveUnifiedStatusKey(t) === 'POSTPONED').length },
+          { id: 'READY', label: '🔵 งานเจียรเสร็จแล้ว', count: tickets.filter(t => resolveUnifiedStatusKey(t) === 'READY').length },
+          { id: 'COMPLETED', label: '🟢 งานเสร็จสมบูรณ์', count: tickets.filter(t => resolveUnifiedStatusKey(t) === 'COMPLETED').length },
+          { id: 'SCRAP', label: '❌ ยกเลิก/คัดทิ้ง', count: tickets.filter(t => resolveUnifiedStatusKey(t) === 'SCRAP').length }
         ].map(tab => (
           <button
             key={tab.id}
@@ -322,7 +305,7 @@ export const RegrindQueueTable: React.FC<RegrindQueueTableProps> = ({
 
                     {/* Status */}
                     <td className="p-3">
-                      {getStatusBadge(ticket.status)}
+                      {getStatusBadge(ticket)}
                     </td>
 
                     {/* Dimensional & Life Progress */}

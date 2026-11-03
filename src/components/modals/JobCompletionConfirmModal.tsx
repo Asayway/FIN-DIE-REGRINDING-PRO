@@ -91,13 +91,13 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
             </div>
             <div>
               <h3 className="text-base font-black text-white leading-tight flex items-center gap-2">
-                <span>ยืนยันจบงานซ่อม & ตรวจรับ QC</span>
+                <span>ขั้นตอนตรวจรับ QC & ยืนยันจบงาน</span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30">
-                  1-CLICK QC
+                  QC APPROVAL
                 </span>
               </h3>
               <p className="text-[11px] font-mono text-slate-400 mt-0.5">
-                ยืนยันปิดงาน {ticket.jobCode} • LINE {ticket.lineId}
+                ตรวจรับ {ticket.jobCode} • ปรับสถานะเป็น: <strong className="text-emerald-400">🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)</strong>
               </p>
             </div>
           </div>

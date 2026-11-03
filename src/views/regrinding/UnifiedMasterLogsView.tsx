@@ -13,11 +13,13 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { ProductionLineId, RegrindingRecord } from '../../types';
+import { RegrindWorkTicket } from '../../types/regrind';
 import { storageService } from '../../services/storageService';
 import { regrindService } from '../../services/regrindService';
 import { DateRangeFilter, isDateInSelectedRange } from '../../components/common/DateRangeFilter';
 import { exportRegrindingHistoryExcel } from '../../utils/excelExport';
 import { UnifiedRegrindJobModal } from '../../components/modals/UnifiedRegrindJobModal';
+import { getUnifiedStatusMeta, resolveUnifiedStatusKey } from '../../utils/statusHelper';
 
 export interface UnifiedMasterLogsViewProps {
   initialLineId?: ProductionLineId;
@@ -31,8 +33,73 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
   onNavigate
 }) => {
   const [historyRecords, setHistoryRecords] = useState<RegrindingRecord[]>([]);
-  const [isJobModalOpen, setIsJobModalOpen] = useState(false);
+  const [isJobModalOpen, setIsJobModalOpen] = useState<boolean>(false);
   const [inspectModalRecord, setInspectModalRecord] = useState<RegrindingRecord | null>(null);
+  const [editingTicket, setEditingTicket] = useState<RegrindWorkTicket | null>(null);
+
+  const sysSettings = storageService.getSettings();
+  const sysLanguage = sysSettings?.language || 'TH';
+  const isEnglish = sysLanguage === 'EN';
+
+  const handleOpenTicketModal = (rec: RegrindingRecord) => {
+    const queueTickets = regrindService.getQueueTickets();
+    const existingTicket = queueTickets.find(t => 
+      t.jobCode === rec.jobCode || 
+      t.id === rec.jobCode || 
+      t.id === rec.id || 
+      (t.partCode === rec.partCode && t.lineId === rec.lineId && t.scheduledDate === rec.regrindDate)
+    );
+
+    if (existingTicket) {
+      setEditingTicket(existingTicket);
+    } else {
+      const partMaster = partMasterMap.get(rec.partCode);
+      const isStatusReady = (rec.status as string) === 'READY TO USE' || (rec.status as string) === 'COMPLETED';
+      const isStatusScrap = (rec.status as string) === 'SCRAP' || (rec.status as string) === 'SCRAPPED';
+      const isEmergencyJob = (rec.status as string) === 'EMERGENCY';
+
+      const constructedTicket: RegrindWorkTicket = {
+        id: rec.jobCode || rec.id || `JOB-RGD-${Date.now()}`,
+        jobCode: rec.jobCode || `JOB-RGD-${new Date().getFullYear()}-001`,
+        qrCode: rec.partInstanceOrLot || `QR-${rec.lineId || 'E1'}-${rec.partCode}`,
+        picCategory: partMaster?.category?.toLowerCase() || 'punch',
+        source: 'MANUAL_ENTRY',
+        receivedDate: rec.regrindDate || (rec.timestamp ? rec.timestamp.slice(0, 10) : new Date().toISOString().slice(0, 10)),
+        receivedBy: rec.performedBy || 'Thanakorn Phonpayung',
+        lineId: (rec.lineId || rec.lineLastUsed || 'E1') as ProductionLineId,
+        partCode: rec.partCode,
+        partName: rec.partName,
+        quantity: rec.quantity || 1,
+        assignedTechnician: rec.performedBy || rec.technicianName || 'Thanakorn Phonpayung',
+        scheduledDate: rec.regrindDate || (rec.timestamp ? rec.timestamp.slice(0, 10) : new Date().toISOString().slice(0, 10)),
+        targetCompletionDate: `${rec.regrindDate || new Date().toISOString().slice(0, 10)}T17:00:00.000Z`,
+        urgency: isEmergencyJob ? 'EMERGENCY' : 'NORMAL',
+        isEmergency: isEmergencyJob,
+        status: isStatusReady ? 'READY' : (isStatusScrap ? 'SCRAP' : 'PENDING'),
+        nominalLengthMm: rec.newSpecMm || partMaster?.newSpecMm || 62.50,
+        minAllowedLengthMm: rec.scrapLimitMm || partMaster?.scrapLimitMm || 61.00,
+        previousLengthMm: rec.previousLength !== undefined ? rec.previousLength : (rec.beforeGrindMm || 62.50),
+        grindDepthMm: rec.actualGrindingRemovedMm !== undefined ? rec.actualGrindingRemovedMm : 0.10,
+        lengthAfterGrindMm: rec.currentLength !== undefined ? rec.currentLength : (rec.afterGrindMm || 62.40),
+        shimAddedMm: 0,
+        regrindCountBefore: rec.regrindCountBefore || 0,
+        regrindCountAfter: rec.regrindCountAfter || rec.regrindCycleCount || 1,
+        maxRegrindAllowed: rec.maxAllowedCycles || 15,
+        defectReason: (rec.defectReason as any) || 'NORMAL_WEAR',
+        defectNotes: rec.note || rec.remarks || '',
+        remarks: rec.note || rec.remarks || '',
+        laborHours: rec.laborHours || (rec.laborTimeMinutes ? rec.laborTimeMinutes / 60 : 1.0),
+        sparePartsUsed: rec.sparePartsUsed || '',
+        sparePartsCost: rec.sparePartsCost || 0,
+        dieCode: rec.dieCode || rec.finDie || 'FD-E1-07',
+        isScrapped: isStatusScrap,
+        createdAt: rec.timestamp || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      setEditingTicket(constructedTicket);
+    }
+    setIsJobModalOpen(true);
+  };
   const [notification, setNotification] = useState<{ type: 'success' | 'warning' | 'error'; message: string } | null>(null);
 
   // Filters for Unified Master Logs
@@ -127,29 +194,14 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
 
       // 5. Status filter
       if (tableStatusFilter !== 'ALL') {
-        const isUrgent = Boolean((rec.note && (rec.note.includes('ด่วน') || rec.note.toLowerCase().includes('urgent'))) || 
-                                 (rec.remarks && rec.remarks.includes('ด่วน')));
-        const isShifted = Boolean((rec.note && rec.note.includes('เลื่อน')) || 
-                                  (rec.remarks && rec.remarks.includes('เลื่อน')) || 
-                                  rec.status === 'HOLD');
-
-        if (tableStatusFilter === 'EMERGENCY') {
-          if (!isUrgent) return false;
-        } else if (tableStatusFilter === 'COMPLETED') {
-          if (rec.status !== 'COMPLETED') return false;
-        } else if (tableStatusFilter === 'READY TO USE') {
-          if (rec.status !== 'READY TO USE' && rec.status !== 'READY') return false;
-        } else if (tableStatusFilter === 'POSTPONED') {
-          if (!isShifted) return false;
-        } else if (tableStatusFilter === 'WAITING REGRIND' || tableStatusFilter === 'ACTIVE') {
-          if (rec.status !== 'WAITING REGRIND' && rec.status !== 'IN_PROCESS' && rec.status !== 'PENDING') return false;
-        } else if (tableStatusFilter === 'AWAITING_INSPECTION') {
-          if (rec.inspectionResult !== 'PENDING' && rec.inspectionStatus !== 'PENDING' && rec.status !== 'HOLD' && rec.status !== 'WAITING REGRIND') return false;
-        } else if (tableStatusFilter === 'SCRAP') {
-          if (rec.status !== 'SCRAP' && rec.status !== 'SCRAPPED') return false;
-        } else if (tableStatusFilter === 'MAXIMUM REGRIND') {
-          if (rec.status !== 'MAXIMUM REGRIND') return false;
-        } else if (rec.status !== tableStatusFilter) {
+        const itemKey = resolveUnifiedStatusKey(rec);
+        if (tableStatusFilter === 'READY TO USE' || tableStatusFilter === 'READY') {
+          if (itemKey !== 'READY') return false;
+        } else if (tableStatusFilter === 'WAITING REGRIND' || tableStatusFilter === 'WAITING') {
+          if (itemKey !== 'WAITING') return false;
+        } else if (tableStatusFilter === 'MAXIMUM REGRIND' || tableStatusFilter === 'SCRAP') {
+          if (itemKey !== 'SCRAP') return false;
+        } else if (itemKey !== tableStatusFilter) {
           return false;
         }
       }
@@ -339,7 +391,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             ))}
           </select>
 
-          {/* Status Filter (5 Core Operational States + Standards) */}
+          {/* Status Filter (Canonical 6 Operational States) */}
           <select
             value={tableStatusFilter}
             onChange={e => setTableStatusFilter(e.target.value)}
@@ -347,13 +399,11 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
           >
             <option value="ALL">ทุกสถานะ (All Statuses)</option>
             <option value="EMERGENCY">🚨 งานด่วน #1 (Urgent Job)</option>
-            <option value="READY TO USE">🔵 เจียรเสร็จแล้ว (READY TO USE)</option>
-            <option value="COMPLETED">🟢 งานเสร็จแล้ว (COMPLETED / CLOSED)</option>
-            <option value="POSTPONED">🟡 เลื่อน (POSTPONED / SHIFTED)</option>
-            <option value="SCRAP">❌ ยกเลิก / คัดทิ้ง (SCRAP)</option>
-            <option value="WAITING REGRIND">⏳ รอคิวเจียร (WAITING REGRIND)</option>
-            <option value="AWAITING_INSPECTION">🔍 รอตรวจวัด QC (AWAITING QC)</option>
-            <option value="MAXIMUM REGRIND">🟠 ครบลิมิตเจียร (MAX REGRIND)</option>
+            <option value="WAITING">⏳ รอคิวเจียร (Waiting Queue)</option>
+            <option value="POSTPONED">🟡 งานเลื่อน (Postponed / Shifted)</option>
+            <option value="READY">🔵 งานเจียรเสร็จแล้ว (รอตรวจ QC)</option>
+            <option value="COMPLETED">🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)</option>
+            <option value="SCRAP">❌ ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร)</option>
           </select>
 
           {/* Date Range Filter */}
@@ -407,100 +457,221 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
           </button>
         </div>
 
-        {/* Master Log Table */}
-        <div className="overflow-x-auto rounded-xl border border-white/10">
-          <table className="w-full text-left text-[11px] border-collapse">
-            <thead>
-              <tr className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800">
+        {/* Master Log Table - Full 20 Column Engineering Matrix */}
+        <div className="overflow-x-auto max-h-[600px] custom-scrollbar rounded-xl border border-white/10">
+          <table className="min-w-[2000px] w-full text-left text-[11px] border-collapse">
+            <thead className="sticky top-0 z-10 bg-[#090d16] text-slate-300 font-mono border-b border-slate-800 shadow-md">
+              <tr>
                 <th className="p-2.5 text-center w-10">#</th>
-                <th className="p-2.5 text-center">สถานะ</th>
-                <th className="p-2.5">Job Code</th>
-                <th className="p-2.5">วันที่</th>
-                <th className="p-2.5">ไลน์/แม่พิมพ์</th>
-                <th className="p-2.5">Tool ID & ชื่ออะไหล่</th>
-                <th className="p-2.5 text-right">ราคาซื้อใหม่</th>
-                <th className="p-2.5 text-right">ต้นทุนซ่อม</th>
-                <th className="p-2.5 text-right">ประหยัดสุทธิ</th>
-                <th className="p-2.5 text-center">Saving %</th>
-                <th className="p-2.5 text-center">จัดการ</th>
+                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Status' : 'สถานะ'}</th>
+                <th className="p-2.5 whitespace-nowrap">Job Code</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Date' : 'วันที่'}</th>
+                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Line' : 'ไลน์'}</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Die Code' : 'แม่พิมพ์'}</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Part Name' : 'ชื่อชิ้นงาน'}</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Drawing' : 'Drawing Code'}</th>
+                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Qty' : 'จำนวน'}</th>
+                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'New Spec' : 'สเปคซื้อใหม่'}</th>
+                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Current Height' : 'ก่อนเจียร'}</th>
+                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Height After' : 'หลังเจียร'}</th>
+                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Scrap Limit' : 'ระยะ Min'}</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Defect Reason / สาเหตุ' : 'สาเหตุ / Defect Reason'}</th>
+                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Labor Time (min)' : 'เวลาเจียร (นาที)'}</th>
+                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Labor Cost' : 'ค่าแรง'}</th>
+                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'New Price' : 'ราคาซื้อใหม่'}</th>
+                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Net Saving' : 'ประหยัดสุทธิ'}</th>
+                <th className="p-2.5 text-center whitespace-nowrap">Saving %</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Operator' : 'ช่างเจียร'}</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Remarks' : 'หมายเหตุ'}</th>
+                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Actions' : 'จัดการ'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80 bg-slate-950/40 font-mono">
               {filteredHistory.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="p-8 text-center text-slate-500 font-sans">
+                  <td colSpan={22} className="p-8 text-center text-slate-500 font-sans">
                     ไม่พบข้อมูลงานเจียระไนที่ตรงกับเงื่อนไขการค้นหา
                   </td>
                 </tr>
               ) : (
                 filteredHistory.slice(0, tablePageSize).map((rec, idx) => {
                   const partMaster = partMasterMap.get(rec.partCode);
-                  const newPrice = partMaster?.unitCostThb || 0;
-                  const repairCost = (rec.cost || 0) + (rec.sparePartsCost || 0);
-                  const netSaving = Math.max(0, newPrice - repairCost);
-                  const savingPercent = newPrice > 0 ? ((netSaving / newPrice) * 100).toFixed(1) + '%' : '0%';
                   
+                  // Calculations for 20 fields
+                  const drawingNo = rec.drawingNo || rec.drawingNumber || partMaster?.drawingNumber || (rec.partCode ? rec.partCode.replace(/^[A-Z0-9]+-/, '') : 'DWG-PB-001');
+                  const qty = rec.quantity || 1;
+                  const newSpec = rec.newSpecMm !== undefined ? rec.newSpecMm : (partMaster?.newSpecMm || 62.50);
+                  const currentH = rec.previousLength !== undefined ? rec.previousLength : (rec.beforeGrindMm || 62.50);
+                  const afterH = rec.currentLength !== undefined ? rec.currentLength : (rec.afterGrindMm || 62.40);
+                  const scrapLimit = rec.scrapLimitMm !== undefined ? rec.scrapLimitMm : (partMaster?.scrapLimitMm || 61.00);
+                  
+                  const reasonLabel = rec.defectReason 
+                    ? (rec.defectReason === 'NORMAL_WEAR' ? 'NORMAL WEAR (สึกหรอปกติ)'
+                      : rec.defectReason === 'BURR_EXCESSIVE' ? 'BURR EXCESSIVE (ครีบสูงเกิน)'
+                      : rec.defectReason === 'CHIPPED' ? 'CHIPPED (คมบิ่น/กะเทาะ)'
+                      : rec.defectReason === 'GALLING_SCRATCHED' ? 'GALLING (ผิวเป็นรอย/เศษติด)'
+                      : rec.defectReason === 'OUT_OF_TOLERANCE' ? 'OUT OF SPEC (หลุดสเปค Min)'
+                      : rec.defectReason === 'BROKEN' ? 'BROKEN (แตกหักชำรุด)'
+                      : rec.defectReason)
+                    : 'NORMAL WEAR (สึกหรอปกติ)';
+
+                  const laborMinutes = rec.laborTimeMinutes !== undefined
+                    ? rec.laborTimeMinutes
+                    : Math.round((rec.laborHours !== undefined ? rec.laborHours : 1) * 60);
+
+                  const laborCost = rec.laborCostThb !== undefined
+                    ? rec.laborCostThb
+                    : Math.round((laborMinutes / 60) * 180);
+
+                  const newPrice = rec.newPartPriceThb !== undefined
+                    ? rec.newPartPriceThb
+                    : (partMaster?.unitCostThb || partMaster?.purchasePriceThb || 12500);
+
+                  const spareCost = rec.sparePartsCost !== undefined ? Number(rec.sparePartsCost) : 0;
+                  const netSaving = rec.netSavingThb !== undefined
+                    ? rec.netSavingThb
+                    : Math.max(0, newPrice - (laborCost + spareCost));
+
+                  const savingPct = rec.savingPercent !== undefined
+                    ? (typeof rec.savingPercent === 'number' ? `${rec.savingPercent.toFixed(1)}%` : rec.savingPercent)
+                    : (newPrice > 0 ? `${((netSaving / newPrice) * 100).toFixed(1)}%` : '0%');
+
+                  const operator = rec.performedBy || rec.technicianName || 'Thanakorn Phonpayung';
+                  const noteText = rec.note || rec.remarks || 'ลับคมด้วยหิน CBN #400';
+
                   return (
                   <tr key={rec.id ? `log-${rec.id}-${idx}` : `idx-${idx}`} className="hover:bg-white/[0.04] transition-colors">
+                    {/* 1. Row No */}
                     <td className="p-2.5 text-center font-bold text-cyan-400/80">
                       {idx + 1}
                     </td>
 
-                    <td className="p-2.5 text-center">
+                    {/* 2. Status */}
+                    <td className="p-2.5 text-center whitespace-nowrap">
                       {(() => {
-                        const isUrgent = Boolean((rec.note && (rec.note.includes('ด่วน') || rec.note.toLowerCase().includes('urgent'))) || 
-                                                 (rec.remarks && rec.remarks.includes('ด่วน')));
-                        const isShifted = Boolean((rec.note && rec.note.includes('เลื่อน')) || 
-                                                  (rec.remarks && rec.remarks.includes('เลื่อน')));
-
-                        if (isUrgent) return <span className="text-rose-400 font-bold">🚨ด่วน</span>;
-                        if (rec.status === 'COMPLETED') return <span className="text-emerald-400">🟢เสร็จ</span>;
-                        if (rec.status === 'READY') return <span className="text-sky-400">🔵พร้อม</span>;
-                        if (isShifted) return <span className="text-amber-400">🟡เลื่อน</span>;
-                        return <span className="text-slate-400">{rec.status}</span>;
+                        const meta = getUnifiedStatusMeta(rec);
+                        return (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-mono font-bold whitespace-nowrap shadow-sm ${
+                              meta.pillClass || meta.badgeClass
+                            }`}
+                            title={meta.label}
+                          >
+                            <span>{meta.icon}</span>
+                            <span>{meta.shortLabel}</span>
+                          </span>
+                        );
                       })()}
                     </td>
 
-                    <td className="p-2.5">
+                    {/* 3. Job Code */}
+                    <td className="p-2.5 whitespace-nowrap">
                       <span className="font-bold text-cyan-300 block text-xs">{rec.jobCode || 'N/A'}</span>
                     </td>
 
-                    <td className="p-2.5 text-slate-300 text-[11px]">
+                    {/* 4. Date */}
+                    <td className="p-2.5 text-slate-300 text-[11px] whitespace-nowrap">
                       {rec.regrindDate || (rec.timestamp ? rec.timestamp.substring(0, 10) : '-')}
                     </td>
 
-                    <td className="p-2.5">
+                    {/* 5. Line */}
+                    <td className="p-2.5 text-center whitespace-nowrap">
                       <span className="text-white font-bold block text-xs">{rec.lineId || rec.lineLastUsed || 'E1'}</span>
                     </td>
 
-                    <td className="p-2.5 font-sans">
+                    {/* 6. Die Code */}
+                    <td className="p-2.5 text-slate-300 font-bold whitespace-nowrap">
+                      {rec.dieCode || rec.finDie || 'FD-E1-07'}
+                    </td>
+
+                    {/* 7. Part Name */}
+                    <td className="p-2.5 font-sans whitespace-nowrap">
                       <span className="font-bold text-slate-100 block text-xs">{rec.partName}</span>
                       <span className="text-[10px] text-cyan-400 font-mono">{rec.partCode}</span>
                     </td>
 
-                    <td className="p-2.5 text-right font-bold text-slate-200">
+                    {/* 8. Drawing Code */}
+                    <td className="p-2.5 font-mono text-cyan-200 font-bold whitespace-nowrap">
+                      {drawingNo}
+                    </td>
+
+                    {/* 9. Qty */}
+                    <td className="p-2.5 text-center font-bold text-slate-200 whitespace-nowrap">
+                      {qty}
+                    </td>
+
+                    {/* 10. New Spec mm */}
+                    <td className="p-2.5 text-right font-bold text-slate-300 whitespace-nowrap">
+                      {newSpec.toFixed(2)} mm
+                    </td>
+
+                    {/* 11. Current Height mm */}
+                    <td className="p-2.5 text-right font-bold text-amber-300 whitespace-nowrap">
+                      {currentH.toFixed(2)} mm
+                    </td>
+
+                    {/* 12. Height After Regrind mm */}
+                    <td className="p-2.5 text-right font-bold text-emerald-400 whitespace-nowrap">
+                      {afterH.toFixed(2)} mm
+                    </td>
+
+                    {/* 13. Scrap Limit mm */}
+                    <td className="p-2.5 text-right font-bold text-rose-400 whitespace-nowrap">
+                      {scrapLimit.toFixed(2)} mm
+                    </td>
+
+                    {/* 14. Defect / Grind Reason */}
+                    <td className="p-2.5 whitespace-nowrap">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-amber-300 border border-slate-700">
+                        {reasonLabel}
+                      </span>
+                    </td>
+
+                    {/* 15. Labor Time (Minutes strictly) */}
+                    <td className="p-2.5 text-center font-bold text-sky-300 whitespace-nowrap">
+                      {laborMinutes}
+                    </td>
+
+                    {/* 16. Labor Cost THB */}
+                    <td className="p-2.5 text-right font-bold text-amber-300 whitespace-nowrap">
+                      ฿{laborCost.toLocaleString()}
+                    </td>
+
+                    {/* 17. New Part Price THB */}
+                    <td className="p-2.5 text-right font-bold text-slate-200 whitespace-nowrap">
                       ฿{newPrice.toLocaleString()}
                     </td>
 
-                    <td className="p-2.5 text-right font-bold text-amber-300">
-                      ฿{repairCost.toLocaleString()}
-                    </td>
-
-                    <td className="p-2.5 text-right font-bold text-emerald-400">
+                    {/* 18. Net Saving THB */}
+                    <td className="p-2.5 text-right font-bold text-emerald-400 whitespace-nowrap">
                       ฿{netSaving.toLocaleString()}
                     </td>
 
-                    <td className="p-2.5 text-center font-bold text-sky-300">
-                      {savingPercent}
+                    {/* 19. Saving % */}
+                    <td className="p-2.5 text-center font-bold text-cyan-300 whitespace-nowrap">
+                      {savingPct}
                     </td>
 
-                    <td className="p-2.5 text-center">
+                    {/* 20. Operator Name */}
+                    <td className="p-2.5 text-slate-200 font-sans whitespace-nowrap">
+                      👤 {operator}
+                    </td>
+
+                    {/* 21. Remarks / Notes */}
+                    <td className="p-2.5 text-slate-400 font-sans text-[11px] max-w-[200px] truncate" title={noteText}>
+                      {noteText}
+                    </td>
+
+                    {/* 22. Actions */}
+                    <td className="p-2.5 text-center whitespace-nowrap">
                       <button
                         type="button"
-                        onClick={() => setInspectModalRecord(rec)}
-                        className="p-1.5 bg-white/[0.06] hover:bg-white/[0.15] text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer"
+                        onClick={() => handleOpenTicketModal(rec)}
+                        className="p-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-lg transition-all cursor-pointer flex items-center gap-1 mx-auto"
+                        title={isEnglish ? 'View & Edit Ticket' : 'แก้ไข/ดูใบลงคิวงาน'}
                       >
-                        <Eye className="w-4 h-4 text-cyan-400" />
+                        <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                        <span className="text-[10px] font-bold">{isEnglish ? 'Edit' : 'แก้ไข'}</span>
                       </button>
                     </td>
                   </tr>
@@ -656,9 +827,14 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
       {/* Unified Regrind Job Modal */}
       <UnifiedRegrindJobModal
         isOpen={isJobModalOpen}
-        onClose={() => setIsJobModalOpen(false)}
+        existingTicket={editingTicket}
+        onClose={() => {
+          setIsJobModalOpen(false);
+          setEditingTicket(null);
+        }}
         onSaved={msg => {
           setIsJobModalOpen(false);
+          setEditingTicket(null);
           reloadData();
           setNotification({ type: 'success', message: msg });
         }}
