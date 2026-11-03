@@ -8,7 +8,9 @@ import {
   FilePlus,
   Sliders,
   DollarSign,
-  ShieldCheck
+  ShieldCheck,
+  Box,
+  Cpu
 } from 'lucide-react';
 import { UserRole, AppTheme } from '../../types';
 import { useTranslation, useLanguage, LanguageCode } from '../../i18n';
@@ -48,29 +50,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const sections: NavSection[] = [
     {
-      title: isTh ? 'COST SAVING & DASHBOARD' : 'COST SAVING & DASHBOARD',
+      title: isTh ? 'ภาพรวมและต้นทุน' : 'COST & SAVING ANALYTICS',
       items: [
         {
           id: 'cost-saving-management',
-          label: isTh ? 'ต้นทุนและผลประหยัด' : 'Cost & Saving Analytics',
+          label: isTh ? 'แดชบอร์ดต้นทุน & ผลประหยัด' : 'Cost & Saving Dashboard',
           icon: TrendingUp,
           badge: 'SAVING'
         }
       ]
     },
     {
-      title: isTh ? 'REGRINDING & REPAIR WORK' : 'REGRINDING & REPAIR WORK',
+      title: isTh ? 'งานซ่อมและเจียรแม่พิมพ์' : 'REGRINDING & REPAIR WORK',
       items: [
         {
           id: 'smart-queue-schedule',
-          label: isTh ? 'คิวงานเจียร & ตารางนัด' : 'Regrind Job Queue',
+          label: isTh ? 'คิวงานเจียรแม่พิมพ์' : 'Regrind Job Queue',
           icon: Flame,
           badge: 'QUEUE'
-        },
-        {
-          id: 'regrind-entry',
-          label: isTh ? 'บันทึกงานเจียร & ตรวจ QC' : 'Regrind Record & QC',
-          icon: FilePlus
         },
         {
           id: 'unified-logs-view',
@@ -80,12 +77,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ]
     },
     {
-      title: isTh ? 'ENGINEERING STANDARDS' : 'ENGINEERING STANDARDS',
+      title: isTh ? 'ข้อมูลหลักและราคา' : 'MASTER DATA & PRICING',
       items: [
         {
           id: 'tooling-specs',
-          label: isTh ? 'สเปคมาตรฐานการเจียร' : 'Tooling Regrind Specs',
-          icon: Sliders
+          label: isTh ? 'สเปคแม่พิมพ์ & ทะเบียนราคา' : 'Die Specs & Part Pricing',
+          icon: Box
+        },
+        {
+          id: 'cost-rate-master',
+          label: isTh ? 'อัตราเครื่องจักร & ค่าแรง' : 'Machine & Labor Rates',
+          icon: Cpu
         }
       ]
     }

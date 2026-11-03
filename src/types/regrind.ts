@@ -173,6 +173,11 @@ export interface RegrindWorkTicket {
   purchasingPrNumber?: string; // e.g. "PR-2026-0891"
   addedToSpareStock?: boolean;
   
+  // Labor & Spare Parts Cost Tracking
+  laborHours?: number;
+  sparePartsUsed?: string;
+  sparePartsCost?: number;
+  
   remarks?: string;
   createdAt: string;
   updatedAt: string;

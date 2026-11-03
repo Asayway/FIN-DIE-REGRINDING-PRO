@@ -11,6 +11,8 @@ import { SmartQueueAndCalendarScheduleView } from './views/regrinding/SmartQueue
 import { RegrindingEntryView } from './views/RegrindingEntryView';
 import { UnifiedMasterLogsView } from './views/regrinding/UnifiedMasterLogsView';
 import { ToolingMasterSpecsView } from './views/regrinding/ToolingMasterSpecsView';
+import { UnifiedToolingMasterView } from './views/UnifiedToolingMasterView';
+import { CostRateMasterView } from './views/CostRateMasterView';
 import { LoginView } from './views/LoginView';
 
 export default function App() {
@@ -56,12 +58,10 @@ export default function App() {
       case 'smart-queue-schedule':
       case 'regrind-queue':
       case 'regrinding-control':
-        return <SmartQueueAndCalendarScheduleView onNavigate={handleNavigate} />;
-
       case 'regrind-entry':
       case 'regrind-record':
       case 'quality-inspection':
-        return <RegrindingEntryView />;
+        return <SmartQueueAndCalendarScheduleView onNavigate={handleNavigate} />;
 
       case 'unified-logs-view':
       case 'regrind-logs':
@@ -76,8 +76,14 @@ export default function App() {
         );
 
       case 'tooling-specs':
+      case 'die-parts-master':
+      case 'part-master':
       case 'regrind-standards':
-        return <ToolingMasterSpecsView />;
+        return <UnifiedToolingMasterView initialTab="master" />;
+
+      case 'cost-rate-master':
+      case 'machine-labor-rates':
+        return <CostRateMasterView />;
 
       case 'login':
         return (

@@ -23,7 +23,10 @@ import {
   Plus,
   Edit2,
   Trash2,
-  DollarSign
+  DollarSign,
+  Clock,
+  PackageCheck,
+  RefreshCw
 } from 'lucide-react';
 import { 
   ProductionLineId, 
@@ -34,6 +37,7 @@ import {
   LINE_INFO_MAP 
 } from '../types';
 import { storageService } from '../services/storageService';
+import { costSavingService } from '../services/costSavingService';
 import { formatShots } from '../services/calculationService';
 import { exportRegrindingHistoryExcel } from '../utils/excelExport';
 
@@ -55,6 +59,9 @@ export const RegrindingEntryView: React.FC = () => {
   const [vendorName, setVendorName] = useState<string>('Internal Fin Die Tool Room (In-House)');
   const [workOrder, setWorkOrder] = useState<string>('');
   const [cost, setCost] = useState<number>(3500);
+  const [laborHours, setLaborHours] = useState<number>(1.5);
+  const [sparePartsUsed, setSparePartsUsed] = useState<string>('Shim Plate 0.05mm');
+  const [sparePartsCost, setSparePartsCost] = useState<number>(120);
   const [measuredRa, setMeasuredRa] = useState<number>(0.12);
   const [hardnessHrc, setHardnessHrc] = useState<number>(62.5);
   const [inspectionResult, setInspectionResult] = useState<'PENDING' | 'PASSED' | 'FAILED' | 'CONDITIONAL'>('PASSED');
@@ -151,6 +158,15 @@ export const RegrindingEntryView: React.FC = () => {
     previewStatus = 'HOLD';
   }
 
+  // Calculate consumed life percentage for visual feedback
+  const consumedLifePercent = useMemo(() => {
+    if (!selectedStandard) return 0;
+    // Simple approximation: (cycles used / total allowed) * 100
+    // If not standard regrind tool, we might not have a good metric, default to 0
+    if (!selectedStandard.regrindAllowed) return 100; 
+    return Math.min(100, (calculatedNextCycle / maxCycles) * 100);
+  }, [calculatedNextCycle, maxCycles, selectedStandard]);
+
   // Handle Submit Regrind Record
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,12 +219,15 @@ export const RegrindingEntryView: React.FC = () => {
       vendorName,
       workOrder,
       cost,
+      laborHours,
+      sparePartsUsed,
+      sparePartsCost,
       measuredRa,
       hardnessHrc,
       inspectionResult,
       verifiedBy,
       performedBy,
-      note: `${note} [Reason: ${regrindReason}]`,
+      note: `${note} [Reason: ${regrindReason}]${sparePartsUsed ? ` [Spare: ${sparePartsUsed}]` : ''}`,
       evidence: evidenceFileName || undefined,
       status: previewStatus,
       isInspectionApproved: inspectionResult === 'PASSED',
@@ -216,17 +235,53 @@ export const RegrindingEntryView: React.FC = () => {
     });
 
     if (result.success) {
+      // Direct Cost Rate Mapping & Sync to Cost Saving Ledger
+      try {
+        const rates = costSavingService.getCostRateMasters();
+        const activeRate = rates.find(r => r.isActive) || rates[0];
+        const laborRate = activeRate?.operatorLaborRatePerHour || 180;
+        const machineRate = activeRate?.machineCostRatePerHour || 350;
+
+        costSavingService.saveTransaction({
+          repairId: result.record?.jobCode || workOrder || `REP-${Date.now().toString().slice(-6)}`,
+          partNo: selectedStandard.partCode,
+          partName: selectedStandard.partName,
+          machineLine: selectedLineId,
+          repairDate: regrindDate,
+          regrindingNo: calculatedNextCycle,
+          rateMasterId: activeRate?.id,
+          rateMasterMachineName: activeRate?.machineName,
+          actualMachineHours: laborHours, // Machine hours aligned to labor/grinding duration
+          actualLaborHours: laborHours,
+          laborHours: laborHours,
+          machineCostRateRef: machineRate,
+          laborRateRef: laborRate,
+          includesLaborInMachineRate: activeRate?.includesLaborInMachineRate || false,
+          sparePartsUsed: sparePartsUsed || '',
+          sparePartsCost: sparePartsCost || 0,
+          repairCost: cost,
+          supplier: vendorName || (supplierOrInternalProcess === 'EXTERNAL_VENDOR' ? 'External Specialist' : 'Internal Fin Die Tool Room'),
+          qualityResult: inspectionResult === 'PASSED' ? 'PASS' : (inspectionResult === 'FAILED' ? 'SCRAP' : 'CONDITIONAL'),
+          technicianName: performedBy,
+          inspectorName: verifiedBy,
+          remainingLengthMm: currentLength,
+          grindDepthMm: actualGrindingRemovedMm,
+          remarks: `${regrindReason}${sparePartsUsed ? ` | Spare Parts: ${sparePartsUsed} (฿${sparePartsCost})` : ''}`
+        });
+      } catch (costErr) {
+        console.warn('Cost saving auto-sync warning:', costErr);
+      }
+
       setPerformedBy('');
       setVerifiedBy('');
       setNotification({
         type: 'success',
-        message: `Successfully logged re-grinding job ${result.record?.jobCode} for ${selectedStandard.partName}. Status: ${result.record?.status}`
+        message: `Successfully logged re-grinding job ${result.record?.jobCode} for ${selectedStandard.partName}. Labor: ${laborHours}h, Spare Parts: ${sparePartsUsed || 'None'}. Status: ${result.record?.status}`
       });
       reloadData();
       // Reset form
       setWorkOrder(`WO-RGD-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
       setNote('');
-      setTimeout(() => setActiveTab('history'), 1200);
     } else {
       setNotification({
         type: 'error',
@@ -345,65 +400,38 @@ export const RegrindingEntryView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Top Header Card & Tabs Navigation (Sticky Locked at Top) */}
-      <div id="regrind-header" className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-xl p-4 shadow-2xl space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+    <div className="space-y-3 font-sans pb-6">
+      {/* Top Header Card */}
+      <div id="regrind-header" className="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xl flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <span className="p-2 bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+            <RotateCcw className="w-4 h-4" />
+          </span>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg border border-indigo-500/20">
-                <RotateCcw className="w-5 h-5" />
+            <h1 className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <span>บันทึกงานเจียร & ตรวจรับ QC (Regrind Job Record & Fast QC)</span>
+              <span className="text-[10px] px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded font-mono font-bold">
+                1-CLICK QC
               </span>
-              <h1 className="text-xl font-bold text-white tracking-tight">
-                Regrinding Control
-              </h1>
-            </div>
-            <p className="text-sm text-slate-400 mt-1 font-thai">
-              ระบบบันทึกประวัติเจียระไนลับคมชิ้นส่วนแม่พิมพ์
+            </h1>
+            <p className="text-[11px] text-slate-400 font-thai">
+              บันทึกมิติเจียรลับคม ตรวจสอบลิมิตความยาว และยืนยันจบงานในหน้าเดียวอย่างกระชับ
             </p>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex items-center justify-between border-t border-slate-800/80 pt-2">
-          <div className="flex items-center gap-2">
-            <button
-              id="tab-regrind-entry"
-              onClick={() => setActiveTab('entry')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all ${
-                activeTab === 'entry'
-                  ? 'bg-indigo-600 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <RotateCcw className="w-4 h-4" />
-              New Entry
-            </button>
-            <button
-              id="tab-regrind-history"
-              onClick={() => setActiveTab('history')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all ${
-                activeTab === 'history'
-                  ? 'bg-indigo-600 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <History className="w-4 h-4" />
-              History ({Math.min(10, historyRecords.length)})
-            </button>
-            <button
-              id="tab-regrind-standards"
-              onClick={() => setActiveTab('standards')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all ${
-                activeTab === 'standards'
-                  ? 'bg-indigo-600 text-white font-bold shadow'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <Sliders className="w-4 h-4" />
-              Standards
-            </button>
-          </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-[11px] text-slate-400 hidden md:inline">
+            💡 ตรวจสอบสเปคเต็มได้ที่ 'สเปคแม่พิมพ์' | ดูประวัติทั้งหมดที่ 'ประวัติงานซ่อม'
+          </span>
+          <button
+            type="button"
+            onClick={reloadData}
+            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
+            title="รีเฟรชข้อมูล"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -437,9 +465,8 @@ export const RegrindingEntryView: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 1: NEW REGRINDING TRANSACTION ENTRY */}
-      {activeTab === 'entry' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* MAIN REGRINDING JOB RECORD WORKSTATION */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Main Form (Col 8) */}
           <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-lg p-6 space-y-6">
             <div className="border-b border-slate-800 pb-4">
@@ -495,6 +522,28 @@ export const RegrindingEntryView: React.FC = () => {
                         </option>
                       ))}
                     </select>
+
+                    {/* Progress Bar for Tool Lifetime Consumption */}
+                    <div className="mt-2 space-y-1">
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>Lifetime Consumed</span>
+                        <span className={consumedLifePercent > 80 ? 'text-rose-400 font-bold' : 'text-slate-200'}>
+                          {consumedLifePercent.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-700">
+                        <div
+                          className={`h-full transition-all duration-300 ${
+                            consumedLifePercent > 80
+                              ? 'bg-rose-500'
+                              : consumedLifePercent > 50
+                              ? 'bg-amber-500'
+                              : 'bg-emerald-500'
+                          }`}
+                          style={{ width: `${consumedLifePercent}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Instance / Lot / Serial */}
@@ -796,6 +845,119 @@ export const RegrindingEntryView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Sub-section: Labor Hours & Spare Parts Used */}
+                <div className="bg-slate-950/80 border border-indigo-900/40 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-indigo-950/60 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-cyan-400" />
+                      <span className="text-xs font-black text-cyan-300 uppercase tracking-wide">
+                        Labor Hours & Spare Parts Used (ชั่วโมงแรงงานและอะไหล่ที่ใช้)
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      เชื่อมโยงเข้าสู่ระบบคำนวณต้นทุน Cost Saving & Reports อัตโนมัติ
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    {/* Labor Hours */}
+                    <div className="md:col-span-4 space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-200 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                          Labor Hours (ชั่วโมงแรงงาน) <span className="text-rose-400">*</span>
+                        </span>
+                        <span className="text-[10px] text-cyan-400 font-mono">
+                          ~฿{(laborHours * 180).toLocaleString()} (@฿180/ชม.)
+                        </span>
+                      </label>
+                      <input
+                        id="input-labor-hours"
+                        type="number"
+                        step="0.25"
+                        min="0"
+                        value={laborHours}
+                        onChange={e => setLaborHours(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-cyan-300 font-bold focus:border-cyan-400 focus:outline-none"
+                        required
+                      />
+                      <div className="flex items-center gap-1 pt-1">
+                        {[0.5, 1.0, 1.5, 2.0, 3.0].map(h => (
+                          <button
+                            key={h}
+                            type="button"
+                            onClick={() => setLaborHours(h)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                              laborHours === h
+                                ? 'bg-cyan-500 text-slate-950 font-bold'
+                                : 'bg-slate-800 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {h}h
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Spare Parts Used Description */}
+                    <div className="md:col-span-5 space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <PackageCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        Spare Parts Used (อะไหล่/ชิมที่ใช้)
+                      </label>
+                      <input
+                        id="input-spare-parts-used"
+                        type="text"
+                        value={sparePartsUsed}
+                        onChange={e => setSparePartsUsed(e.target.value)}
+                        placeholder="ระบุอะไหล่ที่เปลี่ยน เช่น Shim Plate 0.05mm, Guide Pin..."
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-emerald-300 focus:border-emerald-400 focus:outline-none"
+                      />
+                      <div className="flex flex-wrap items-center gap-1 pt-1">
+                        {[
+                          { label: 'Shim 0.05mm', cost: 120 },
+                          { label: 'Shim 0.10mm', cost: 150 },
+                          { label: 'Guide Bushing', cost: 450 },
+                          { label: 'ไม่มี (No Spare)', cost: 0 }
+                        ].map(item => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            onClick={() => {
+                              setSparePartsUsed(item.cost > 0 ? item.label : '');
+                              if (item.cost > 0) setSparePartsCost(item.cost);
+                              else setSparePartsCost(0);
+                            }}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition-colors"
+                          >
+                            + {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Spare Parts Cost */}
+                    <div className="md:col-span-3 space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5 text-amber-400" />
+                        Spare Cost (ต้นทุนอะไหล่ THB)
+                      </label>
+                      <input
+                        id="input-spare-parts-cost"
+                        type="number"
+                        step="10"
+                        min="0"
+                        value={sparePartsCost}
+                        onChange={e => setSparePartsCost(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-amber-300 font-bold focus:border-amber-400 focus:outline-none"
+                      />
+                      <p className="text-[10px] text-slate-400">
+                        รวมเข้าใน Direct Repair Cost
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Section 4: Accountability & Reason / Date */}
                 <div className="space-y-4 pt-4 border-t border-slate-800/80">
                   <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1045,385 +1207,116 @@ export const RegrindingEntryView: React.FC = () => {
                 </li>
               </ul>
             </div>
-          </div>
         </div>
-      )}
+      </div>
 
-      {/* TAB 2: AUDIT LEDGER */}
-      {activeTab === 'history' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      {/* RECENT ENTRIES STRIP (5 LATEST JOBS) */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <History className="w-4 h-4" />
+            </span>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <History className="w-5 h-5 text-indigo-400" />
-                  Re-grinding Historical Audit Ledger
-                </h2>
-                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono">
-                  10 RECENT LOGS
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>ประวัติงานลับคมล่าสุด 5 รายการ (Recent Re-grinding Entries)</span>
+                <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                  {historyRecords.length} TOTAL IN LEDGER
                 </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1 font-thai">
-                สมุดบัญชีประวัติงานเจียระไนลับคม 10 รายการล่าสุดสำหรับอ้างอิงหน้างาน
+              </h3>
+              <p className="text-[11px] text-slate-400 font-thai">
+                งานที่บันทึกล่าสุดพร้อมสถานะ QC และผลการตรวจรับ สามารถคลิกดูรายละเอียดฉบับเต็มได้
               </p>
             </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <DateRangeFilter
-                startDate={historyStartDate}
-                endDate={historyEndDate}
-                onChangeRange={(start, end) => {
-                  setHistoryStartDate(start);
-                  setHistoryEndDate(end);
-                }}
-                maxDaysAllowed={31}
-              />
-
-              {/* Search */}
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="ค้นหาข้อมูลเจียร..."
-                  value={historySearch}
-                  onChange={e => setHistorySearch(e.target.value)}
-                  className="bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              {/* Status Filter */}
-              <select
-                value={historyStatusFilter}
-                onChange={e => setHistoryStatusFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="READY TO USE">READY TO USE</option>
-                <option value="WAITING REGRIND">WAITING REGRIND</option>
-                <option value="MAXIMUM REGRIND">MAXIMUM REGRIND</option>
-                <option value="SCRAP">SCRAP</option>
-                <option value="HOLD">HOLD</option>
-              </select>
-
-              <button
-                onClick={() => exportRegrindingHistoryExcel(filteredHistory, 'ALL')}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md"
-              >
-                <Download className="w-4 h-4" />
-                <span>Export Excel</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Single Source of Truth Notice Banner */}
-          <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-3 text-xs text-slate-300 font-thai">
-            <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-indigo-400 animate-pulse"></span>
-              <span>
-                แสดงประวัติล่าสุด <strong>10 รายการ</strong> เพื่อความสะดวกรวดเร็วหน้างาน • สำหรับประวัติย้อนหลังทั้งหมดและส่งออกรายงาน Excel ให้ไปที่เมนู <strong>Reports & Analytics</strong>
-              </span>
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800">
-                  <th className="p-3 text-center w-12">NO.</th>
-                  <th className="p-3">Job Code / WO</th>
-                  <th className="p-3">Component</th>
-                  <th className="p-3">Instance / Lot</th>
-                  <th className="p-3 text-right">Previous (mm)</th>
-                  <th className="p-3 text-right">Removed (mm)</th>
-                  <th className="p-3 text-right">Current (mm)</th>
-                  <th className="p-3 text-center">Cycle / Max</th>
-                  <th className="p-3 text-center">Inspection</th>
-                  <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {filteredHistory.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="p-8 text-center text-slate-500">
-                      No re-grinding transaction records found matching filter.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredHistory.slice(0, 10).map((rec, idx) => (
-                    <tr key={`${rec.id}-${idx}`} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="p-3 text-center font-mono font-bold text-cyan-400/80">
-                        {idx + 1}
-                      </td>
-                      <td className="p-3 font-mono">
-                        <span className="font-bold text-indigo-300 block">{rec.jobCode}</span>
-                        <span className="text-[11px] text-slate-500">{rec.workOrder || 'N/A'}</span>
-                      </td>
-                      <td className="p-3">
-                        <span className="font-bold text-slate-200 block">{rec.partName}</span>
-                        <span className="text-[11px] text-slate-400 font-mono">{rec.partCode}</span>
-                      </td>
-                      <td className="p-3 font-mono text-slate-300">
-                        {rec.partInstanceOrLot || rec.serialNumber || '-'}
-                      </td>
-                      <td className="p-3 text-right font-mono text-slate-400">
-                        {rec.previousLength !== undefined ? rec.previousLength.toFixed(2) : '-'}
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-indigo-300">
-                        -{(rec.actualGrindingRemovedMm !== undefined ? rec.actualGrindingRemovedMm : (rec.mmRemovedThisCycle || 0)).toFixed(3)}
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-slate-100">
-                        {rec.currentLength !== undefined ? rec.currentLength.toFixed(2) : '-'}
-                      </td>
-                      <td className="p-3 text-center font-mono">
-                        <span className="font-bold text-slate-200">{rec.regrindCountAfter || rec.regrindCycleCount}</span>
-                        <span className="text-slate-500 text-[10px]"> / {rec.maxAllowedCycles || 4}</span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                          rec.inspectionResult === 'PASSED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                          rec.inspectionResult === 'CONDITIONAL' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-                          rec.inspectionResult === 'FAILED' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
-                          'bg-slate-800 text-slate-400'
-                        }`}>
-                          {rec.inspectionResult || rec.inspectionStatus}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold ${
-                          rec.status === 'READY TO USE' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                          rec.status === 'MAXIMUM REGRIND' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-                          rec.status === 'SCRAP' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
-                          'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                        }`}>
-                          {rec.status}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => setInspectModalRecord(rec)}
-                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors"
-                            title="View Details"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                          {rec.inspectionResult === 'PENDING' && (
-                            <button
-                              onClick={() => { setQuickInspectRecord(rec); setQuickInspectDecision('PASSED'); }}
-                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-bold"
-                              title="Sign-off Inspection"
-                            >
-                              Sign Off
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
           </div>
         </div>
-      )}
 
-      {/* TAB 3: MASTER STANDARDS (EXCEL CRITERIA) */}
-      {activeTab === 'standards' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-            <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-indigo-400" />
-                Master Re-grinding Engineering Standards
-              </h2>
-              <p className="text-xs text-slate-400 mt-1 font-thai">
-                ตารางเกณฑ์มาตรฐานวิศวกรรมการเจียระไนลับคม (อิงตามไฟล์มาตรฐาน Excel ของบริษัท)
-              </p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800">
-                  <th className="p-3">Part Code</th>
-                  <th className="p-3">Part Name</th>
-                  <th className="p-3 text-right">Nominal (mm)</th>
-                  <th className="p-3 text-right">Grinding Rate (mm/time)</th>
-                  <th className="p-3 text-right">Total Allowance (mm)</th>
-                  <th className="p-3 text-center">Max Count</th>
-                  <th className="p-3 text-center">Regrind Allowed</th>
-                  <th className="p-3 text-center">Dispose 1-Use</th>
-                  <th className="p-3 text-center">Actions</th>
+        <div className="overflow-x-auto rounded-xl border border-slate-800/80">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-950/80 text-slate-400 font-mono text-[11px] border-b border-slate-800">
+                <th className="py-2.5 px-3">Job Code / Date</th>
+                <th className="py-2.5 px-3">Part Name & Code</th>
+                <th className="py-2.5 px-3">Line & Die</th>
+                <th className="py-2.5 px-3 text-right">Length (Before &rarr; After)</th>
+                <th className="py-2.5 px-3 text-right">Removed</th>
+                <th className="py-2.5 px-3 text-center">Cycle</th>
+                <th className="py-2.5 px-3">Labor & Parts</th>
+                <th className="py-2.5 px-3 text-center">Status</th>
+                <th className="py-2.5 px-3 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-sans">
+              {historyRecords.slice(0, 5).length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-slate-500 text-xs">
+                    ยังไม่มีรายการงานเจียรที่บันทึก
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {standards.map(std => (
-                  <tr key={std.partCode} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="p-3 font-mono font-bold text-indigo-300">{std.partCode}</td>
-                    <td className="p-3 font-bold text-slate-200">{std.partName}</td>
-                    <td className="p-3 text-right font-mono text-slate-300">{std.nominalLengthMm.toFixed(2)}</td>
-                    <td className="p-3 text-right font-mono text-indigo-300 font-bold">{std.grindingAmountPerTimeMm.toFixed(3)}</td>
-                    <td className="p-3 text-right font-mono text-amber-300">{std.totalGrindingAllowanceMm.toFixed(2)}</td>
-                    <td className="p-3 text-center font-mono font-bold text-slate-100">{std.maxRegrindCount}</td>
-                    <td className="p-3 text-center">
+              ) : (
+                historyRecords.slice(0, 5).map(rec => (
+                  <tr key={rec.id} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="py-2.5 px-3">
+                      <span className="font-mono font-bold text-indigo-300 block text-[11px]">{rec.jobCode}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">{rec.regrindDate || rec.timestamp?.substring(0, 10)}</span>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="font-bold text-slate-200 block text-[12px]">{rec.partName}</span>
+                      <span className="font-mono text-[10px] text-slate-400">{rec.partCode}</span>
+                    </td>
+                    <td className="py-2.5 px-3 font-mono text-[11px]">
+                      <span className="px-1.5 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-900/50 mr-1 font-bold">
+                        Line {rec.lineId || rec.lineLastUsed || 'E1'}
+                      </span>
+                      <span className="text-slate-400">{rec.dieCode || rec.finDie || '-'}</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-300">
+                      <span>{rec.previousLength?.toFixed(2)}</span>
+                      <span className="text-slate-500 mx-1">&rarr;</span>
+                      <span className="font-bold text-emerald-400">{rec.currentLength?.toFixed(2)} mm</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-[11px] font-bold text-indigo-300">
+                      -{(rec.actualGrindingRemovedMm || rec.mmRemovedThisCycle || 0).toFixed(3)} mm
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono text-[11px]">
+                      <span className="text-slate-300 font-bold">{rec.regrindCountAfter || rec.regrindCycleCount}</span>
+                      <span className="text-slate-500"> / {rec.maxAllowedCycles || 4}</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-[11px]">
+                      <span className="text-cyan-300 block font-mono text-[10px]">
+                        ⏱️ {rec.laborHours !== undefined ? `${rec.laborHours}h` : '-'}
+                      </span>
+                      <span className="text-slate-400 text-[10px] truncate max-w-[120px] block" title={rec.sparePartsUsed}>
+                        🧩 {rec.sparePartsUsed || 'No spare'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
                       <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                        std.regrindAllowed
+                        rec.status === 'READY TO USE'
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                      }`}>
-                        {std.regrindAllowed ? 'YES' : 'NO'}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                        std.disposeAfterOneUse
+                          : rec.status === 'SCRAPPED'
                           ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                          : 'bg-slate-800 text-slate-400'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                       }`}>
-                        {std.disposeAfterOneUse ? 'YES (SCRAP)' : 'NO'}
+                        {rec.status}
                       </span>
                     </td>
-                    <td className="p-3 text-center">
+                    <td className="py-2.5 px-3 text-center">
                       <button
-                        onClick={() => setEditingStandard({ ...std })}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[11px] font-semibold flex items-center gap-1 mx-auto"
+                        onClick={() => setInspectModalRecord(rec)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-medium transition-colors cursor-pointer"
                       >
-                        <Edit2 className="w-3 h-3 text-indigo-400" />
-                        Edit Standard
+                        ดูข้อมูล
                       </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
-      {/* MODAL 1: EDIT MASTER STANDARD */}
-      {editingStandard && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-scaleIn">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-indigo-400" />
-                Edit Master Regrind Standard: {editingStandard.partCode}
-              </h3>
-              <button
-                onClick={() => setEditingStandard(null)}
-                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveStandard} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Part Name</label>
-                <input
-                  type="text"
-                  value={editingStandard.partName}
-                  onChange={e => setEditingStandard({ ...editingStandard, partName: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-slate-100"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-bold mb-1">Nominal Length (mm)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editingStandard.nominalLengthMm}
-                    onChange={e => setEditingStandard({ ...editingStandard, nominalLengthMm: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-slate-100 font-mono"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-bold mb-1">Grinding Rate (mm/time)</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    value={editingStandard.grindingAmountPerTimeMm}
-                    onChange={e => setEditingStandard({ ...editingStandard, grindingAmountPerTimeMm: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-slate-100 font-mono"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-bold mb-1">Total Allowance (mm)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editingStandard.totalGrindingAllowanceMm}
-                    onChange={e => setEditingStandard({ ...editingStandard, totalGrindingAllowanceMm: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-slate-100 font-mono"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-bold mb-1">Max Regrind Count</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    value={editingStandard.maxRegrindCount}
-                    onChange={e => setEditingStandard({ ...editingStandard, maxRegrindCount: parseInt(e.target.value, 10) || 0 })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-slate-100 font-mono"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded border border-slate-800">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingStandard.regrindAllowed}
-                    onChange={e => setEditingStandard({ ...editingStandard, regrindAllowed: e.target.checked })}
-                    className="rounded border-slate-700 text-indigo-600 focus:ring-0"
-                  />
-                  <span className="font-bold text-slate-200">Regrind Allowed (Yes/No)</span>
-                </label>
-
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingStandard.disposeAfterOneUse}
-                    onChange={e => setEditingStandard({ ...editingStandard, disposeAfterOneUse: e.target.checked })}
-                    className="rounded border-slate-700 text-rose-600 focus:ring-0"
-                  />
-                  <span className="font-bold text-rose-300">Dispose After 1 Use</span>
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEditingStandard(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold"
-                >
-                  Save Standard Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* MODAL 2: INSPECT DETAILS */}
       {inspectModalRecord && (
@@ -1483,6 +1376,19 @@ export const RegrindingEntryView: React.FC = () => {
               <div className="bg-slate-950 p-3 rounded border border-slate-800">
                 <span className="text-slate-400 block">Facility / Vendor:</span>
                 <span className="text-slate-200">{inspectModalRecord.vendorName || inspectModalRecord.grinderVendor}</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded border border-cyan-900/40">
+                <span className="text-cyan-400 block font-bold">Labor Hours (ชั่วโมงช่าง):</span>
+                <span className="font-mono text-cyan-300 font-bold">
+                  {inspectModalRecord.laborHours !== undefined ? `${inspectModalRecord.laborHours} ชม.` : 'N/A'}
+                </span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded border border-emerald-900/40">
+                <span className="text-emerald-400 block font-bold">Spare Parts Used (อะไหล่ที่ใช้):</span>
+                <span className="text-emerald-300 font-medium">
+                  {inspectModalRecord.sparePartsUsed || 'None (ไม่ได้เปลี่ยนอะไหล่)'}
+                  {inspectModalRecord.sparePartsCost ? ` (฿${inspectModalRecord.sparePartsCost})` : ''}
+                </span>
               </div>
             </div>
 

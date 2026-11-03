@@ -708,7 +708,16 @@ class RegrindService {
   }
 
   // 3.1 Quick Status: Mark Job Completed with QC PASS User Confirmation (ยืนยันจบงาน)
-  public confirmJobCompletionWithQcPass(ticketId: string, technicianName?: string, verifierName?: string): { success: boolean; message: string } {
+  public confirmJobCompletionWithQcPass(
+    ticketId: string,
+    technicianName?: string,
+    verifierName?: string,
+    options?: {
+      qcVerdict?: 'PASS' | 'PASS_WITH_MONITORING' | 'FAIL';
+      comments?: string;
+      specialInstructions?: string;
+    }
+  ): { success: boolean; message: string } {
     try {
       const tickets = this.getQueueTickets();
       const idx = tickets.findIndex(t => t.id === ticketId);
@@ -724,27 +733,31 @@ class RegrindService {
       }
 
       const nowIso = new Date().toISOString();
+      const verdict = options?.qcVerdict || 'PASS';
       ticket.status = 'COMPLETED';
       ticket.completedDate = nowIso;
       ticket.updatedAt = nowIso;
-      (ticket as any).qcStatus = 'APPROVED';
-      (ticket as any).qcVerdict = 'PASS';
-      (ticket as any).qcSource = 'User Confirmation';
+      (ticket as any).qcStatus = verdict === 'FAIL' ? 'REWORK_REQUIRED' : 'APPROVED';
+      (ticket as any).qcVerdict = verdict;
+      (ticket as any).qcSource = 'User Confirmation Modal';
       if (technicianName) ticket.assignedTechnician = technicianName;
       ticket.verifiedBy = verifierName || ticket.verifiedBy || 'QC Inspector (User Confirmation)';
-      ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}ยืนยันจบงานสำเร็จ (COMPLETED / QC PASS)`;
+      
+      const commentTxt = options?.comments || options?.specialInstructions || 'คุณภาพดี ลับคมเรียบร้อยได้สเปคมาตรฐาน';
+      ticket.defectNotes = commentTxt;
+      ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}ยืนยันจบงานสำเร็จ (${verdict}) - ${commentTxt}`;
 
       this.saveQueueTickets(tickets);
 
-      if (!ticket.addedToSpareStock) {
+      if (!ticket.addedToSpareStock && verdict !== 'FAIL') {
         ticket.addedToSpareStock = true;
         this.adjustSpareStockInWarehouse(ticket.partCode, 1);
       }
 
       storageService.addAuditLog(
         'REGRIND',
-        `Job Completion Confirmed (QC PASS): Ticket ${ticket.jobCode} (${ticket.partName}) marked COMPLETED with QC PASS (Source: User Confirmation).`,
-        `ยืนยันจบงาน (QC PASS): ใบงาน ${ticket.jobCode} (${ticket.partName}) ปิดงานสำเร็จพร้อมบันทึกผล QC PASS โดยผู้ใช้งาน`,
+        `Job Completion Confirmed (QC ${verdict}): Ticket ${ticket.jobCode} (${ticket.partName}) marked COMPLETED. Comment: ${commentTxt}`,
+        `ยืนยันจบงาน (QC ${verdict}): ใบงาน ${ticket.jobCode} (${ticket.partName}) ปิดงานสำเร็จ ความเห็น: ${commentTxt}`,
         ticket.lineId
       );
 
@@ -752,7 +765,7 @@ class RegrindService {
 
       return {
         success: true,
-        message: `✅ ยืนยันจบงานสำเร็จ: ${ticket.jobCode} (${ticket.partName}) สถานะ: COMPLETED / QC PASS เรียบร้อยแล้ว`
+        message: `✅ ยืนยันจบงานสำเร็จ: ${ticket.jobCode} (${ticket.partName}) สถานะ: COMPLETED / QC ${verdict} เรียบร้อยแล้ว`
       };
     } catch (err) {
       console.error('confirmJobCompletionWithQcPass error:', err);
@@ -1073,6 +1086,9 @@ class RegrindService {
       targetCompletionDate: data.targetCompletionDate || (data.scheduledDate ? `${data.scheduledDate}T17:00:00.000Z` : new Date(Date.now() + 24 * 3600 * 1000).toISOString()),
       quantity: data.quantity || 1,
       isDelayed: false,
+      laborHours: data.laborHours !== undefined ? data.laborHours : 1.0,
+      sparePartsUsed: data.sparePartsUsed || '',
+      sparePartsCost: data.sparePartsCost !== undefined ? data.sparePartsCost : 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };

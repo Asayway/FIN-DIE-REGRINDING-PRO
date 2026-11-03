@@ -287,12 +287,8 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                     return;
                   }
 
-                  if (window.confirm('การยืนยันนี้จะบันทึกผล QC PASS และปิดงานซ่อม สำหรับใบงานนี้ ?')) {
-                    const res = regrindService.confirmJobCompletionWithQcPass(ticket.id, ticket.assignedTechnician, ticket.verifiedBy);
-                    if (res.success && onSelectTicket) {
-                      onSelectTicket({ ...ticket, status: 'COMPLETED', verifiedBy: ticket.verifiedBy || 'QC Inspector (User Confirmation)' });
-                    }
-                    alert(res.message);
+                  if (onCompleteTicket) {
+                    onCompleteTicket(ticket);
                   }
                 }}
                 className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-center gap-1 cursor-pointer transition-all font-bold ${
@@ -448,12 +444,8 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                       return;
                     }
 
-                    if (window.confirm('การยืนยันนี้จะบันทึกผล QC PASS และปิดงานซ่อม สำหรับใบงานนี้ ?')) {
-                      const res = regrindService.confirmJobCompletionWithQcPass(ticket.id, ticket.assignedTechnician, ticket.verifiedBy);
-                      if (res.success && onSelectTicket) {
-                        onSelectTicket({ ...ticket, status: 'COMPLETED', verifiedBy: ticket.verifiedBy || 'QC Inspector (User Confirmation)' });
-                      }
-                      alert(res.message);
+                    if (onCompleteTicket) {
+                      onCompleteTicket(ticket);
                     }
                   }}
                   className={`px-3.5 py-1.5 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-md ${

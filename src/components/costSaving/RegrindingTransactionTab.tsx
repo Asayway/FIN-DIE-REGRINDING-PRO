@@ -26,12 +26,12 @@ import { TransactionModal } from './TransactionModal';
 import { costSavingService } from '../../services/costSavingService';
 
 interface RegrindingTransactionTabProps {
-  transactions: RegrindingTransactionItem[];
+  transactions?: RegrindingTransactionItem[];
   onRefresh: () => void;
 }
 
 export const RegrindingTransactionTab: React.FC<RegrindingTransactionTabProps> = ({
-  transactions,
+  transactions = [],
   onRefresh
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -188,10 +188,9 @@ export const RegrindingTransactionTab: React.FC<RegrindingTransactionTabProps> =
                 <th className="py-3 px-3">Part No. / ชื่อชิ้นส่วน</th>
                 <th className="py-3 px-2.5 text-center">ไลน์</th>
                 <th className="py-3 px-2.5 text-center">วันที่ซ่อม</th>
-                <th className="py-3 px-2 text-center">รอบที่</th>
-                <th className="py-3 px-2.5 text-right">ต้นทุนซ่อมรวม</th>
-                <th className="py-3 px-2.5 text-right">ซื้อใหม่เทียบเคียง</th>
-                <th className="py-3 px-2.5 text-right">ประหยัดสุทธิ (Net)</th>
+                <th className="py-3 px-2.5 text-right">ราคาซื้อใหม่ (THB/USD)</th>
+                <th className="py-3 px-2.5 text-right">ต้นทุนซ่อมรวม (Labor/Machine)</th>
+                <th className="py-3 px-2.5 text-right">ประหยัดสุทธิ (Net Saving)</th>
                 <th className="py-3 px-2 text-center">Saving %</th>
                 <th className="py-3 px-2.5 text-center">อายุการใช้งาน</th>
                 <th className="py-3 px-2 text-center">คุณภาพ</th>
@@ -200,85 +199,91 @@ export const RegrindingTransactionTab: React.FC<RegrindingTransactionTabProps> =
             </thead>
             <tbody className="divide-y divide-white/5 font-mono">
               {filtered.length > 0 ? (
-                filtered.map((t, idx) => (
-                  <tr key={`${t.id}-${idx}`} className="hover:bg-white/[0.03] transition-colors">
-                    <td className="py-3 px-3 font-bold text-cyan-300 font-mono whitespace-nowrap">
-                      {t.repairId}
-                    </td>
-                    <td className="py-3 px-3 font-sans text-white">
-                      <div className="font-bold font-mono text-cyan-400 text-xs">{t.partNo}</div>
-                      <div className="text-[11px] text-slate-300 truncate max-w-[180px]">{t.partName}</div>
-                    </td>
-                    <td className="py-3 px-2.5 text-center whitespace-nowrap text-slate-400">
-                      L-{t.machineLine}
-                    </td>
-                    <td className="py-3 px-2.5 text-center whitespace-nowrap text-slate-300 text-[11px]">
-                      {t.repairDate}
-                    </td>
-                    <td className="py-3 px-2 text-center whitespace-nowrap text-amber-300 font-bold">
-                      #{t.regrindingNo}
-                    </td>
-                    <td className="py-3 px-2.5 text-right text-white font-bold whitespace-nowrap">
-                      ฿{t.totalRepairCost.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-2.5 text-right text-slate-400 whitespace-nowrap">
-                      ฿{t.newPurchaseEquivalentCost.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-2.5 text-right font-black text-[#00FF7F] whitespace-nowrap text-sm">
-                      ฿{t.netSaving.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-2 text-center whitespace-nowrap font-bold text-[#00FF7F]">
-                      {t.savingPercentage}%
-                    </td>
-                    <td className="py-3 px-2.5 text-center whitespace-nowrap">
-                      {t.hasActualLife ? (
-                        <div title="ยืนยันจากประวัติใช้งานจริง (Verified Actual Life)">
-                          <span className="font-bold text-emerald-400 block text-xs">
-                            {(t.actualLifeAfterRepair || 0).toLocaleString()}
-                          </span>
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                            ACTUAL
-                          </span>
+                filtered.map((t, idx) => {
+                  const partMaster = costSavingService.getPartCostMasterByPartNo(t.partNo);
+                  const purchasePriceUsd = partMaster?.purchasePriceUsd || (t.newPurchaseEquivalentCost / 35);
+                  
+                  return (
+                    <tr key={`${t.id}-${idx}`} className="hover:bg-white/[0.03] transition-colors">
+                      <td className="py-3 px-3 font-bold text-cyan-300 font-mono whitespace-nowrap">
+                        {t.repairId}
+                      </td>
+                      <td className="py-3 px-3 font-sans text-white">
+                        <div className="font-bold font-mono text-cyan-400 text-xs">{t.partNo}</div>
+                        <div className="text-[11px] text-slate-300 truncate max-w-[180px]">{t.partName}</div>
+                      </td>
+                      <td className="py-3 px-2.5 text-center whitespace-nowrap text-slate-400">
+                        L-{t.machineLine}
+                      </td>
+                      <td className="py-3 px-2.5 text-center whitespace-nowrap text-slate-300 text-[11px]">
+                        {t.repairDate}
+                      </td>
+                      <td className="py-3 px-2.5 text-right whitespace-nowrap">
+                        <div className="text-slate-200 font-bold">฿{t.newPurchaseEquivalentCost.toLocaleString()}</div>
+                        <div className="text-[10px] text-slate-500">${purchasePriceUsd.toFixed(2)}</div>
+                      </td>
+                      <td className="py-3 px-2.5 text-right whitespace-nowrap">
+                        <div className="text-white font-bold">฿{t.totalRepairCost.toLocaleString()}</div>
+                        <div className="text-[10px] text-cyan-500 font-sans">
+                          (L: {t.actualLaborHours || t.laborHours || 0}h)
                         </div>
-                      ) : (
-                        <div title="ยังไม่มีผลจริง ใช้ค่าคาดการณ์ (Estimated Life)">
-                          <span className="text-amber-300 block text-xs font-semibold">
-                            {t.expectedLifeAfterRepair.toLocaleString()}
-                          </span>
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                            ESTIMATED
-                          </span>
+                      </td>
+                      <td className="py-3 px-2.5 text-right font-black text-[#00FF7F] whitespace-nowrap text-sm">
+                        ฿{t.netSaving.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap font-bold text-[#00FF7F]">
+                        {t.savingPercentage}%
+                      </td>
+                      <td className="py-3 px-2.5 text-center whitespace-nowrap">
+                        {t.hasActualLife ? (
+                          <div title="ยืนยันจากประวัติใช้งานจริง (Verified Actual Life)">
+                            <span className="font-bold text-emerald-400 block text-xs">
+                              {(t.actualLifeAfterRepair || 0).toLocaleString()}
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              ACTUAL
+                            </span>
+                          </div>
+                        ) : (
+                          <div title="ยังไม่มีผลจริง ใช้ค่าคาดการณ์ (Estimated Life)">
+                            <span className="text-amber-300 block text-xs font-semibold">
+                              {t.expectedLifeAfterRepair.toLocaleString()}
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              ESTIMATED
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 text-center whitespace-nowrap">
+                        {getQualityBadge(t.qualityResult)}
+                      </td>
+                      <td className="py-3 px-2.5 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingTransaction(t);
+                              setIsModalOpen(true);
+                            }}
+                            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-all cursor-pointer"
+                            title="แก้ไขบันทึกงานซ่อม"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(t.id)}
+                            className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-all cursor-pointer"
+                            title="ลบรายการนี้"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                      )}
-                    </td>
-                    <td className="py-3 px-2 text-center whitespace-nowrap">
-                      {getQualityBadge(t.qualityResult)}
-                    </td>
-                    <td className="py-3 px-2.5 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingTransaction(t);
-                            setIsModalOpen(true);
-                          }}
-                          className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white transition-all cursor-pointer"
-                          title="แก้ไขบันทึกงานซ่อม"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(t.id)}
-                          className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-all cursor-pointer"
-                          title="ลบรายการนี้"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={12} className="py-12 text-center text-slate-500 font-sans">

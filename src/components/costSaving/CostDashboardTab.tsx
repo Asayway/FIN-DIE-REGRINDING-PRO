@@ -47,7 +47,7 @@ import {
 } from 'recharts';
 
 interface CostDashboardTabProps {
-  transactions: RegrindingTransactionItem[];
+  transactions?: RegrindingTransactionItem[];
   metrics: CostSummaryMetrics;
   filters: CostDashboardFilter;
   onFilterChange: (newFilters: CostDashboardFilter) => void;
@@ -55,7 +55,7 @@ interface CostDashboardTabProps {
 }
 
 export const CostDashboardTab: React.FC<CostDashboardTabProps> = ({
-  transactions,
+  transactions = [],
   metrics,
   filters,
   onFilterChange,
@@ -609,32 +609,31 @@ export const CostDashboardTab: React.FC<CostDashboardTabProps> = ({
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-black text-white flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-cyan-400" />
-                <span>แนวโน้มต้นทุนและการประหยัดสุทธิรายเดือน (Monthly Savings & Cost Trend)</span>
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                <span>แนวโน้ม ROI: ประหยัดสุทธิ vs. ต้นทุนซ่อม (6 เดือนล่าสุด)</span>
               </h3>
               <p className="text-xs text-slate-400">
-                เปรียบเทียบมูลค่าซื้อใหม่ ต้นทุนการเจียร และยอด Net Saving ประจำปี {filters.year}
+                วิเคราะห์ประสิทธิภาพความคุ้มค่าของการเจียร (ROI Analysis)
               </p>
             </div>
             <div className="flex items-center gap-3 text-[11px] font-mono">
-              <span className="flex items-center gap-1.5 text-slate-400">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
-                <span>ซื้อใหม่ (Equivalent)</span>
+              <span className="flex items-center gap-1.5 text-emerald-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                <span>ประหยัดสุทธิ</span>
               </span>
               <span className="flex items-center gap-1.5 text-cyan-400">
                 <span className="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
-                <span>ค่าเจียรซ่อม</span>
-              </span>
-              <span className="flex items-center gap-1.5 text-[#00FF7F]">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#00FF7F]"></span>
-                <span>Net Saving</span>
+                <span>ต้นทุนซ่อม</span>
               </span>
             </div>
           </div>
 
           <div className="h-64 sm:h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={monthlyChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+              <ComposedChart 
+                data={monthlyChartData.slice(-6)} 
+                margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
                 <XAxis dataKey="month" stroke="#94a3b8" fontSize={11} tickLine={false} />
                 <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} tickFormatter={v => `฿${(v / 1000).toFixed(0)}k`} />
@@ -648,8 +647,6 @@ export const CostDashboardTab: React.FC<CostDashboardTabProps> = ({
                   }}
                   formatter={(val: any) => [`฿${Number(val).toLocaleString()}`, '']}
                 />
-                <Bar dataKey="newPurchase" name="มูลค่าซื้อใหม่เทียบเคียง" fill="#334155" radius={[4, 4, 0, 0]} maxBarSize={28} />
-                <Bar dataKey="regrindCost" name="ต้นทุนค่าเจียรซ่อม" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={28} />
                 <Line
                   type="monotone"
                   dataKey="netSaving"
@@ -657,6 +654,15 @@ export const CostDashboardTab: React.FC<CostDashboardTabProps> = ({
                   stroke="#00FF7F"
                   strokeWidth={3}
                   dot={{ r: 4, fill: '#00FF7F' }}
+                  activeDot={{ r: 6, stroke: '#ffffff' }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="regrindCost"
+                  name="ต้นทุนซ่อม (Repair Cost)"
+                  stroke="#06b6d4"
+                  strokeWidth={3}
+                  dot={{ r: 4, fill: '#06b6d4' }}
                   activeDot={{ r: 6, stroke: '#ffffff' }}
                 />
               </ComposedChart>

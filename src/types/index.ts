@@ -362,6 +362,10 @@ export interface PartMaster {
   drawingNumber: string;
   unit: string;
   unitCostThb: number;
+  purchasePriceThb?: number;
+  purchasePriceUsd?: number;
+  expectedShotLife?: number;
+  supplier?: string;
   description?: string;
   stockNote?: string;
   isImportedSeed?: boolean;
@@ -621,6 +625,9 @@ export interface RegrindingRecord {
   vendorName?: string;
   workOrder?: string;
   cost?: number; // THB
+  laborHours?: number; // Technician labor hours
+  sparePartsUsed?: string; // Spare parts / shims replaced or consumed
+  sparePartsCost?: number; // THB cost of spare parts
   performedBy?: string;
   verifiedBy?: string;
   evidence?: string;

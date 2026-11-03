@@ -108,6 +108,18 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     const maxCycles = selectedPart ? selectedPart.maxRegrindCount : 12;
 
     return CostSavingCalculationService.computeTransactionMetrics({
+      actualMachineHours: Number(formData.actualMachineHours || 0),
+      actualLaborHours: Number(formData.actualLaborHours || formData.laborHours || 0),
+      laborHours: Number(formData.laborHours || formData.actualLaborHours || 0),
+      machineCostRateRef: Number(formData.machineCostRateRef || 0),
+      laborRateRef: Number(formData.laborRateRef || 0),
+      includesLaborInMachineRate: formData.includesLaborInMachineRate,
+      actualConsumablesCost: Number(formData.actualConsumablesCost || 0),
+      actualExternalRepairCost: Number(formData.actualExternalRepairCost || formData.repairCost || 0),
+      actualTransportationCost: Number(formData.actualTransportationCost || formData.transportationCost || 0),
+      actualQcCost: Number(formData.actualQcCost || 0),
+      sparePartsCost: Number(formData.sparePartsCost || 0),
+      sparePartsUsed: formData.sparePartsUsed,
       repairCost: Number(formData.repairCost || 0),
       transportationCost: Number(formData.transportationCost || 0),
       internalLaborCost: Number(formData.internalLaborCost || 0),
@@ -424,6 +436,32 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   value={formData.estimatedTotalRepairCost ?? 1000}
                   onChange={e => setFormData({ ...formData, estimatedTotalRepairCost: parseFloat(e.target.value) || 0 })}
                   className="w-full px-3 py-2 bg-slate-950 border border-amber-500/40 rounded-xl text-amber-300 font-mono focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Spare Parts Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs border-t border-white/5 pt-3">
+              <div className="sm:col-span-8">
+                <label className="block text-slate-400 mb-1 font-semibold">อะไหล่ที่เปลี่ยน/ใช้ (Spare Parts Used)</label>
+                <input
+                  type="text"
+                  placeholder="เช่น Shim Plate 0.05mm, Guide Bushing..."
+                  value={formData.sparePartsUsed || ''}
+                  onChange={e => setFormData({ ...formData, sparePartsUsed: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-white/15 rounded-xl text-emerald-300 font-mono focus:border-emerald-400 focus:outline-none"
+                />
+              </div>
+
+              <div className="sm:col-span-4">
+                <label className="block text-slate-400 mb-1 font-semibold">ต้นทุนอะไหล่ (Spare Parts Cost THB)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="10"
+                  value={formData.sparePartsCost ?? 0}
+                  onChange={e => setFormData({ ...formData, sparePartsCost: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-white/15 rounded-xl text-amber-300 font-mono focus:border-amber-400 focus:outline-none"
                 />
               </div>
             </div>

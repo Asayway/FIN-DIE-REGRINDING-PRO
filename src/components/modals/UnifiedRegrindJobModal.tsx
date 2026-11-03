@@ -8,13 +8,16 @@ import {
   Check,
   AlertTriangle,
   CheckCircle2,
-  Play
+  Play,
+  Clock,
+  PackageCheck
 } from 'lucide-react';
 import { ProductionLineId, LINE_INFO_MAP, RegrindMasterStandard } from '../../types';
 import { RegrindWorkTicket, DefectReasonCode } from '../../types/regrind';
 import { LineFilteredPartCombobox, FilteredLinePartItem, getFilteredPartsForLine } from '../common/LineFilteredPartCombobox';
 import { regrindService } from '../../services/regrindService';
 import { storageService } from '../../services/storageService';
+import { costSavingService } from '../../services/costSavingService';
 
 const LINES_LIST: ProductionLineId[] = ['E1', 'E2', 'E3-1', 'E3-2', 'E3-3', 'E4', 'E5'];
 
@@ -94,9 +97,28 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
   const [defectReason, setDefectReason] = useState<DefectReasonCode>('NORMAL_WEAR');
   const [remarks, setRemarks] = useState<string>('');
 
+  // Labor & Cost Control
+  const [laborHours, setLaborHours] = useState<number>(1.0);
+  const [laborTimeUnit, setLaborTimeUnit] = useState<'HOURS' | 'MINUTES'>('HOURS');
+  const [sparePartsUsed, setSparePartsUsed] = useState<string>('');
+  const [sparePartsCost, setSparePartsCost] = useState<number>(0);
+
   const standards: RegrindMasterStandard[] = useMemo(() => {
     return storageService.getRegrindMasterStandards();
   }, [isOpen]);
+
+  const selectedPartCostMaster = useMemo(() => {
+    const costMasters = costSavingService.getPartCostMasters();
+    return costMasters.find(cm => cm.partNo === partCode || cm.partName.toLowerCase() === partName.toLowerCase()) || {
+      newPurchasePrice: 25000,
+      purchasePriceUsd: 720,
+      expectedNewToolLife: 15000000,
+      supplier: 'Standard Tooling Vendor',
+      nominalLengthMm,
+      minAllowedLengthMm,
+      maxRegrindCount: maxRegrindAllowed
+    };
+  }, [isOpen, partCode, partName, nominalLengthMm, minAllowedLengthMm, maxRegrindAllowed]);
 
   const getDieCodeForLine = (lId: string): string => {
     try {
@@ -146,6 +168,9 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
           existingTicket.defectNotes ||
           (emg ? `งานด่วนแทรกคิว #1` : '')
       );
+      setLaborHours(existingTicket.laborHours !== undefined ? existingTicket.laborHours : 1.0);
+      setSparePartsUsed(existingTicket.sparePartsUsed || '');
+      setSparePartsCost(existingTicket.sparePartsCost || 0);
       setPreemptActiveJob(true);
       setShiftHours(2);
     } else {
@@ -158,6 +183,9 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       setQuantity(1);
       setTechnician('Thanakorn Phonpayung');
       setDefectReason(matrixCategory === 'DEFECT_SCRAP' ? 'CHIPPED' : 'NORMAL_WEAR');
+      setLaborHours(1.0);
+      setSparePartsUsed('');
+      setSparePartsCost(0);
       setPreemptActiveJob(true);
       setShiftHours(2);
 
@@ -242,18 +270,20 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
   const minAllowedDateStr = '2025-01-01';
   const isBefore2025 = scheduledDate < minAllowedDateStr;
   const isHistoricalPastDate = scheduledDate < todayStr && scheduledDate >= minAllowedDateStr;
-  const remainingCycles = Math.max(0, maxRegrindAllowed - nextCycle);
+  const remainingCycles = isUnderMinLength ? 0 : Math.max(0, maxRegrindAllowed - nextCycle);
   const remainingWearMm = Number(Math.max(0, resultLengthMm - minAllowedLengthMm).toFixed(2));
   const totalWearRangeMm = Number(Math.max(0.01, nominalLengthMm - minAllowedLengthMm).toFixed(2));
-  const remainingPercent = Math.min(100, Math.max(0, (remainingWearMm / totalWearRangeMm) * 100));
+  const remainingPercent = (isUnderMinLength || isOverMaxCycle) ? 0 : Math.min(100, Math.max(0, (remainingWearMm / totalWearRangeMm) * 100));
 
-  const executeSubmit = (shouldStartNow: boolean = false) => {
+  const executeSubmit = (targetMode?: 'QUEUE_TICKET' | 'START_NOW' | 'SCRAP_NOW' | boolean) => {
     if (isBefore2025) {
       alert(`⚠️ ไม่อนุญาตให้ลงวันที่ย้อนหลังเกิน Jan 2025 (กรุณาเลือกตั้งแต่วันที่ ${minAllowedDateStr} เป็นต้นไป)`);
       return;
     }
 
-    const isStartImmediate = shouldStartNow || executionMode === 'START_NOW';
+    const mode = typeof targetMode === 'string' ? targetMode : (targetMode === true ? 'START_NOW' : executionMode);
+    const isStartImmediate = mode === 'START_NOW';
+    const isScrap = mode === 'SCRAP_NOW';
 
     const parsedDate = new Date(scheduledDate);
     const year = parsedDate.getFullYear() || 2026;
@@ -283,12 +313,15 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
         defectReason,
         defectNotes: remarks,
         remarks,
+        laborHours,
+        sparePartsUsed,
+        sparePartsCost,
         preemptActiveJob,
         shiftHours
       });
 
-      if (executionMode === 'SCRAP_NOW') {
-        const scr = regrindService.scrapItem(existingTicket.id, defectReason, remarks, technician);
+      if (isScrap) {
+        const scr = regrindService.scrapItem(existingTicket.id, defectReason, remarks || 'ชำรุดคัดทิ้ง', technician);
         regrindService.incrementDailyMatrixCount(year, month, 'DEFECT_SCRAP', partName, day, quantity);
         onSaved(scr.message, res.ticket);
       } else if (isStartImmediate) {
@@ -326,6 +359,9 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       regrindCountBefore,
       regrindCountAfter: nextCycle,
       maxRegrindAllowed,
+      laborHours,
+      sparePartsUsed,
+      sparePartsCost,
       ...(isEmergency ? { preemptActiveJob } : {})
     } as any);
 
@@ -337,7 +373,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       });
     }
 
-    if (executionMode === 'SCRAP_NOW') {
+    if (isScrap) {
       regrindService.scrapItem(createdTicket.id, defectReason, remarks, technician);
       regrindService.incrementDailyMatrixCount(
         year,
@@ -483,29 +519,26 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
-      onClick={e => {
-        // Do NOT close on outside click - only close on X or Cancel button
-        e.stopPropagation();
-      }}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-hidden"
+      onClick={e => e.stopPropagation()}
     >
       <div
         className={`bg-[#0b101b] border-2 ${
           isEmergency ? 'border-rose-500/70 shadow-[0_0_50px_rgba(244,63,94,0.3)]' : 'border-cyan-500/50 shadow-[0_0_50px_rgba(6,182,212,0.15)]'
-        } rounded-3xl max-w-4xl w-full overflow-hidden my-auto transition-all text-slate-200`}
+        } rounded-2xl sm:rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden text-slate-200 shadow-2xl animate-scaleIn`}
         onClick={e => e.stopPropagation()}
       >
-        {/* Sleek Header */}
+        {/* Sleek Header (Fixed Top) */}
         <div
-          className={`px-6 py-4 border-b flex items-center justify-between gap-4 ${
+          className={`shrink-0 px-4 sm:px-6 py-3.5 border-b flex items-center justify-between gap-4 ${
             isEmergency
-              ? 'bg-gradient-to-r from-rose-950/60 to-slate-900 border-rose-500/30'
-              : 'bg-gradient-to-r from-cyan-950/50 to-slate-900 border-cyan-500/20'
+              ? 'bg-gradient-to-r from-rose-950/70 via-slate-900 to-slate-900 border-rose-500/30'
+              : 'bg-gradient-to-r from-cyan-950/60 via-slate-900 to-slate-900 border-cyan-500/20'
           }`}
         >
           <div className="flex items-center gap-3">
             <div
-              className={`p-2.5 rounded-xl border ${
+              className={`p-2 rounded-xl border ${
                 isEmergency
                   ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
                   : 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
@@ -515,23 +548,23 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base font-black text-white">
+                <h3 className="text-sm sm:text-base font-black text-white">
                   {existingTicket ? `แก้ไขใบงานเจียร (${existingTicket.jobCode})` : 'บันทึกงานเจียระไน & จัดคิวชิ้นงาน'}
                 </h3>
                 <span
-                  className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                  className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
                     isEmergency
-                      ? 'bg-rose-600 text-white shadow-sm'
-                      : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                   }`}
                 >
                   {isEmergency ? '🚨 คิวด่วน #1' : '🟢 คิวปกติ'}
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono font-bold border border-white/10">
+                <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono font-bold border border-white/10">
                   LINE {lineId}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-[11px] text-slate-400 mt-0.5 font-thai">
                 ระบบคำนวณสเปคมิติงานใหม่-ปัจจุบัน-หลังเจียร และตรวจสอบรอบการลับคมอัตโนมัติ
               </p>
             </div>
@@ -540,52 +573,53 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer shrink-0"
             title="ปิดหน้าต่าง (Close)"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-3 sm:p-4 space-y-2.5 text-xs max-h-[90vh] overflow-y-auto custom-scrollbar">
+        {/* Scrollable Form Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-4 custom-scrollbar text-xs">
           {/* Main Grid Wrapper: 2 Columns for Desktop, 1 Column for Mobile */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-start">
             
             {/* LEFT COLUMN: Inputs (7/12 cols) */}
-            <div className="lg:col-span-7 space-y-2.5">
+            <div className="lg:col-span-7 space-y-3">
               
               {/* Mode Switcher */}
-              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950 rounded-xl border border-white/15">
+              <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950/50 rounded-lg border border-white/10">
                 <button
                   type="button"
                   onClick={() => setIsEmergency(false)}
-                  className={`py-2 px-3 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                  className={`py-0.5 rounded-md font-black text-[9px] flex items-center justify-center gap-1 cursor-pointer transition-all ${
                     !isEmergency
                       ? 'bg-gradient-to-r from-cyan-500 to-cyan-400 text-slate-950 shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>🟢 คิวปกติ (Normal Queue)</span>
+                  <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                  <span>🟢 คิวปกติ</span>
                 </button>
-
+ 
                 <button
                   type="button"
                   onClick={() => setIsEmergency(true)}
-                  className={`py-2 px-3 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                  className={`py-0.5 rounded-md font-black text-[9px] flex items-center justify-center gap-1 cursor-pointer transition-all ${
                     isEmergency
                       ? 'bg-gradient-to-r from-rose-600 to-rose-500 text-white shadow-md'
                       : 'text-slate-300 hover:text-rose-300 hover:bg-white/5'
                   }`}
                 >
-                  <Zap className="w-4 h-4 shrink-0" />
-                  <span>🚨 คิวด่วน #1 (Emergency Preempt)</span>
+                  <Zap className="w-2.5 h-2.5 shrink-0" />
+                  <span>🚨 คิวด่วน #1</span>
                 </button>
               </div>
 
               {/* Same-day existing queues preview (if any) */}
               {dayExistingTickets.length > 0 && !existingTicket && (
-                <div className="p-2 rounded-xl bg-slate-950/90 border border-white/15 space-y-1 text-xs">
+                <div className="p-2 rounded-lg bg-slate-950/90 border border-white/15 space-y-1 text-[10px]">
                   <span className="text-slate-300 font-bold block flex items-center gap-1.5">
                     <CalendarIcon className="w-3.5 h-3.5 text-cyan-400" />
                     คิววันที่ {scheduledDate} ({dayExistingTickets.length} คิว):
@@ -596,7 +630,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                         key={`${t.id}-${idx}`}
                         type="button"
                         onClick={() => onSelectExistingTicket?.(t)}
-                        className="px-2 py-0.5 bg-slate-900 border border-white/15 text-slate-200 hover:border-cyan-400 text-xs font-mono font-bold cursor-pointer transition-colors rounded-md"
+                        className="px-2 py-0.5 bg-slate-900 border border-white/15 text-slate-200 hover:border-cyan-400 text-[10px] font-mono font-bold cursor-pointer transition-colors rounded"
                       >
                         #{t.queueOrder ?? idx + 1} {t.partName} ({t.lineId})
                       </button>
@@ -605,91 +639,57 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                 </div>
               )}
 
-              {/* Date, Line, Die, and Quantity combined in a high-visibility 2x2 grid */}
-              <div className="p-3 rounded-xl bg-slate-950/85 border border-white/15 space-y-2.5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-slate-200 font-extrabold mb-1 text-xs">
-                      📅 วันที่เจียร <span className="text-rose-400">*</span>
-                    </label>
+              {/* Date, Line, Die, and Quantity combined in a high-visibility 4-column grid */}
+              <div className="p-1.5 rounded-lg bg-slate-950/85 border border-white/10 space-y-1">
+                <div className="grid grid-cols-4 gap-1.5">
+                  <div className="col-span-1">
+                    <label className="block text-slate-200 font-extrabold mb-0.5 text-[8px]">📅 วันที่ <span className="text-rose-400">*</span></label>
                     <input
                       type="date"
                       min="2025-01-01"
-                      value={scheduledDate}
+                      value={scheduledDate || ''}
                       onChange={e => setScheduledDate(e.target.value)}
-                      className={`w-full px-3 py-2 bg-slate-900 border-2 ${
+                      className={`w-full px-1.5 py-0.5 bg-slate-900 border ${
                         isBefore2025
                           ? 'border-rose-500 text-rose-300'
                           : isHistoricalPastDate
                           ? 'border-amber-500 text-amber-300'
                           : 'border-slate-700 text-white'
-                      } rounded-xl font-mono font-black focus:border-cyan-400 focus:outline-none [color-scheme:dark] text-sm shadow-inner`}
+                      } rounded-md font-mono font-bold text-[9px] focus:border-cyan-400 focus:outline-none`}
                       required
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-slate-200 font-extrabold mb-1 text-xs">
-                      🏭 ไลน์ผลิต (Line) <span className="text-rose-400">*</span>
-                    </label>
+                  <div className="col-span-1">
+                    <label className="block text-slate-200 font-extrabold mb-0.5 text-[8px]">🏭 ไลน์ <span className="text-rose-400">*</span></label>
                     <select
-                      value={lineId}
+                      value={lineId || 'E1'}
                       onChange={e => handleLineChange(e.target.value as ProductionLineId)}
-                      className="w-full px-3 py-2 bg-slate-900 border-2 border-cyan-500/50 rounded-xl text-cyan-300 font-black focus:border-cyan-400 focus:outline-none cursor-pointer text-sm shadow-inner"
+                      className="w-full px-1 py-0.5 bg-slate-900 border border-slate-700 rounded-md text-cyan-300 font-black text-[9px] focus:border-cyan-400 focus:outline-none"
                     >
-                      {LINES_LIST.map(l => (
-                        <option key={l} value={l}>
-                          LINE {l} ({LINE_INFO_MAP[l]?.shortTag || l})
-                        </option>
-                      ))}
+                      {LINES_LIST.map(l => <option key={l} value={l}>LINE {l}</option>)}
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-slate-200 font-extrabold mb-1 text-xs">
-                      🔧 รหัสแม่พิมพ์ (Die Code)
-                    </label>
+                  <div className="col-span-1">
+                    <label className="block text-slate-200 font-extrabold mb-0.5 text-[8px]">🔧 แม่พิมพ์</label>
                     <input
                       type="text"
-                      value={dieCode}
+                      value={dieCode || ''}
                       readOnly
-                      className="w-full px-3 py-2 bg-slate-900/70 border-2 border-slate-700/80 rounded-xl text-slate-200 font-mono text-sm cursor-not-allowed select-none font-black"
+                      className="w-full px-1 py-0.5 bg-slate-900 border border-slate-700 rounded-md text-slate-300 font-mono text-[9px]"
                     />
                   </div>
 
-                  {/* Large Easy-to-Use Quantity Field */}
-                  <div>
-                    <label className="block text-amber-300 font-black mb-1 text-xs uppercase tracking-wider">
-                      🔢 จำนวนซ่อม (ชิ้น) <span className="text-rose-400">*</span>
-                    </label>
-                    <div className="flex items-center justify-between bg-slate-900 border-2 border-amber-500/50 rounded-xl px-2 py-1 shadow-inner">
-                      <button
-                        type="button"
-                        onClick={() => setQuantity(prev => Math.max(1, prev - 1))}
-                        className="w-8 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-black text-base border border-slate-600 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={quantity}
-                        onFocus={e => e.target.select()}
-                        onChange={e => {
-                          const cleaned = e.target.value.replace(/^0+([1-9])/, '$1');
-                          setQuantity(Math.max(1, parseInt(cleaned, 10) || 1));
-                        }}
-                        className="w-16 py-0.5 bg-transparent border-0 text-amber-300 font-mono font-black text-center text-base focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setQuantity(prev => Math.min(100, prev + 1))}
-                        className="w-8 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-black text-base border border-slate-600 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                      >
-                        +
-                      </button>
-                    </div>
+                  <div className="col-span-1">
+                    <label className="block text-amber-300 font-black mb-0.5 text-[8px]">🔢 จำนวน</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={quantity ?? 1}
+                      onChange={e => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full px-1 py-0.5 bg-slate-900 border border-slate-700 rounded-md text-amber-300 font-black text-[9px] focus:border-cyan-400 focus:outline-none"
+                    />
                   </div>
                 </div>
 
@@ -705,11 +705,80 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                     onSelectPart={item => applySelectedPartSpecs(item, lineId)}
                   />
                 </div>
+
+                {/* Comprehensive Part Master & Cost Details Card */}
+                <div className="mt-2 p-2 rounded-xl bg-slate-950/90 border border-cyan-500/30 space-y-1.5 text-[10px] font-mono">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-1 text-cyan-300 font-bold">
+                    <span className="flex items-center gap-1">
+                      <span>📊</span>
+                      <span>รายละเอียดชิ้นส่วนและต้นทุน (Part Master & Cost Specs)</span>
+                    </span>
+                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                      LINE {lineId} Active
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5 text-[9px]">
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">ไลน์ (Line):</span>
+                      <span className="text-white font-bold">LINE {lineId}</span>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">ติดตั้ง (Install):</span>
+                      <span className="text-amber-400 font-bold">{quantity} ชิ้น</span>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">ซื้อใหม่ (Price):</span>
+                      <span className="text-emerald-400 font-bold">฿{(selectedPartCostMaster.newPurchasePrice || 25000).toLocaleString()}</span>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">Scrap Spec:</span>
+                      <span className="text-rose-400 font-bold">{minAllowedLengthMm.toFixed(2)} mm</span>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">Shot Life:</span>
+                      <span className="text-slate-300 font-bold">{((selectedPartCostMaster.expectedNewToolLife || 15000000) / 1000000).toFixed(1)}M</span>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">ผู้ผลิต:</span>
+                      <span className="text-slate-300 font-bold truncate block">
+                        {selectedPartCostMaster.supplier || 'In-House'}
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">ใหม่ (Nom):</span>
+                      <span className="text-cyan-400 font-bold">{nominalLengthMm.toFixed(2)}</span>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">ปัจจุบัน (Cur):</span>
+                      <span className="text-amber-400 font-bold">{previousLengthMm.toFixed(2)}</span>
+                    </div>
+
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-slate-500 block text-[8px]">หลังเจียร (Aft):</span>
+                      <span className="text-emerald-400 font-bold">{resultLengthMm.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-1 border-t border-white/5 flex items-center justify-between text-[9px] font-bold text-slate-400">
+                    <span>รอบเจียรที่เหลือ:</span>
+                    <span className="text-cyan-400 px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20">
+                      {remainingCycles} ครั้ง (จาก {maxRegrindAllowed})
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              {/* Historical Past Date Info Indicator (Allows saving smoothly) */}
+              {/* Historical Past Date Info Indicator */}
               {isHistoricalPastDate && (
-                <div className="p-2 rounded-xl bg-amber-950/80 border border-amber-500/60 text-amber-200 text-xs flex items-center justify-between gap-2 animate-fadeIn">
+                <div className="p-2.5 rounded-xl bg-amber-950/80 border border-amber-500/60 text-amber-200 text-xs flex items-center justify-between gap-2 animate-fadeIn">
                   <div className="flex items-center gap-1.5 font-semibold">
                     <CalendarIcon className="w-4 h-4 text-amber-400 shrink-0" />
                     <span>📅 ลงบันทึกข้อมูลย้อนหลัง (Historical Record) วันที่ {scheduledDate}</span>
@@ -722,7 +791,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
 
               {/* Alert if date is before Jan 2025 */}
               {isBefore2025 && (
-                <div className="p-2 rounded-xl bg-rose-950/85 border border-rose-500/70 text-rose-200 text-xs flex items-center justify-between gap-2 animate-fadeIn">
+                <div className="p-2.5 rounded-xl bg-rose-950/85 border border-rose-500/70 text-rose-200 text-xs flex items-center justify-between gap-2 animate-fadeIn">
                   <div className="flex items-center gap-1.5 font-semibold">
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
                     <span>ไม่อนุญาตให้ลงวันที่ย้อนหลังเกิน Jan 2025</span>
@@ -737,44 +806,67 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                 </div>
               )}
 
-              {/* SECTION 3: ⚠️ FULL-WIDTH DEFECT REASON */}
-              <div className="p-3 rounded-xl bg-slate-950/85 border border-white/15 space-y-2">
-                <label className="block text-slate-100 font-extrabold text-xs">
-                  ⚠️ สาเหตุการส่งเจียร / สภาพปัญหา (Regrind & Defect Reason) <span className="text-rose-400">*</span>
+              {/* SECTION 3: ⚠️ DEFECT REASONS */}
+              <div className="p-2 rounded-lg bg-slate-950/85 border border-white/10">
+                <label className="block text-slate-100 font-extrabold text-[9px] mb-1">
+                  ⚠️ สาเหตุการส่งเจียร / สภาพปัญหา (Reason) <span className="text-rose-400">*</span>
                 </label>
-
-                {/* Quick Reason Badges in larger, easy-to-read grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {DEFECT_REASONS_LIST.map(item => {
-                    const isSelected = defectReason === item.code;
-                    return (
-                      <button
-                        key={item.code}
-                        type="button"
-                        onClick={() => setDefectReason(item.code)}
-                        className={`px-2.5 py-2 rounded-xl border-2 text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-cyan-500/25 border-cyan-400 text-white shadow-md ring-1 ring-cyan-400/30'
-                            : 'bg-slate-900/80 border-slate-800 text-slate-200 hover:border-slate-600 hover:bg-slate-900'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 font-extrabold text-xs leading-snug">
-                          <span className="shrink-0 text-sm">{item.icon}</span>
-                          <span className="truncate">{item.label.split('(')[0]}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-3 gap-1">
+                  {DEFECT_REASONS_LIST.map(item => (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => setDefectReason(item.code)}
+                      className={`p-1 border rounded-lg text-center transition-all cursor-pointer ${
+                        defectReason === item.code
+                          ? 'bg-cyan-500/10 border-cyan-400 text-cyan-200'
+                          : 'bg-slate-900/50 border-slate-800 text-slate-500 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="text-xs">{item.icon}</div>
+                      <div className="text-[7.5px] font-bold leading-tight mt-0.5 uppercase">{item.code.replace('_', ' ')}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+ 
+              {/* SECTION 4: 📝 REMARKS */}
+              <div className="p-2 rounded-lg bg-slate-950/85 border border-white/10 space-y-1.5">
+                <label className="block text-slate-200 font-extrabold text-[9px] leading-none">
+                  📝 หมายเหตุ (Remarks)
+                </label>
+                <input
+                  type="text"
+                  value={remarks || ''}
+                  onChange={e => setRemarks(e.target.value)}
+                  placeholder="ระบุรายละเอียด..."
+                  className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded-md text-white font-semibold text-[10px] focus:border-cyan-400 focus:outline-none"
+                />
+                <div className="flex items-center gap-1 flex-wrap">
+                  {DEFAULT_REMARKS_PRESETS.map((preset, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setRemarks(preset)}
+                      className={`px-1.5 py-0.5 rounded-md text-[8px] border cursor-pointer transition-all ${
+                        remarks === preset
+                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 font-bold'
+                          : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
                 </div>
               </div>
 
             </div>
 
             {/* RIGHT COLUMN: Calculations & Remaining Data (5/12 cols) */}
-            <div className="lg:col-span-5 space-y-2.5">
+            <div className="lg:col-span-5 space-y-3">
               
               {/* SECTION 2: 📐 COMPLETE SPEC & REGRIND BREAKDOWN CALCULATOR */}
-              <div className="p-3 rounded-xl bg-gradient-to-b from-slate-900/95 to-slate-950 border-2 border-cyan-500/35 shadow-lg space-y-2">
+              <div className="p-3.5 rounded-2xl bg-gradient-to-b from-slate-900/95 to-slate-950 border-2 border-cyan-500/35 shadow-lg space-y-2.5">
                 <div className="flex items-center justify-between flex-wrap gap-1 border-b border-white/10 pb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-cyan-300 font-black text-sm">📐</span>
@@ -791,25 +883,27 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                   </div>
                 </div>
 
-                {/* 4 Interactive Spec Flow Cards - Enlarged & High Contrast */}
+                {/* 4 Interactive Spec Flow Cards */}
                 <div className="grid grid-cols-2 gap-2">
                   {/* Card 1: สเปคงานใหม่ */}
-                  <div className="p-2 rounded-xl bg-slate-950 border-2 border-slate-800 flex flex-col justify-between">
-                    <span className="font-extrabold text-slate-300 text-xs block leading-tight">
-                      🆕 1. สเปคงานใหม่
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
+                    <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block" />
+                      1. สเปคงานใหม่
                     </span>
-                    <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-base font-black text-cyan-400 font-mono flex items-baseline justify-between">
-                      <span>{nominalLengthMm.toFixed(2)}</span>
-                      <span className="text-[11px] font-bold text-slate-400">mm</span>
+                    <div className="mt-1 flex items-baseline justify-between px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800">
+                      <span className="text-sm sm:text-base font-black text-cyan-400 font-mono">{nominalLengthMm.toFixed(2)}</span>
+                      <span className="text-[10px] font-bold text-slate-500 font-mono">mm</span>
                     </div>
                   </div>
 
-                  {/* Card 2: สเปคปัจจุบันก่อนเจียร */}
-                  <div className="p-2 rounded-xl bg-slate-950 border-2 border-cyan-500/40 flex flex-col justify-between">
-                    <label className="text-xs font-extrabold text-cyan-300 block leading-tight">
-                      📏 2. ก่อนเจียร (mm)
+                  {/* Card 2: ก่อนเจียร */}
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-cyan-500/40 flex flex-col justify-between">
+                    <label className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block" />
+                      2. ก่อนเจียร (mm)
                     </label>
-                    <div className="mt-1.5 relative">
+                    <div className="mt-1">
                       <input
                         type="number"
                         step="0.01"
@@ -817,17 +911,27 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                         placeholder="0.00"
                         onFocus={e => e.target.select()}
                         onChange={e => handlePrevLengthChange(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-900 border-2 border-cyan-500/50 rounded-lg text-white font-mono text-base font-black focus:border-cyan-400 focus:outline-none shadow-inner"
+                        className="w-full px-2.5 py-1 bg-slate-900 border border-cyan-500/50 rounded-lg text-white font-mono text-sm sm:text-base font-black focus:border-cyan-400 focus:outline-none text-center shadow-inner"
                       />
                     </div>
                   </div>
 
-                  {/* Card 3: จะเจียรลงเท่าไหร่ */}
-                  <div className="p-2 rounded-xl bg-slate-950 border-2 border-amber-500/40 flex flex-col justify-between">
-                    <label className="text-xs font-extrabold text-amber-300 block leading-tight">
-                      ⚙️ 3. จะเจียรลง (mm)
+                  {/* Card 3: จะเจียรลง */}
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-amber-500/40 flex flex-col justify-between">
+                    <label className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+                      3. จะเจียรลง (mm)
                     </label>
-                    <div className="mt-1.5">
+                    <div className="mt-1 flex items-center gap-1">
+                      <select
+                        value={grindDepthMm}
+                        onChange={e => handleGrindDepthChange(e.target.value)}
+                        className="flex-1 px-1 py-0.5 bg-slate-900 border border-amber-500/50 rounded-md text-amber-300 font-mono text-xs font-black focus:border-amber-400 focus:outline-none text-center shadow-inner"
+                      >
+                        {GRIND_STEP_PRESETS.map(p => (
+                          <option key={p} value={p}>{p.toFixed(2)}</option>
+                        ))}
+                      </select>
                       <input
                         type="number"
                         step="0.01"
@@ -835,25 +939,26 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                         placeholder="0.00"
                         onFocus={e => e.target.select()}
                         onChange={e => handleGrindDepthChange(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-900 border-2 border-amber-500/50 rounded-lg text-amber-300 font-mono text-base font-black focus:border-amber-400 focus:outline-none shadow-inner"
+                        className="w-12 px-1 py-0.5 bg-slate-900 border border-amber-500/30 rounded-md text-amber-300 font-mono text-[10px] focus:outline-none text-center"
                       />
                     </div>
                   </div>
 
-                  {/* Card 4: หลังเจียรจะเหลือเท่าไหร่ */}
+                  {/* Card 4: หลังเจียร */}
                   <div
-                    className={`p-2 rounded-xl bg-slate-950 border-2 flex flex-col justify-between ${
+                    className={`p-2.5 rounded-xl bg-slate-950 border flex flex-col justify-between ${
                       isUnderMinLength
-                        ? 'border-rose-500/80 bg-rose-950/15'
+                        ? 'border-rose-500/80 bg-rose-950/20'
                         : 'border-emerald-500/60 bg-emerald-950/10'
                     }`}
                   >
-                    <label className="text-xs font-extrabold flex items-center justify-between leading-tight">
+                    <label className="text-[11px] font-bold flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full ${isUnderMinLength ? 'bg-rose-400' : 'bg-emerald-400'} inline-block`} />
                       <span className={isUnderMinLength ? 'text-rose-300' : 'text-emerald-300'}>
-                        🎯 4. หลังเจียร (mm)
+                        4. หลังเจียร (mm)
                       </span>
                     </label>
-                    <div className="mt-1.5">
+                    <div className="mt-1">
                       <input
                         type="number"
                         step="0.01"
@@ -861,7 +966,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                         placeholder="0.00"
                         onFocus={e => e.target.select()}
                         onChange={e => handleResultLengthChange(e.target.value)}
-                        className={`w-full px-2.5 py-1.5 bg-slate-900 border-2 rounded-lg text-base font-black font-mono shadow-inner focus:outline-none ${
+                        className={`w-full px-2.5 py-1 bg-slate-900 border rounded-lg text-sm sm:text-base font-black font-mono text-center shadow-inner focus:outline-none ${
                           isUnderMinLength
                             ? 'border-rose-500 text-rose-300'
                             : 'border-emerald-500 text-emerald-300'
@@ -872,7 +977,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                 </div>
 
                 {/* Cycle Count & Remaining Grinds Summary Bar */}
-                <div className="p-2 rounded-xl bg-slate-950/95 border border-white/15 flex flex-col gap-1.5 text-xs">
+                <div className="p-2.5 rounded-xl bg-slate-950/95 border border-white/15 flex flex-col gap-1.5 text-xs">
                   <div className="flex items-center justify-between flex-wrap gap-1.5">
                     <div className="flex items-center gap-1.5">
                       <span className="text-slate-300 font-bold">รอบเจียร:</span>
@@ -929,56 +1034,136 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                 </div>
 
                 {(isUnderMinLength || isOverMaxCycle) && (
-                  <div className="p-1.5 rounded-lg bg-rose-950/90 border border-rose-500/70 text-rose-200 text-xs font-bold flex items-center gap-1.5">
+                  <div className="p-2 rounded-xl bg-rose-950/90 border border-rose-500/70 text-rose-200 text-xs font-bold flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                    <span>
+                    <span className="leading-tight">
                       {isUnderMinLength
-                        ? `สูงหลังเจียร (${resultLengthMm.toFixed(2)} mm) ต่ำกว่าสเปคขั้นต่ำ`
-                        : `รอบเจียรครั้งที่ ${nextCycle} เกินโควตาสูงสุด`}
+                        ? `⚠️ สภาพชิ้นงาน: SCRAP (สูงหลังเจียร ${resultLengthMm.toFixed(2)} mm < สเปคขั้นต่ำ ${minAllowedLengthMm.toFixed(2)} mm)`
+                        : `⚠️ รอบเจียรครั้งที่ ${nextCycle} เกินโควตาสูงสุด (${maxRegrindAllowed} ครั้ง)`}
                     </span>
                   </div>
                 )}
               </div>
 
-              {/* Status & Assigned Technician inside a clear 2-column card */}
-              <div className="p-2.5 rounded-xl bg-slate-950/85 border border-white/15 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-slate-200 font-extrabold mb-1 text-xs">
-                    สถานะการดำเนินการ (Mode)
-                  </label>
-                  <select
-                    value={executionMode}
-                    onChange={e => setExecutionMode(e.target.value as any)}
-                    className="w-full px-3 py-2 bg-slate-900 border-2 border-slate-700 rounded-xl text-white font-black cursor-pointer text-sm focus:border-cyan-400 focus:outline-none shadow-inner"
-                  >
-                    <option value="QUEUE_TICKET">
-                      {isEmergency ? '🚨 คิวด่วน #1 (รอเริ่มเจียร)' : '⏳ ลงคิวรอเจียร (Queued)'}
-                    </option>
-                    <option value="START_NOW">
-                      ⚡ เริ่มเจียรทันที (Start Regrind Now)
-                    </option>
-                    <option value="SCRAP_NOW">🗑️ คัดทิ้ง (Scrap Tooling)</option>
-                  </select>
-                  {executionMode === 'START_NOW' && (
-                    <div className="mt-1.5 text-[11px] text-emerald-300 font-bold flex items-center gap-1 bg-emerald-950/60 border border-emerald-500/40 px-2 py-1 rounded-lg">
-                      <Play className="w-3 h-3 fill-emerald-400 text-emerald-400 shrink-0" />
-                      <span>บันทึกและปรับสถานะเป็น "กำลังเจียร (In-Process)" ทันที</span>
-                    </div>
-                  )}
+              {/* Assigned Technician Card */}
+              <div className="p-2.5 rounded-2xl bg-slate-950/85 border border-white/15 flex items-center gap-2">
+                <label className="text-slate-200 font-extrabold text-xs shrink-0">
+                  ช่างผู้รับผิดชอบ <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={technician}
+                  onChange={e => setTechnician(e.target.value)}
+                  placeholder="ระบุชื่อช่าง..."
+                  className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold text-xs focus:border-cyan-400 focus:outline-none shadow-inner"
+                  required
+                />
+              </div>
+
+              {/* Labor Time & Cost Card */}
+              <div className="p-3 rounded-2xl bg-slate-950/85 border border-cyan-500/30 space-y-2">
+                <div className="flex items-center justify-between border-b border-white/10 pb-1.5 flex-wrap gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="font-extrabold text-cyan-300 text-xs uppercase tracking-wide">
+                      เวลาแรงงาน & คำนวณต้นทุน (Labor Time)
+                    </span>
+                  </div>
+
+                  {/* Unit Selector (นาที vs ชั่วโมง) */}
+                  <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setLaborTimeUnit('MINUTES')}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        laborTimeUnit === 'MINUTES'
+                          ? 'bg-cyan-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      นาที
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLaborTimeUnit('HOURS')}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        laborTimeUnit === 'HOURS'
+                          ? 'bg-cyan-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      ชั่วโมง
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-slate-200 font-extrabold mb-1 text-xs">
-                    ช่างผู้รับผิดชอบ <span className="text-rose-400">*</span>
-                  </label>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-200 text-xs font-bold">
+                    {laborTimeUnit === 'MINUTES' ? 'เวลาทำงาน (นาที)' : 'ชั่วโมงแรงงาน (ชั่วโมง)'}
+                  </span>
+                  <span className="text-cyan-400 font-mono text-xs font-black bg-cyan-950/60 border border-cyan-500/30 px-2 py-0.5 rounded-lg">
+                    ฿{(laborHours * 180).toLocaleString('th-TH', { minimumFractionDigits: 0 })} <span className="text-[10px] text-slate-400 font-normal font-sans">(@180/ชม.)</span>
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
                   <input
-                    type="text"
-                    value={technician}
-                    onChange={e => setTechnician(e.target.value)}
-                    placeholder="ระบุชื่อช่าง..."
-                    className="w-full px-3 py-2 bg-slate-900 border-2 border-slate-700 rounded-xl text-white font-bold text-sm focus:border-cyan-400 focus:outline-none shadow-inner"
-                    required
+                    type="number"
+                    step={laborTimeUnit === 'MINUTES' ? '5' : '0.25'}
+                    min="0"
+                    max={laborTimeUnit === 'MINUTES' ? '1440' : '24'}
+                    value={
+                      laborHours === 0
+                        ? ''
+                        : laborTimeUnit === 'MINUTES'
+                        ? Math.round(laborHours * 60)
+                        : laborHours
+                    }
+                    onChange={e => {
+                      const val = parseFloat(e.target.value) || 0;
+                      setLaborHours(laborTimeUnit === 'MINUTES' ? val / 60 : val);
+                    }}
+                    className="w-24 px-2.5 py-1 bg-slate-900 border border-cyan-500/50 rounded-lg text-cyan-300 font-mono font-black text-sm text-center focus:border-cyan-400 focus:outline-none shadow-inner"
                   />
+                  <span className="text-slate-300 font-mono text-xs font-black">
+                    {laborTimeUnit === 'MINUTES' ? 'นาที' : 'ชม.'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono ml-auto">
+                    (= {laborHours.toFixed(2)} ชม.)
+                  </span>
+                </div>
+
+                {/* Preset Buttons */}
+                <div className="pt-1 border-t border-white/5 space-y-1">
+                  <span className="text-[10px] text-slate-400 font-medium block">
+                    ปุ่มเลือกเวลารวดเร็ว (Quick Select):
+                  </span>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {[
+                      { label: '15 นาที', hours: 0.25 },
+                      { label: '30 นาที', hours: 0.5 },
+                      { label: '45 นาที', hours: 0.75 },
+                      { label: '1 ชม.', hours: 1.0 },
+                      { label: '1.5 ชม.', hours: 1.5 },
+                      { label: '2 ชม.', hours: 2.0 },
+                    ].map(p => {
+                      const isMatch = Math.abs(laborHours - p.hours) < 0.01;
+                      return (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => setLaborHours(p.hours)}
+                          className={`px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold cursor-pointer transition-all border ${
+                            isMatch
+                              ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-md'
+                              : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -999,98 +1184,73 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                 </div>
               )}
 
-              {/* SECTION 5: Clear Remarks / Notes */}
-              <div className="p-2.5 rounded-xl bg-slate-950/85 border border-white/15 space-y-1.5">
-                <label className="block text-slate-200 font-extrabold text-xs leading-none">
-                  📝 หมายเหตุ / รายละเอียดงานเพิ่มเติม (Remarks)
-                </label>
-                <input
-                  type="text"
-                  value={remarks}
-                  onChange={e => setRemarks(e.target.value)}
-                  placeholder="ระบุรายละเอียดงาน..."
-                  className="w-full px-3 py-2 bg-slate-900 border-2 border-slate-700 rounded-xl text-white font-semibold text-sm focus:border-cyan-400 focus:outline-none shadow-inner"
-                />
-                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                  {DEFAULT_REMARKS_PRESETS.slice(0, 3).map((preset, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setRemarks(preset)}
-                      className={`px-2 py-0.5 rounded-lg text-xs border cursor-pointer transition-all ${
-                        remarks === preset
-                          ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 font-bold'
-                          : 'bg-white/5 border-white/15 text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      {preset}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-          {/* Action Footer */}
-          <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/15 mt-1 flex-wrap sm:flex-nowrap">
-            <div className="text-xs font-mono text-slate-300 truncate">
-              หลังเจียร:{' '}
-              <strong className={`text-sm font-black ${isUnderMinLength ? 'text-rose-400' : 'text-emerald-300'}`}>
-                {resultLengthMm.toFixed(2)} mm
-              </strong>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs sm:text-sm font-bold cursor-pointer transition-colors border border-white/10"
-              >
-                ยกเลิก
-              </button>
-
-              {executionMode === 'SCRAP_NOW' ? (
-                <button
-                  type="button"
-                  onClick={() => executeSubmit(false)}
-                  className="px-4 py-1.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer shadow-lg bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white shadow-rose-900/40 active:scale-95 transition-all"
-                >
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>ยืนยันคัดทิ้ง (Scrap)</span>
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => executeSubmit(false)}
-                    className="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer border border-cyan-500/40 bg-slate-900/90 hover:bg-cyan-950/50 text-cyan-300 hover:text-cyan-200 transition-all active:scale-95 shadow-sm"
-                    title="บันทึกเข้าคิวงานโดยยังไม่เริ่มเจียร (สถานะ: ในคิวรอเจียร)"
-                  >
-                    {isEmergency ? <Flame className="w-4 h-4 text-rose-400" /> : <Check className="w-4 h-4 text-cyan-400" />}
-                    <span>
-                      {existingTicket
-                        ? 'บันทึกแก้ไข'
-                        : isEmergency
-                        ? 'บันทึกคิวด่วน #1'
-                        : 'บันทึกเข้าคิว'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => executeSubmit(true)}
-                    className="px-4 py-1.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer shadow-lg bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-400 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-300 text-slate-950 shadow-emerald-500/30 transition-all active:scale-95 ring-2 ring-emerald-400/60 hover:ring-emerald-300"
-                    title="บันทึกข้อมูลและปรับสถานะเป็น กำลังเจียร (In-Process) ทันที"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
-                    <span>⚡ เริ่มเจียรทันที</span>
-                  </button>
-                </>
-              )}
             </div>
           </div>
         </form>
+
+        {/* Action Footer (Fixed at Bottom of Modal) */}
+        <div className="shrink-0 px-4 sm:px-6 py-3 border-t border-white/15 bg-slate-950/95 backdrop-blur-md flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+          <div className="text-xs font-mono text-slate-300 flex items-center gap-2">
+            <span>หลังเจียร:</span>
+            <strong className={`text-base font-black ${isUnderMinLength ? 'text-rose-400' : 'text-emerald-300'}`}>
+              {resultLengthMm.toFixed(2)} mm
+            </strong>
+            {isUnderMinLength && (
+              <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold font-sans">
+                ⚠️ ต่ำกว่าสเปค
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-end ml-auto">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold cursor-pointer transition-colors border border-white/10"
+            >
+              ยกเลิก
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setExecutionMode('QUEUE_TICKET');
+                executeSubmit(false);
+              }}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer border border-cyan-500/40 bg-slate-900/90 hover:bg-cyan-950/50 text-cyan-300 hover:text-cyan-200 transition-all active:scale-95 shadow-sm"
+              title="บันทึกเข้าคิวงาน"
+            >
+              <Check className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{existingTicket ? 'บันทึกแก้ไข' : '⏳ ลงคิวรอ'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setExecutionMode('START_NOW');
+                executeSubmit(true);
+              }}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 cursor-pointer shadow-lg bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-400 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-300 text-slate-950 shadow-emerald-500/30 transition-all active:scale-95"
+              title="บันทึกและเริ่มเจียรทันที"
+            >
+              <Play className="w-3 h-3 fill-slate-950 text-slate-950" />
+              <span>⚡ เริ่มเจียรทันที</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setExecutionMode('SCRAP_NOW');
+                executeSubmit(false);
+              }}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 cursor-pointer shadow-lg bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white shadow-rose-900/40 transition-all active:scale-95"
+              title="บันทึกคัดทิ้ง (Scrap)"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>🗑️ คัดทิ้ง</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

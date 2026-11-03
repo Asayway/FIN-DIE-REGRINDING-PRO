@@ -85,6 +85,13 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
     return Array.from(set);
   }, [historyRecords]);
 
+  // Create a map of part masters for quick lookup
+  const partMasterMap = useMemo(() => {
+    const map = new Map<string, any>();
+    storageService.getPartMasters().forEach(p => map.set(p.partCode, p));
+    return map;
+  }, [historyRecords]);
+
   const filteredHistory = useMemo(() => {
     return historyRecords.filter(rec => {
       // 1. Text Search (Tool ID, Operator, Job Code, Part Name, Serial/Lot)
@@ -175,9 +182,15 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
     }
 
     let csvContent = 'data:text/csv;charset=utf-8,\uFEFF';
-    csvContent += 'No,Status,JobCode,WorkOrder,Date,Line,DieCode,PartCode,PartName,Operator,PreviousLengthMm,GrindRemovedMm,ResultLengthMm,CycleCount,MaxCycles,QCResult,Remarks\n';
+    csvContent += 'No,Status,JobCode,WorkOrder,Date,Line,DieCode,PartCode,PartName,Operator,PreviousLengthMm,GrindRemovedMm,ResultLengthMm,CycleCount,MaxCycles,QCResult,Remarks,NewPrice,RepairCost,NetSaving,SavingPercent\n';
 
     filteredHistory.forEach((rec, idx) => {
+      const partMaster = partMasterMap.get(rec.partCode);
+      const newPrice = partMaster?.unitCostThb || 0;
+      const repairCost = (rec.cost || 0) + (rec.sparePartsCost || 0);
+      const netSaving = Math.max(0, newPrice - repairCost);
+      const savingPercent = newPrice > 0 ? ((netSaving / newPrice) * 100).toFixed(1) + '%' : '0%';
+
       const row = [
         idx + 1,
         `"${rec.status || 'READY'}"`,
@@ -195,7 +208,11 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
         rec.regrindCountAfter || rec.regrindCycleCount || 1,
         rec.maxAllowedCycles || 4,
         `"${rec.inspectionResult || rec.inspectionStatus || 'PASSED'}"`,
-        `"${(rec.note || '').replace(/"/g, '""')}"`
+        `"${(rec.note || '').replace(/"/g, '""')}"`,
+        newPrice.toFixed(2),
+        repairCost.toFixed(2),
+        netSaving.toFixed(2),
+        savingPercent
       ];
       csvContent += row.join(',') + '\n';
     });
@@ -396,17 +413,15 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             <thead>
               <tr className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800">
                 <th className="p-2.5 text-center w-10">#</th>
-                <th className="p-2.5 text-center">สถานะ (Status)</th>
-                <th className="p-2.5">Job Code / WO</th>
-                <th className="p-2.5">วันที่ (Date)</th>
-                <th className="p-2.5">ไลน์ / แม่พิมพ์</th>
+                <th className="p-2.5 text-center">สถานะ</th>
+                <th className="p-2.5">Job Code</th>
+                <th className="p-2.5">วันที่</th>
+                <th className="p-2.5">ไลน์/แม่พิมพ์</th>
                 <th className="p-2.5">Tool ID & ชื่ออะไหล่</th>
-                <th className="p-2.5">ช่างผู้เจียร (Operator)</th>
-                <th className="p-2.5 text-right">เดิม (mm)</th>
-                <th className="p-2.5 text-right">เจียรออก (mm)</th>
-                <th className="p-2.5 text-right">หลังเจียร (mm)</th>
-                <th className="p-2.5 text-center">รอบที่ / สูงสุด</th>
-                <th className="p-2.5 text-right">จำนวน (Qty)</th>
+                <th className="p-2.5 text-right">ราคาซื้อใหม่</th>
+                <th className="p-2.5 text-right">ต้นทุนซ่อม</th>
+                <th className="p-2.5 text-right">ประหยัดสุทธิ</th>
+                <th className="p-2.5 text-center">Saving %</th>
                 <th className="p-2.5 text-center">จัดการ</th>
               </tr>
             </thead>
@@ -418,13 +433,19 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredHistory.slice(0, tablePageSize).map((rec, idx) => (
+                filteredHistory.slice(0, tablePageSize).map((rec, idx) => {
+                  const partMaster = partMasterMap.get(rec.partCode);
+                  const newPrice = partMaster?.unitCostThb || 0;
+                  const repairCost = (rec.cost || 0) + (rec.sparePartsCost || 0);
+                  const netSaving = Math.max(0, newPrice - repairCost);
+                  const savingPercent = newPrice > 0 ? ((netSaving / newPrice) * 100).toFixed(1) + '%' : '0%';
+                  
+                  return (
                   <tr key={rec.id ? `log-${rec.id}-${idx}` : `idx-${idx}`} className="hover:bg-white/[0.04] transition-colors">
                     <td className="p-2.5 text-center font-bold text-cyan-400/80">
                       {idx + 1}
                     </td>
 
-                    {/* Status Column with 5 Core Distinct Identifiers */}
                     <td className="p-2.5 text-center">
                       {(() => {
                         const isUrgent = Boolean((rec.note && (rec.note.includes('ด่วน') || rec.note.toLowerCase().includes('urgent'))) || 
@@ -432,66 +453,16 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                         const isShifted = Boolean((rec.note && rec.note.includes('เลื่อน')) || 
                                                   (rec.remarks && rec.remarks.includes('เลื่อน')));
 
-                        if (isUrgent) {
-                          return (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-rose-600 text-white border border-rose-400 shadow-sm animate-pulse">
-                              <span>🚨</span>
-                              <span>ด่วน #1</span>
-                            </span>
-                          );
-                        }
-                        if (rec.status === 'COMPLETED') {
-                          return (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                              <span>งานเสร็จแล้ว (COMPLETED)</span>
-                            </span>
-                          );
-                        }
-                        if (rec.status === 'READY TO USE' || rec.status === 'READY') {
-                          return (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-sky-500/20 text-sky-300 border border-sky-400/40">
-                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                              <span>เจียรเสร็จ (READY)</span>
-                            </span>
-                          );
-                        }
-                        if (isShifted || rec.status === 'HOLD') {
-                          return (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                              <span>เลื่อน (SHIFTED)</span>
-                            </span>
-                          );
-                        }
-                        if (rec.status === 'SCRAP' || rec.status === 'SCRAPPED') {
-                          return (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-rose-950 text-rose-300 border border-rose-600/40">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                              <span>ยกเลิก/คัดทิ้ง (SCRAP)</span>
-                            </span>
-                          );
-                        }
-                        if (rec.status === 'MAXIMUM REGRIND') {
-                          return (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-orange-500/20 text-orange-300 border border-orange-500/40">
-                              <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-                              <span>ครบลิมิต (MAX)</span>
-                            </span>
-                          );
-                        }
-                        return (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-800 text-slate-300 border border-slate-700">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                            <span>{rec.status === 'WAITING REGRIND' ? 'รอเจียร (WAITING)' : rec.status}</span>
-                          </span>
-                        );
+                        if (isUrgent) return <span className="text-rose-400 font-bold">🚨ด่วน</span>;
+                        if (rec.status === 'COMPLETED') return <span className="text-emerald-400">🟢เสร็จ</span>;
+                        if (rec.status === 'READY') return <span className="text-sky-400">🔵พร้อม</span>;
+                        if (isShifted) return <span className="text-amber-400">🟡เลื่อน</span>;
+                        return <span className="text-slate-400">{rec.status}</span>;
                       })()}
                     </td>
 
                     <td className="p-2.5">
                       <span className="font-bold text-cyan-300 block text-xs">{rec.jobCode || 'N/A'}</span>
-                      <span className="text-[10px] text-slate-400">{rec.workOrder || '-'}</span>
                     </td>
 
                     <td className="p-2.5 text-slate-300 text-[11px]">
@@ -500,54 +471,27 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
 
                     <td className="p-2.5">
                       <span className="text-white font-bold block text-xs">{rec.lineId || rec.lineLastUsed || 'E1'}</span>
-                      <span className="text-[10px] text-slate-400">{rec.dieCode || rec.finDie || '-'}</span>
                     </td>
 
                     <td className="p-2.5 font-sans">
                       <span className="font-bold text-slate-100 block text-xs">{rec.partName}</span>
-                      <span className="text-[10px] text-cyan-400 font-mono">
-                        {rec.partCode} {rec.partInstanceOrLot ? `• ${rec.partInstanceOrLot}` : ''}
-                      </span>
+                      <span className="text-[10px] text-cyan-400 font-mono">{rec.partCode}</span>
                     </td>
 
-                    <td className="p-2.5 font-sans text-slate-200 font-semibold text-xs">
-                      {rec.performedBy || 'Thanakorn Phonpayung'}
+                    <td className="p-2.5 text-right font-bold text-slate-200">
+                      ฿{newPrice.toLocaleString()}
                     </td>
 
-                    <td className="p-2.5 text-right text-slate-300">
-                      {rec.previousLength !== undefined
-                        ? rec.previousLength.toFixed(2)
-                        : rec.beforeGrindMm !== undefined
-                        ? rec.beforeGrindMm.toFixed(2)
-                        : '-'}
+                    <td className="p-2.5 text-right font-bold text-amber-300">
+                      ฿{repairCost.toLocaleString()}
                     </td>
 
-                    <td className="p-2.5 text-right font-bold text-cyan-300">
-                      -{(rec.actualGrindingRemovedMm !== undefined
-                        ? rec.actualGrindingRemovedMm
-                        : rec.grindAmountMm !== undefined
-                        ? rec.grindAmountMm
-                        : rec.mmRemovedThisCycle || 0
-                      ).toFixed(3)}
+                    <td className="p-2.5 text-right font-bold text-emerald-400">
+                      ฿{netSaving.toLocaleString()}
                     </td>
 
-                    <td className="p-2.5 text-right font-bold text-white">
-                      {rec.currentLength !== undefined
-                        ? rec.currentLength.toFixed(2)
-                        : rec.afterGrindMm !== undefined
-                        ? rec.afterGrindMm.toFixed(2)
-                        : '-'}
-                    </td>
-
-                    <td className="p-2.5 text-center text-xs">
-                      <span className="font-bold text-slate-200">
-                        {rec.regrindCountAfter || rec.regrindCycleCount || 1}
-                      </span>
-                      <span className="text-slate-500 text-[10px]"> / {rec.maxAllowedCycles || 4}</span>
-                    </td>
-
-                    <td className="p-2.5 text-right text-xs font-bold text-slate-200">
-                      1
+                    <td className="p-2.5 text-center font-bold text-sky-300">
+                      {savingPercent}
                     </td>
 
                     <td className="p-2.5 text-center">
@@ -555,13 +499,13 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                         type="button"
                         onClick={() => setInspectModalRecord(rec)}
                         className="p-1.5 bg-white/[0.06] hover:bg-white/[0.15] text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer"
-                        title="ดูรายละเอียดฉบับเต็ม"
                       >
                         <Eye className="w-4 h-4 text-cyan-400" />
                       </button>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

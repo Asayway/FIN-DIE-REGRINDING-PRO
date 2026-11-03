@@ -20,19 +20,23 @@ import { costSavingService } from '../../services/costSavingService';
 import { CostRateModal } from './CostRateModal';
 
 interface CostRateMasterTabProps {
-  rates: CostRateMasterItem[];
+  rates?: CostRateMasterItem[];
+  costRates?: CostRateMasterItem[];
   onRefresh: () => void;
 }
 
 export const CostRateMasterTab: React.FC<CostRateMasterTabProps> = ({
   rates,
+  costRates,
   onRefresh
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedRate, setSelectedRate] = useState<CostRateMasterItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
-  const filteredRates = rates.filter(r => {
+  const activeRates = rates || costRates || [];
+
+  const filteredRates = activeRates.filter(r => {
     const q = searchTerm.toLowerCase();
     return r.machineId.toLowerCase().includes(q) ||
       r.machineName.toLowerCase().includes(q) ||

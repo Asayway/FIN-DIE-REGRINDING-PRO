@@ -713,14 +713,31 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
                   </td>
                   {daysArray.map(day => {
                     const count = row.dailyCounts[day];
+                    const matchingTicket = tickets.find(t => {
+                      const matchName = t.partName.toLowerCase() === row.partName.toLowerCase();
+                      const ticketDate = t.targetCompletionDate ? new Date(t.targetCompletionDate) : new Date(t.createdAt);
+                      return matchName && ticketDate.getDate() === day && (ticketDate.getMonth() + 1) === matrix.month && (t.status === 'SCRAP' || t.isScrapped);
+                    });
+
                     const dow = new Date(matrix.year, matrix.month - 1, day).getDay();
                     const isSun = dow === 0;
                     const isSat = dow === 6;
+
+                    let cellBgClass = isSun
+                      ? 'bg-rose-950/25 text-rose-400/70 hover:bg-rose-900/50'
+                      : isSat
+                      ? 'bg-violet-950/25 text-violet-400/70 hover:bg-violet-900/50'
+                      : 'text-slate-600 hover:bg-slate-800/80';
+
+                    if (matchingTicket || (count !== undefined && count > 0)) {
+                      cellBgClass = 'bg-rose-600 text-white font-black shadow-xs';
+                    }
+
                     return (
                       <td
                         key={`defect-cell-${row.partName}-${day}`}
                         onClick={() => {
-                          setEditingTicket(null);
+                          setEditingTicket(matchingTicket || null);
                           setCellJobModal({
                             partName: row.partName,
                             partCode: row.partCode,
@@ -728,23 +745,15 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
                             day,
                             month: matrix.month,
                             year: matrix.year,
-                            currentCount: count || 0
+                            currentCount: count || 1
                           });
                         }}
-                        className={`p-1 text-center font-mono border-r border-slate-800/60 cursor-pointer transition-all hover:bg-rose-950/70 ${
-                          count
-                            ? 'bg-rose-950/50 text-rose-300 font-bold'
-                            : isSun
-                            ? 'bg-rose-950/25 text-rose-400/70'
-                            : isSat
-                            ? 'bg-violet-950/25 text-violet-400/70'
-                            : 'text-slate-600'
-                        }`}
-                        title={`คลิกเพื่อแก้ไขจำนวนชิ้นที่ทิ้ง: ${row.partName} วันที่ ${day} ${currentMonthInfo.nameTh}`}
+                        className={`p-1 text-center font-mono border-r border-slate-800/60 cursor-pointer transition-all ${cellBgClass}`}
+                        title={`คลิกเพื่อจัดการงานทิ้ง: ${row.partName} วันที่ ${day} ${currentMonthInfo.nameTh}`}
                       >
-                        {count !== undefined && count > 0 ? (
-                          <span className="inline-block px-1 rounded bg-rose-900/60 text-rose-300 text-[10px] border border-rose-700/50">
-                            {count}
+                        {matchingTicket || (count !== undefined && count > 0) ? (
+                          <span className="font-extrabold text-[11px] block">
+                            {count || 1}
                           </span>
                         ) : (
                           '-'

@@ -5,7 +5,8 @@ import {
   RegrindingTransactionItem,
   CostDashboardFilter,
   CostSummaryMetrics,
-  PriceRevisionHistoryEntry
+  PriceRevisionHistoryEntry,
+  PartCategoryType
 } from '../types/costSaving';
 import { safeStorage } from './safeStorage';
 import { storageService } from './storageService';
@@ -26,6 +27,11 @@ class CostSavingService {
 
   constructor() {
     this.ensureInitialized();
+    try {
+      storageService.subscribe(() => this.notify());
+    } catch (e) {
+      console.warn('CostSavingService storageService subscription failed:', e);
+    }
   }
 
   public subscribe(listener: CostListener): () => void {
@@ -67,7 +73,7 @@ class CostSavingService {
   }
 
   /**
-   * Seed standard factory-approved Cost Rate Masters
+   * Seed standard factory-approved Cost Rate Masters (Single Grinding Machine)
    */
   private generateInitialCostRateMasters(): CostRateMasterItem[] {
     const now = '2025-01-01T08:00:00Z';
@@ -86,7 +92,7 @@ class CostSavingService {
         effectiveDate: '2025-01-01',
         updatedBy: 'Somchai Prasert (Industrial Eng.)',
         isActive: true,
-        notes: 'อัตรามาตรฐานโรงงาน: รวมค่าเสื่อมราคาเครื่องจักร (5 ปี Straight-Line), ค่าไฟฟ้า 15kW, coolant และ preventative maintenance แยกคิดค่าแรงช่างตามชั่วโมงจริง',
+        notes: 'อัตรามาตรฐานโรงงานเครื่องเจียรหลัก: รวมค่าเสื่อมราคาเครื่องจักร (5 ปี Straight-Line), ค่าไฟฟ้า 15kW, coolant และ preventative maintenance แยกคิดค่าแรงช่างตามชั่วโมงจริง',
         rateRevisionHistory: [
           {
             id: 'REV-CR-01-001',
@@ -103,89 +109,6 @@ class CostSavingService {
         ],
         createdAt: now,
         updatedAt: now
-      },
-      {
-        id: 'CR-GRIND-02',
-        machineId: 'GRIND-02',
-        machineName: 'WASINO CNC Optical Profile Grinder #2',
-        machineCostRatePerHour: 580.00,
-        operatorLaborRatePerHour: 220.00,
-        consumablesCostRatePerHour: 80.00,
-        qcCostRatePerHour: 150.00,
-        includesLaborInMachineRate: false,
-        rateCalculationMethod: 'FULL_COSTING',
-        currency: 'THB',
-        effectiveDate: '2025-01-01',
-        updatedBy: 'Anan Suksamran (Tooling Dept Manager)',
-        isActive: true,
-        notes: 'เครื่องเจียรโปรไฟล์ความละเอียดสูงสำหรับ R-Punch Complex Form แยกคิดค่าแรงช่างอาชญานุภาพระดับ Master',
-        rateRevisionHistory: [
-          {
-            id: 'REV-CR-02-001',
-            revisionDate: now,
-            oldMachineRate: 580.00,
-            newMachineRate: 580.00,
-            oldLaborRate: 220.00,
-            newLaborRate: 220.00,
-            changedBy: 'Anan Suksamran',
-            reason: 'Full costing calibration 2025',
-            effectiveDate: '2025-01-01',
-            includesLaborInMachineRate: false
-          }
-        ],
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'CR-GRIND-CELL-03',
-        machineId: 'INTERNAL_CELL_01',
-        machineName: 'Integrated Toolroom Repair Cell (Combined Rate)',
-        machineCostRatePerHour: 550.00,
-        operatorLaborRatePerHour: 0.00,
-        consumablesCostRatePerHour: 60.00,
-        qcCostRatePerHour: 100.00,
-        includesLaborInMachineRate: true,
-        rateCalculationMethod: 'FULL_COSTING',
-        currency: 'THB',
-        effectiveDate: '2025-01-01',
-        updatedBy: 'Finance Controller',
-        isActive: true,
-        notes: 'อัตราเหมาจ่ายรวมค่าแรงช่างประจำเซลล์แล้ว (Machine Rate Includes Operator Labor) เพื่อป้องกันการนับค่าแรงซ้ำ (Prevent Double-Counting)',
-        rateRevisionHistory: [
-          {
-            id: 'REV-CR-03-001',
-            revisionDate: now,
-            oldMachineRate: 550.00,
-            newMachineRate: 550.00,
-            oldLaborRate: 0.00,
-            newLaborRate: 0.00,
-            changedBy: 'Finance Controller',
-            reason: 'Combined cell rate setup',
-            effectiveDate: '2025-01-01',
-            includesLaborInMachineRate: true
-          }
-        ],
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'CR-EXT-SUPPLIER',
-        machineId: 'SAN_EI_EXT',
-        machineName: 'SAN-EI Precision External Service Rate',
-        machineCostRatePerHour: 0.00,
-        operatorLaborRatePerHour: 0.00,
-        consumablesCostRatePerHour: 0.00,
-        qcCostRatePerHour: 0.00,
-        includesLaborInMachineRate: false,
-        rateCalculationMethod: 'DIRECT_COSTING',
-        currency: 'THB',
-        effectiveDate: '2025-01-01',
-        updatedBy: 'Procurement Specialist',
-        isActive: true,
-        notes: 'อัตราค่าบริการซัพพลายเออร์ภายนอก (คิดตามใบเสนอราคา/Invoice รวม)',
-        rateRevisionHistory: [],
-        createdAt: now,
-        updatedAt: now
       }
     ];
   }
@@ -198,7 +121,16 @@ class CostSavingService {
     try {
       const raw = safeStorage.getItem(STORAGE_KEYS.COST_RATE_MASTERS);
       if (!raw) return this.generateInitialCostRateMasters();
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 1) {
+        // Filter to keep only GRIND-01 or reset to single machine
+        const single = parsed.filter(r => r.machineId === 'GRIND-01');
+        if (single.length > 0) return single;
+      }
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return this.generateInitialCostRateMasters();
+      }
+      return parsed;
     } catch {
       return this.generateInitialCostRateMasters();
     }
@@ -511,8 +443,94 @@ class CostSavingService {
   public getPartCostMasters(): PartCostMasterItem[] {
     try {
       const raw = safeStorage.getItem(STORAGE_KEYS.PART_COST_MASTERS);
-      if (!raw) return this.generateInitialPartCostMasters();
-      return JSON.parse(raw);
+      const storedList: PartCostMasterItem[] = raw ? JSON.parse(raw) : this.generateInitialPartCostMasters();
+
+      const masterParts = storageService.getPartMasters();
+      if (!masterParts || masterParts.length === 0) {
+        return storedList;
+      }
+
+      const mapByCode = new Map<string, PartCostMasterItem>();
+      storedList.forEach(item => {
+        const key = (item.partNo || item.drawingNo || '').toUpperCase();
+        if (key) mapByCode.set(key, item);
+      });
+
+      const mergedList: PartCostMasterItem[] = masterParts.map((pm) => {
+        const key = pm.partCode.toUpperCase();
+        const existing = mapByCode.get(key) || mapByCode.get((pm.drawingNumber || '').toUpperCase());
+
+        const isDie = pm.partName.toUpperCase().includes('DIE');
+        const isBlade = pm.partName.toUpperCase().includes('BLADE');
+        const isPin = pm.partName.toUpperCase().includes('PIN');
+        const isCorner = pm.partName.toUpperCase().includes('CORNER');
+        const isCenter = pm.partName.toUpperCase().includes('CENTER');
+
+        const partType: PartCategoryType = isDie ? 'DIE' 
+          : isBlade ? 'BLADE' 
+          : isPin ? 'PIN' 
+          : isCorner ? 'CORNER_CUT' 
+          : isCenter ? 'CENTER_PUNCH' 
+          : 'PUNCH';
+
+        const defaultPrice = isDie ? 22000 
+          : isBlade ? 28000 
+          : isPin ? 4800 
+          : isCorner ? 16500 
+          : 12500;
+
+        if (existing) {
+          const thb = existing.newPurchasePrice ?? defaultPrice;
+          return {
+            ...existing,
+            partNo: pm.partCode,
+            partName: pm.partName,
+            stage: pm.stageName,
+            drawingNo: pm.drawingNumber || pm.partCode,
+            partType: existing.partType || partType,
+            newPurchasePrice: thb,
+            purchasePriceUsd: existing.purchasePriceUsd ?? Number((thb / 35.0).toFixed(2))
+          };
+        } else {
+          return {
+            id: `PCM-${pm.partCode}`,
+            partNo: pm.partCode,
+            partName: pm.partName,
+            stage: pm.stageName,
+            partType,
+            machineLine: 'ALL',
+            newPurchasePrice: defaultPrice,
+            purchasePriceUsd: Number((defaultPrice / 35.0).toFixed(2)),
+            expectedNewToolLife: 15_000_000,
+            actualNewToolLife: 15_200_000,
+            supplier: 'MISUMI (THAILAND) CO., LTD.',
+            currency: 'THB',
+            effectiveDate: '2025-01-01',
+            drawingNo: pm.drawingNumber || pm.partCode,
+            nominalLengthMm: (pm as any).newSpecMm || 45.00,
+            minAllowedLengthMm: (pm as any).scrapLimitMm || 43.50,
+            maxRegrindCount: 12,
+            disposeAfterOneUse: false,
+            priceRevisionHistory: [
+              {
+                id: `REV-${pm.partCode}-001`,
+                revisionDate: '2025-01-01',
+                oldPrice: defaultPrice,
+                newPrice: defaultPrice,
+                currency: 'THB',
+                changedBy: 'Auto Linked Part Master',
+                reason: 'Automatic sync from Part Master Dictionary',
+                effectiveDate: '2025-01-01'
+              }
+            ],
+            notes: 'Auto linked from Part Master',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+        }
+      });
+
+      return mergedList;
     } catch {
       return this.generateInitialPartCostMasters();
     }
@@ -597,6 +615,21 @@ class CostSavingService {
       }
     } catch (err: any) {
       return { success: false, message: `ข้อผิดพลาดในการบันทึก: ${err.message}` };
+    }
+  }
+
+  public deletePartCostMaster(id: string): { success: boolean; message: string } {
+    try {
+      const list = this.getPartCostMasters();
+      const idx = list.findIndex(p => p.id === id || p.partNo === id);
+      if (idx < 0) return { success: false, message: 'ไม่พบรายการที่ต้องการลบ' };
+
+      const removed = list.splice(idx, 1)[0];
+      safeStorage.setItem(STORAGE_KEYS.PART_COST_MASTERS, JSON.stringify(list));
+      this.notify();
+      return { success: true, message: `ลบรายการราคา "${removed.partNo}" เรียบร้อยแล้ว` };
+    } catch (err: any) {
+      return { success: false, message: `เกิดข้อผิดพลาดในการลบ: ${err.message}` };
     }
   }
 
@@ -722,7 +755,8 @@ class CostSavingService {
       const calc = CostSavingCalculationService.computeTransactionMetrics({
         actualMachineHours: txInput.actualMachineHours || 0,
         actualSetupHours: txInput.actualSetupHours || 0,
-        actualLaborHours: txInput.actualLaborHours || 0,
+        actualLaborHours: txInput.actualLaborHours ?? txInput.laborHours ?? 0,
+        laborHours: txInput.laborHours ?? txInput.actualLaborHours ?? 0,
         machineCostRateRef: txInput.machineCostRateRef || 0,
         laborRateRef: txInput.laborRateRef || 0,
         includesLaborInMachineRate: txInput.includesLaborInMachineRate,
@@ -730,6 +764,8 @@ class CostSavingService {
         actualExternalRepairCost: txInput.actualExternalRepairCost || txInput.repairCost,
         actualTransportationCost: txInput.actualTransportationCost || txInput.transportationCost,
         actualQcCost: txInput.actualQcCost,
+        sparePartsCost: txInput.sparePartsCost,
+        sparePartsUsed: txInput.sparePartsUsed,
         otherCost: txInput.otherDirectCost || txInput.otherCost,
         repairCost: txInput.repairCost || 0,
         transportationCost: txInput.transportationCost || 0,
@@ -763,10 +799,15 @@ class CostSavingService {
         rateMasterMachineName: txInput.rateMasterMachineName || txInput.supplier,
         actualMachineHours: Number(txInput.actualMachineHours || 0),
         actualSetupHours: Number(txInput.actualSetupHours || 0),
-        actualLaborHours: Number(txInput.actualLaborHours || 0),
+        actualLaborHours: Number(txInput.actualLaborHours ?? txInput.laborHours ?? 0),
+        laborHours: Number(txInput.laborHours ?? txInput.actualLaborHours ?? 0),
         machineCostRateRef: Number(txInput.machineCostRateRef || 0),
         laborRateRef: Number(txInput.laborRateRef || 0),
         includesLaborInMachineRate: !!txInput.includesLaborInMachineRate,
+
+        // Spare Parts Used & Cost
+        sparePartsUsed: txInput.sparePartsUsed || '',
+        sparePartsCost: Number(txInput.sparePartsCost || 0),
 
         // Computed Costs
         machineCost: calc.machineCost,
@@ -965,6 +1006,9 @@ class CostSavingService {
         'Line': t.machineLine,
         'Repair Date': t.repairDate,
         'Regrind Cycle': t.regrindingNo,
+        'Labor Hours (ชม.)': t.actualLaborHours || t.laborHours || 0,
+        'Spare Parts Used (อะไหล่ที่ใช้)': t.sparePartsUsed || '-',
+        'Spare Parts Cost (THB)': t.sparePartsCost || 0,
         'Repair Cost (THB)': t.repairCost,
         'Transport Cost (THB)': t.transportationCost,
         'Labor Cost (THB)': t.internalLaborCost,
@@ -1007,6 +1051,9 @@ class CostSavingService {
         'Line',
         'Repair_Date',
         'Regrind_Cycle',
+        'Labor_Hours',
+        'Spare_Parts_Used',
+        'Spare_Parts_Cost_THB',
         'Repair_Cost_THB',
         'Transport_Cost_THB',
         'Labor_Cost_THB',
@@ -1037,6 +1084,9 @@ class CostSavingService {
           t.machineLine,
           t.repairDate,
           t.regrindingNo,
+          t.actualLaborHours || t.laborHours || 0,
+          `"${(t.sparePartsUsed || '').replace(/"/g, '""')}"`,
+          t.sparePartsCost || 0,
           t.repairCost,
           t.transportationCost,
           t.internalLaborCost,

@@ -29,6 +29,7 @@ import { safeStorage } from '../../services/safeStorage';
 import { useLanguage } from '../../i18n';
 import { UnifiedRegrindJobModal } from '../../components/modals/UnifiedRegrindJobModal';
 import { QueueTicketDetailModal } from '../../components/modals/QueueTicketDetailModal';
+import { JobCompletionConfirmModal } from '../../components/modals/JobCompletionConfirmModal';
 
 export const getTicketStatusMeta = (ticket: RegrindWorkTicket) => {
   const isEmg = Boolean(ticket.isEmergency || ticket.urgency === 'EMERGENCY');
@@ -179,6 +180,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
 
   // Clicked Queue Item Detail Modal State
   const [selectedDetailTicket, setSelectedDetailTicket] = useState<RegrindWorkTicket | null>(null);
+  const [confirmingCompletionTicket, setConfirmingCompletionTicket] = useState<RegrindWorkTicket | null>(null);
 
   // Resizable Left/Right Split Ratio State (15% to 75%, default 20%)
   const [leftSplitPercent, setLeftSplitPercent] = useState<number>(() => {
@@ -366,21 +368,9 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
     }
   };
 
-  // Complete Grinding directly from Detail Modal
+  // Complete Grinding directly via mandatory QC Confirmation Modal
   const handleCompleteTicketFromDetail = (ticket: RegrindWorkTicket) => {
-    const prev = ticket.previousLengthMm || ticket.nominalLengthMm || 70.0;
-    const depth = ticket.grindDepthMm || 0.20;
-    const remaining = ticket.lengthAfterGrindMm || Number((prev - depth).toFixed(3));
-    const res = regrindService.completeGrinding(ticket.id, {
-      remainingLengthMm: remaining,
-      grindDepthMm: depth,
-      shimAddedMm: depth,
-      technicianName: ticket.assignedTechnician || 'Thanakorn Phonpayung',
-      remarks: ticket.remarks
-    });
-    setSelectedDetailTicket(null);
-    reloadAll();
-    showToast(res.message);
+    setConfirmingCompletionTicket(ticket);
   };
 
   // Delete Ticket from Detail Modal
@@ -1324,6 +1314,21 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
         onEditTicket={(t, defaultEmg) => handleOpenEditOrPromoteTicket(t, defaultEmg)}
         onCompleteTicket={handleCompleteTicketFromDetail}
         onDeleteTicket={handleDeleteTicketFromDetail}
+      />
+
+      {/* ===================================================================== */}
+      {/* JOB COMPLETION & MANDATORY QC CONFIRMATION POPUP MODAL               */}
+      {/* ===================================================================== */}
+      <JobCompletionConfirmModal
+        isOpen={!!confirmingCompletionTicket}
+        ticket={confirmingCompletionTicket}
+        onClose={() => setConfirmingCompletionTicket(null)}
+        onSuccess={msg => {
+          setSelectedDetailTicket(null);
+          setConfirmingCompletionTicket(null);
+          reloadAll();
+          showToast(msg);
+        }}
       />
     </div>
   );

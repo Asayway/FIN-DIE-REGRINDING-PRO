@@ -20,6 +20,9 @@ export interface CalculationInput {
   actualExternalRepairCost?: number;
   actualTransportationCost?: number;
   actualQcCost?: number;
+  sparePartsCost?: number; // Cost of spare parts consumed
+  sparePartsUsed?: string; // Spare parts description
+  laborHours?: number; // Alias for actualLaborHours
   otherCost?: number;
 
   // Legacy fallback support
@@ -86,7 +89,8 @@ export class CostSavingCalculationService {
     externalRepairCost: number,
     transportationCost: number,
     qcCost: number,
-    otherCost: number
+    otherCost: number,
+    sparePartsCost: number = 0
   ): number {
     const sum = (machineCost || 0) + 
       (laborCost || 0) + 
@@ -94,7 +98,8 @@ export class CostSavingCalculationService {
       (externalRepairCost || 0) + 
       (transportationCost || 0) + 
       (qcCost || 0) + 
-      (otherCost || 0);
+      (otherCost || 0) +
+      (sparePartsCost || 0);
     return Number(sum.toFixed(2));
   }
 
@@ -206,7 +211,7 @@ export class CostSavingCalculationService {
     const machineCost = Number((machineHours * machineRate).toFixed(2));
 
     const includesLabor = !!input.includesLaborInMachineRate;
-    const laborHours = input.actualLaborHours || 0;
+    const laborHours = input.actualLaborHours ?? input.laborHours ?? 0;
     const laborRate = input.laborRateRef || 0;
     
     // CRITICAL DOUBLE-COUNTING SAFEGUARD:
@@ -229,6 +234,7 @@ export class CostSavingCalculationService {
     const externalRepair = (input.actualExternalRepairCost !== undefined) ? input.actualExternalRepairCost : (input.repairCost || 0);
     const transport = input.actualTransportationCost !== undefined ? input.actualTransportationCost : (input.transportationCost || 0);
     const qc = input.actualQcCost || 0;
+    const spareParts = input.sparePartsCost || 0;
     const other = input.otherCost || 0;
 
     const directRepairCost = this.calculateDirectRepairCost(
@@ -238,7 +244,8 @@ export class CostSavingCalculationService {
       externalRepair,
       transport,
       qc,
-      other
+      other,
+      spareParts
     );
 
     const downtime = input.downtimeCost || 0;
@@ -512,6 +519,7 @@ export class CostSavingCalculationService {
     let totalConsumablesCost = 0;
     let totalExternalRepairCost = 0;
     let totalQcCost = 0;
+    let totalSparePartsCost = 0;
     let totalMachineHours = 0;
     let totalLaborHours = 0;
 
@@ -549,9 +557,10 @@ export class CostSavingCalculationService {
       totalConsumablesCost += cCost;
       totalExternalRepairCost += eCost;
       totalQcCost += qCost;
+      totalSparePartsCost += (tx.sparePartsCost || 0);
 
-      totalMachineHours += tx.actualMachineHours || 0;
-      totalLaborHours += tx.actualLaborHours || 0;
+      totalMachineHours += (tx.actualMachineHours || 0);
+      totalLaborHours += (tx.actualLaborHours || tx.laborHours || 0);
 
       totalEstimatedRepairCost += (tx.estimatedTotalRepairCost || totCost);
 
@@ -633,6 +642,7 @@ export class CostSavingCalculationService {
       totalConsumablesCost: Number(totalConsumablesCost.toFixed(2)),
       totalExternalRepairCost: Number(totalExternalRepairCost.toFixed(2)),
       totalQcCost: Number(totalQcCost.toFixed(2)),
+      totalSparePartsCost: Number(totalSparePartsCost.toFixed(2)),
       totalMachineHours: Number(totalMachineHours.toFixed(2)),
       totalLaborHours: Number(totalLaborHours.toFixed(2)),
       totalEstimatedRepairCost: Number(totalEstimatedRepairCost.toFixed(2)),

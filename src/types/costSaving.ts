@@ -66,12 +66,14 @@ export interface PartCostMasterItem {
   partType: PartCategoryType;
   machineLine: ProductionLineId | 'ALL';
   newPurchasePrice: number;
+  purchasePriceUsd?: number;
   expectedNewToolLife: number; // In Shots, e.g. 15,000,000
   actualNewToolLife?: number; // In Shots (if confirmed by production history)
   supplier: string;
   currency: CurrencyCode;
   effectiveDate: string; // YYYY-MM-DD
   drawingNo?: string;
+  stage?: string;
   nominalLengthMm: number;
   minAllowedLengthMm: number;
   maxRegrindCount: number;
@@ -110,7 +112,11 @@ export interface RegrindingTransactionItem {
   actualQcCost: number; // QC / Inspection cost
   otherDirectCost: number; // Coatings, misc direct cost
   
-  // Direct Repair Cost = machineCost + laborCost + actualConsumablesCost + actualExternalRepairCost + actualTransportationCost + actualQcCost + otherDirectCost
+  laborHours?: number; // Direct labor hours field / alias
+  sparePartsUsed?: string; // Spare parts / shims consumed during repair
+  sparePartsCost?: number; // Cost of spare parts consumed
+
+  // Direct Repair Cost = machineCost + laborCost + actualConsumablesCost + actualExternalRepairCost + actualTransportationCost + actualQcCost + sparePartsCost + otherDirectCost
   directRepairCost: number;
 
   // Legacy field support (mapped to directRepairCost or external repair)
@@ -260,6 +266,7 @@ export interface CostSummaryMetrics {
   totalConsumablesCost: number;
   totalExternalRepairCost: number;
   totalQcCost: number;
+  totalSparePartsCost?: number;
   totalMachineHours: number;
   totalLaborHours: number;
 
