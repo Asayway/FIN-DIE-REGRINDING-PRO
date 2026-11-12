@@ -17,7 +17,8 @@ import {
   ArrowRight,
   ShieldCheck,
   Activity,
-  FileText
+  FileText,
+  RotateCcw
 } from 'lucide-react';
 import { 
   ProductionLineId, 
@@ -49,13 +50,13 @@ interface LineOption {
 }
 
 const ALL_LINE_OPTIONS: LineOption[] = [
-  { id: 'E1', label: 'E1', tag: 'Ø7 Slit', defaultTube: 'Ø7', defaultFin: 'Slit Old', defaultPitch: '4P (Pitch)', defaultMaterial: 'PCM (0.1mm)', defaultDieCode: 'FD-E1-07', defaultSpm: 100, defaultNote: 'แท่นผลิตเดี่ยว (Dedicated Press)' },
-  { id: 'E2', label: 'E2', tag: 'Ø5 Slit', defaultTube: 'Ø5', defaultFin: 'Slit Old', defaultPitch: '4P (Pitch)', defaultMaterial: 'GOLD (0.1mm)', defaultDieCode: 'FD-E2-05', defaultSpm: 100, defaultNote: 'แท่นผลิตเดี่ยว (Dedicated Press)' },
-  { id: 'E3-1', label: 'E3-1', tag: 'Slit 3P', defaultTube: 'Ø7', defaultFin: 'New Slit', defaultPitch: '3P (Pitch)', defaultMaterial: 'PCM (0.1mm)', defaultDieCode: 'FD-E31-07', defaultSpm: 100, defaultNote: 'Fin Die แม่พิมพ์ E3 (Slit 3P)' },
-  { id: 'E3-2', label: 'E3-2', tag: 'WL+ 4P', defaultTube: 'Ø7', defaultFin: 'Wide Louver', defaultPitch: '4P (Pitch)', defaultMaterial: 'GOLD (0.1mm)', defaultDieCode: 'FD-E32-07', defaultSpm: 100, defaultNote: 'Fin Die แม่พิมพ์ E3 (WL+ 4P)' },
-  { id: 'E3-3', label: 'E3-3', tag: 'Corr 4P', defaultTube: 'Ø7', defaultFin: 'Corrugate', defaultPitch: '4P (Pitch)', defaultMaterial: 'GOLD (0.1mm)', defaultDieCode: 'FD-E33-07', defaultSpm: 100, defaultNote: 'Fin Die แม่พิมพ์ E3 (Corr 4P)' },
-  { id: 'E4', label: 'E4', tag: 'Ø5 Slit', defaultTube: 'Ø5', defaultFin: 'Slit Old', defaultPitch: '3P (Pitch)', defaultMaterial: 'BARE (0.1mm)', defaultDieCode: 'FD-E4-05', defaultSpm: 100, defaultNote: 'แท่นผลิตเดี่ยว (Dedicated Press)' },
-  { id: 'E5', label: 'E5', tag: 'Ø5 Slit', defaultTube: 'Ø5', defaultFin: 'New Slit', defaultPitch: '3P (Pitch)', defaultMaterial: 'BARE (0.1mm)', defaultDieCode: 'FD-E5-05', defaultSpm: 100, defaultNote: 'แท่นผลิตเดี่ยว (Dedicated Press)' },
+  { id: 'E1', label: 'E1', tag: 'Ø7 Slit', defaultTube: 'Ø7', defaultFin: 'Slit (half)', defaultPitch: '3P (Pitch)', defaultMaterial: 'PCM (0.1mm)', defaultDieCode: '151915000446', defaultSpm: 120, defaultNote: '' },
+  { id: 'E2', label: 'E2', tag: 'Ø5 Slit', defaultTube: 'Ø5', defaultFin: 'Slit (half)', defaultPitch: '3P (Pitch)', defaultMaterial: 'GOLD (0.1mm)', defaultDieCode: "'151920001155", defaultSpm: 120, defaultNote: '' },
+  { id: 'E3-1', label: 'E3-1', tag: 'Slit 3P', defaultTube: 'Ø7', defaultFin: 'Slit (half)', defaultPitch: '3P (Pitch)', defaultMaterial: 'PCM (0.1mm)', defaultDieCode: "'151920001155", defaultSpm: 120, defaultNote: '' },
+  { id: 'E3-2', label: 'E3-2', tag: 'WL+ 4P', defaultTube: 'Ø7', defaultFin: 'Wide Louver', defaultPitch: '4P (Pitch)', defaultMaterial: 'GOLD (0.1mm)', defaultDieCode: 'THHF04221781', defaultSpm: 120, defaultNote: '' },
+  { id: 'E3-3', label: 'E3-3', tag: 'Corr 4P', defaultTube: 'Ø7', defaultFin: 'New Corrugate', defaultPitch: '4P (Pitch)', defaultMaterial: 'GOLD (0.1mm)', defaultDieCode: "'151915000335 / '1519150", defaultSpm: 120, defaultNote: '' },
+  { id: 'E4', label: 'E4', tag: 'Ø5 Slit', defaultTube: 'Ø5', defaultFin: 'Slit (half)', defaultPitch: '3P (Pitch)', defaultMaterial: 'GOLD (0.1mm)', defaultDieCode: "'151915000403", defaultSpm: 120, defaultNote: '' },
+  { id: 'E5', label: 'E5', tag: 'Ø5 Slit', defaultTube: 'Ø5', defaultFin: 'Slit (half)', defaultPitch: '3P (Pitch)', defaultMaterial: 'BARE (0.1mm)', defaultDieCode: "'151915000253", defaultSpm: 120, defaultNote: '' },
 ];
 
 export const LineDieSpecificationView: React.FC<LineDieSpecificationViewProps> = ({
@@ -86,11 +87,15 @@ export const LineDieSpecificationView: React.FC<LineDieSpecificationViewProps> =
     setStageGroups(storageService.getStageGroups());
     const rawConfigs = storageService.getLineConfigs();
     const configMap: Record<string, LineActiveConfiguration> = {};
+    let shouldSyncDefaults = false;
 
     ALL_LINE_OPTIONS.forEach(opt => {
       const found = rawConfigs.find(c => c.lineId === opt.id);
 
-      if (found) {
+      // Check if found config has legacy mock placeholders like FD-E* or dedicated press notes
+      const isLegacy = !found || !found.dieCode || found.dieCode.startsWith('FD-E') || found.notes === 'แท่นผลิตเดี่ยว (Dedicated Press)' || found.notes?.includes('แท่นผลิตเดี่ยว');
+
+      if (found && !isLegacy) {
         configMap[opt.id] = {
           ...found,
           pathsCount: found.pathsCount || opt.defaultPitch,
@@ -99,28 +104,59 @@ export const LineDieSpecificationView: React.FC<LineDieSpecificationViewProps> =
           notes: found.notes !== undefined ? found.notes : opt.defaultNote
         };
       } else {
+        shouldSyncDefaults = true;
         configMap[opt.id] = {
-          id: `CFG-${opt.id}-AUTO`,
+          id: found?.id || `CFG-${opt.id}-001`,
           lineId: opt.id,
-          lineName: `Fin Press Line ${opt.id}`,
+          lineName: found?.lineName || `Fin Press Line ${opt.id}`,
           dieCode: opt.defaultDieCode,
-          dieName: `Fin Die ${opt.id} (${opt.tag})`,
+          dieName: found?.dieName || `Fin Die ${opt.id} (${opt.tag})`,
           tubeSize: opt.defaultTube,
           finType: opt.defaultFin as any,
           material: opt.defaultMaterial as any,
           thicknessMm: 0.10,
-          effectiveFrom: new Date().toISOString(),
+          effectiveFrom: found?.effectiveFrom || new Date().toISOString(),
           isActive: true,
           status: 'ACTIVE',
           defaultSpm: opt.defaultSpm,
           pathsCount: opt.defaultPitch,
           notes: opt.defaultNote,
-          installedPartQuantities: {}
+          installedPartQuantities: found?.installedPartQuantities || {}
         };
       }
     });
 
     setLineConfigs(configMap);
+    if (shouldSyncDefaults) {
+      storageService.saveLineConfigs(Object.values(configMap));
+    }
+  };
+
+  const handleResetToDefaults = () => {
+    const configMap: Record<string, LineActiveConfiguration> = {};
+    ALL_LINE_OPTIONS.forEach(opt => {
+      configMap[opt.id] = {
+        id: lineConfigs[opt.id]?.id || `CFG-${opt.id}-001`,
+        lineId: opt.id,
+        lineName: lineConfigs[opt.id]?.lineName || `Fin Press Line ${opt.id}`,
+        dieCode: opt.defaultDieCode,
+        dieName: `Fin Die ${opt.id} (${opt.tag})`,
+        tubeSize: opt.defaultTube,
+        finType: opt.defaultFin as any,
+        material: opt.defaultMaterial as any,
+        thicknessMm: 0.10,
+        effectiveFrom: new Date().toISOString(),
+        isActive: true,
+        status: 'ACTIVE',
+        defaultSpm: opt.defaultSpm,
+        pathsCount: opt.defaultPitch,
+        notes: opt.defaultNote,
+        installedPartQuantities: lineConfigs[opt.id]?.installedPartQuantities || {}
+      };
+    });
+    setLineConfigs(configMap);
+    storageService.saveLineConfigs(Object.values(configMap));
+    showToast('คืนค่าสเปกแม่พิมพ์ทั้ง 7 ไลน์ กลับเป็นค่าเริ่มต้นมาตรฐานโรงงานเรียบร้อยแล้ว');
   };
 
   useEffect(() => {
@@ -245,14 +281,21 @@ export const LineDieSpecificationView: React.FC<LineDieSpecificationViewProps> =
                 7 LINES ALL-IN-ONE
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-thai mt-0.5">
-              รวมการตั้งค่าสเปกแม่พิมพ์ ขนาดท่อ ลายฟิน ชนิดวัสดุ รหัสแม่พิมพ์ ความเร็ว SPM และบันทึกหมายเหตุการทำงานครบทั้ง 7 ไลน์ในหน้าเดียว
-            </p>
           </div>
         </div>
 
-        {/* Right side: Add Part Button */}
-        <div className="flex items-center gap-2 font-mono">
+        {/* Right side: Actions */}
+        <div className="flex items-center gap-2 font-mono flex-wrap">
+          <button
+            type="button"
+            onClick={handleResetToDefaults}
+            className="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap active:scale-95"
+            title="คืนค่าสเปกแม่พิมพ์ทั้ง 7 ไลน์ กลับเป็นค่าเริ่มต้นมาตรฐานโรงงาน (Default Specs)"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
+            <span>คืนค่าเริ่มต้น (Default Specs)</span>
+          </button>
+
           <button
             id="btn-add-new-part"
             onClick={() => {
@@ -267,55 +310,6 @@ export const LineDieSpecificationView: React.FC<LineDieSpecificationViewProps> =
             <Plus className="w-4 h-4 text-slate-950" />
             <span>+ เพิ่มชิ้นส่วนใหม่ (ADD NEW PART)</span>
           </button>
-        </div>
-      </div>
-
-      {/* LINE E3 ACTIVE FIN DIE SELECTION STRIP (COMPACT) */}
-      <div className="bg-[#091122] border border-cyan-900/50 rounded-xl p-2.5 sm:p-3 shadow-md">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
-            <div className="text-xs">
-              <span className="font-extrabold text-cyan-300 font-mono">แท่นปั๊ม E3 (E3 SHARED PRESS): </span>
-              <span className="text-slate-300 font-thai">
-                แชร์แม่พิมพ์ 3 ชุด (E3-1, E3-2, E3-3) ยอดช็อตจะสะสมเฉพาะ Fin Die ที่เปิดใช้งานอยู่ขณะนี้
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[11px] font-mono text-slate-400 font-bold mr-1">สลับ Fin Die:</span>
-            {[
-              { id: 'E3-1', label: 'E3-1 (Slit 3P)', tag: 'PCM 0.1mm' },
-              { id: 'E3-2', label: 'E3-2 (WL+ 4P)', tag: 'GOLD 0.1mm' },
-              { id: 'E3-3', label: 'E3-3 (Corr 4P)', tag: 'GOLD 0.1mm' }
-            ].map(item => {
-              const isActive = activeE3Die === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    storageService.setActiveE3FinDie(item.id as any);
-                    showToast(`สลับใช้งาน Fin Die ไลน์ E3 เป็น [${item.label}] เรียบร้อยแล้ว`);
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
-                    isActive
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-md shadow-emerald-950 font-black'
-                      : 'bg-[#0f172a] text-slate-300 border-slate-700 hover:border-slate-500 hover:text-white'
-                  }`}
-                  title={`สลับใช้งานแม่พิมพ์ ${item.label}`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-slate-950 animate-ping' : 'bg-slate-600'}`} />
-                  <span>{item.label}</span>
-                  <span className={`text-[10px] px-1 py-0.2 rounded font-normal ${isActive ? 'bg-emerald-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
-                    {item.tag}
-                  </span>
-                  {isActive && <span className="text-[10px] font-black uppercase ml-0.5">ACTIVE</span>}
-                </button>
-              );
-            })}
-          </div>
         </div>
       </div>
 
@@ -489,59 +483,21 @@ export const LineDieSpecificationView: React.FC<LineDieSpecificationViewProps> =
 
                     {/* 8. NOTE & REMARKS (FREE-STYLE EDITABLE INPUT) */}
                     <td className="py-2 px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="relative flex-1">
-                          <input
-                            id={`note-input-${line.id}`}
-                            type="text"
-                            value={cfg.notes !== undefined ? cfg.notes : ''}
-                            onChange={(e) => handleNoteChange(line.id, e.target.value)}
-                            onBlur={() => handleNoteBlur(line.id)}
-                            placeholder="พิมพ์บันทึกหมายเหตุ / รายละเอียดการทำงาน (Free style)..."
-                            className="w-full bg-[#070d1a] border border-slate-700/80 hover:border-cyan-400 focus:border-cyan-400 rounded-lg px-2.5 py-1 text-xs text-slate-100 placeholder-slate-500 font-thai focus:outline-none focus:bg-[#0c162d] transition-all"
-                          />
-                        </div>
-
-                        {isE3Line && (
-                          <div className="shrink-0 flex items-center gap-1">
-                            {isE3Active ? (
-                              <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/80 text-emerald-300 text-[10px] font-mono font-black flex items-center gap-1 shadow-sm">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                                ACTIVE
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  storageService.setActiveE3FinDie(line.id as any);
-                                  showToast(`สลับใช้งานแม่พิมพ์ ${line.label} บนแท่น E3 เรียบร้อยแล้ว`);
-                                }}
-                                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 text-[10px] font-bold border border-slate-700 hover:border-cyan-400 transition-all cursor-pointer whitespace-nowrap"
-                                title="คลิกเพื่อสลับให้แม่พิมพ์ชุดนี้เป็น Active บนแท่นปั๊ม E3"
-                              >
-                                สลับเป็น Active
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <input
+                        id={`note-input-${line.id}`}
+                        type="text"
+                        value={cfg.notes !== undefined ? cfg.notes : ''}
+                        onChange={(e) => handleNoteChange(line.id, e.target.value)}
+                        onBlur={() => handleNoteBlur(line.id)}
+                        placeholder="พิมพ์บันทึกหมายเหตุ / รายละเอียดการทำงาน (Free style)..."
+                        className="w-full bg-[#070d1a] border border-slate-700/80 hover:border-cyan-400 focus:border-cyan-400 rounded-lg px-2.5 py-1 text-xs text-slate-100 placeholder-slate-500 font-thai focus:outline-none focus:bg-[#0c162d] transition-all"
+                      />
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-        </div>
-
-        {/* Bottom Help & Sync Status Bar */}
-        <div className="bg-[#070d1a] border-t border-slate-800 px-3 py-2 text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2 font-mono">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span className="text-slate-300">ทุกการแก้ไขในตารางจะถูกบันทึกลงระบบทันที (Real-Time Auto Save to Database)</span>
-          </div>
-          <div className="text-slate-500">
-            FIN DIE REGULATION: 0.10mm Foil Thickness • SPM Range: 80 - 160 SPM
-          </div>
         </div>
       </div>
 

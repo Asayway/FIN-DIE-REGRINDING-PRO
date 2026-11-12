@@ -10,7 +10,17 @@ import {
   CheckCircle2,
   Play,
   Clock,
-  PackageCheck
+  PackageCheck,
+  Upload,
+  Camera,
+  Image as ImageIcon,
+  Trash2,
+  Eye,
+  ChevronDown,
+  ChevronUp,
+  TrendingUp,
+  DollarSign,
+  Calculator
 } from 'lucide-react';
 import { ProductionLineId, LINE_INFO_MAP, RegrindMasterStandard } from '../../types';
 import { RegrindWorkTicket, DefectReasonCode } from '../../types/regrind';
@@ -18,6 +28,7 @@ import { LineFilteredPartCombobox, FilteredLinePartItem, getFilteredPartsForLine
 import { regrindService } from '../../services/regrindService';
 import { storageService } from '../../services/storageService';
 import { costSavingService } from '../../services/costSavingService';
+import { CostSavingCalculationService } from '../../services/costSavingCalculationService';
 
 const LINES_LIST: ProductionLineId[] = ['E1', 'E2', 'E3-1', 'E3-2', 'E3-3', 'E4', 'E5'];
 
@@ -95,6 +106,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
   // Operator, Reason & Remarks
   const [technician, setTechnician] = useState<string>('Thanakorn Phonpayung');
   const [defectReason, setDefectReason] = useState<DefectReasonCode>('NORMAL_WEAR');
+  const [customDefectReason, setCustomDefectReason] = useState<string>('');
   const [remarks, setRemarks] = useState<string>('');
 
   // Labor & Cost Control
@@ -102,6 +114,51 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
   const [laborTimeUnit, setLaborTimeUnit] = useState<'HOURS' | 'MINUTES'>('HOURS');
   const [sparePartsUsed, setSparePartsUsed] = useState<string>('');
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
+  const [showCostBreakdown, setShowCostBreakdown] = useState<boolean>(false);
+
+  // Real Workpiece Evidence Photos State
+  const [workpiecePhotos, setWorkpiecePhotos] = useState<string[]>([]);
+  const [zoomedPhotoUrl, setZoomedPhotoUrl] = useState<string | null>(null);
+
+  // Load existing photos when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const key = partCode || 'FD-P7-BURR';
+      const existing = storageService.getPartWorkpiecePhotos(key);
+      if (existing && existing.length > 0) {
+        setWorkpiecePhotos(existing.map(p => p.dataUrl));
+      } else {
+        setWorkpiecePhotos([]);
+      }
+    }
+  }, [isOpen, partCode]);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file: File) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        if (base64) {
+          setWorkpiecePhotos(prev => [base64, ...prev]);
+          storageService.savePartWorkpiecePhoto(partCode || 'FD-P7-BURR', {
+            dataUrl: base64,
+            fileName: file.name,
+            caption: `แนบรูปงานซ่อมเจียร วันที่ ${scheduledDate}`,
+            uploadedBy: technician,
+            isPrimary: workpiecePhotos.length === 0
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleRemovePhoto = (indexToRemove: number) => {
+    setWorkpiecePhotos(prev => prev.filter((_, idx) => idx !== indexToRemove));
+  };
 
   const standards: RegrindMasterStandard[] = useMemo(() => {
     return storageService.getRegrindMasterStandards();
@@ -119,6 +176,39 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       maxRegrindCount: maxRegrindAllowed
     };
   }, [isOpen, partCode, partName, nominalLengthMm, minAllowedLengthMm, maxRegrindAllowed]);
+
+  // Live 5-Step True Cost & Savings Engine
+  const liveCostResult = useMemo(() => {
+    const unitPrice = selectedPartCostMaster.newPurchasePrice || 12500;
+    return CostSavingCalculationService.calculateTrueJobCostStepByStep({
+      machineAssetValueThb: 2400000,
+      usefulLifeHours: 20000,
+      maintenanceReservePerHour: 35,
+      ratedPowerKw: 15.0,
+      loadFactorPercent: 75,
+      electricityPricePerKwh: 4.50,
+      machineRunningHours: laborHours || 1.0,
+
+      baseLaborRatePerHour: 85,
+      skillGrade: 'GRADE_A', // Senior (+50 THB/hr)
+      overtimeCondition: isEmergency ? 'OT_1_5X' : 'NORMAL',
+      setupLaborHours: 0.35,
+      directLaborHours: Math.max(0.1, (laborHours || 1.0) - 0.35),
+      includesLaborInMachineRate: false,
+
+      wheelWearCostPerJob: 25,
+      dressingToolWearCost: 10,
+      consumableSundriesCost: 12.39,
+      coolantCostPerJob: 10,
+
+      qcInspectionHours: 0.25,
+      qcHourlyRate: 120,
+      shopfloorOverheadFixedThb: 50,
+
+      quantityPieces: Math.max(1, quantity || 1),
+      newPurchasePricePerPiece: unitPrice
+    });
+  }, [laborHours, quantity, selectedPartCostMaster, isEmergency]);
 
   const getDieCodeForLine = (lId: string): string => {
     try {
@@ -163,10 +253,11 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       setMaxRegrindAllowed(existingTicket.maxRegrindAllowed || 4);
       setTechnician(existingTicket.assignedTechnician || 'Thanakorn Phonpayung');
       setDefectReason(existingTicket.defectReason || 'NORMAL_WEAR');
+      setCustomDefectReason((existingTicket as any).defectReasonCustom || '');
       setRemarks(
         existingTicket.remarks ||
           existingTicket.defectNotes ||
-          (emg ? `งานด่วนแทรกคิว #1` : '')
+          ''
       );
       setLaborHours(existingTicket.laborHours !== undefined ? existingTicket.laborHours : 1.0);
       setSparePartsUsed(existingTicket.sparePartsUsed || '');
@@ -183,6 +274,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       setQuantity(1);
       setTechnician('Thanakorn Phonpayung');
       setDefectReason(matrixCategory === 'DEFECT_SCRAP' ? 'CHIPPED' : 'NORMAL_WEAR');
+      setCustomDefectReason('');
       setLaborHours(1.0);
       setSparePartsUsed('');
       setSparePartsCost(0);
@@ -204,7 +296,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
           ? `งานด่วนแทรกคิว #1`
           : matrixCategory === 'DEFECT_SCRAP'
           ? 'ชำรุดคัดทิ้ง (Scrap)'
-          : 'ลับคมด้วยหิน CBN #400'
+          : ''
       );
     }
   }, [isOpen, existingTicket, initialDateStr, initialLineId, initialPartCode, initialPartName, initialIsEmergency, matrixCategory]);
@@ -293,13 +385,18 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
     const isAutoScrapTriggered = isUnderMinLength || isOverMaxCycle;
     const isScrap = mode === 'SCRAP_NOW' || isAutoScrapTriggered;
 
+    let cleanRemarks = remarks;
+    if (isStartImmediate && typeof cleanRemarks === 'string' && cleanRemarks.includes('ยกเลิก / คัดทิ้ง')) {
+      cleanRemarks = cleanRemarks.replace(/ยกเลิก\s*\/\s*คัดทิ้ง.*?(?:\||$)/g, '').trim();
+    }
+
     const scrapReasonCalculated = isUnderMinLength
       ? `ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร): ความยาวหลังเจียร (${resultLengthMm.toFixed(2)} mm) ต่ำกว่าสเปค Min (${minAllowedLengthMm.toFixed(2)} mm)`
       : isOverMaxCycle
       ? `ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร): รอบการเจียร (${nextCycle} ครั้ง) เกินขีดจำกัดสูงสุด (${maxRegrindAllowed} ครั้ง)`
-      : (remarks || 'ชำรุดคัดทิ้งตามคำสั่งช่าง');
+      : (cleanRemarks || remarks || 'ชำรุดคัดทิ้งตามคำสั่งช่าง');
 
-    const effectiveRemarks = isScrap ? scrapReasonCalculated : remarks;
+    const effectiveRemarks = isScrap ? scrapReasonCalculated : (cleanRemarks || remarks);
 
     const parsedDate = new Date(scheduledDate);
     const year = parsedDate.getFullYear() || 2026;
@@ -555,34 +652,34 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
       <div
         className={`bg-[#0b101b] border-2 ${
           isEmergency ? 'border-rose-500/70 shadow-[0_0_50px_rgba(244,63,94,0.3)]' : 'border-cyan-500/50 shadow-[0_0_50px_rgba(6,182,212,0.15)]'
-        } rounded-2xl sm:rounded-3xl max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden text-slate-200 shadow-2xl animate-scaleIn`}
+        } rounded-2xl sm:rounded-3xl max-w-5xl w-full max-h-[98vh] flex flex-col overflow-hidden text-slate-200 shadow-2xl animate-scaleIn`}
         onClick={e => e.stopPropagation()}
       >
-        {/* Sleek Header (Fixed Top) */}
+        {/* Sleek Header (Fixed Top - Compact) */}
         <div
-          className={`shrink-0 px-4 sm:px-6 py-3.5 border-b flex items-center justify-between gap-4 ${
+          className={`shrink-0 px-3.5 sm:px-5 py-2 sm:py-2.5 border-b flex items-center justify-between gap-3 ${
             isEmergency
               ? 'bg-gradient-to-r from-rose-950/70 via-slate-900 to-slate-900 border-rose-500/30'
               : 'bg-gradient-to-r from-cyan-950/60 via-slate-900 to-slate-900 border-cyan-500/20'
           }`}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <div
-              className={`p-2 rounded-xl border ${
+              className={`p-1.5 rounded-xl border ${
                 isEmergency
                   ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
                   : 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
               }`}
             >
-              {isEmergency ? <Flame className="w-5 h-5 animate-pulse" /> : <Wrench className="w-5 h-5" />}
+              {isEmergency ? <Flame className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" /> : <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm sm:text-base font-black text-white">
+                <h3 className="text-xs sm:text-sm font-black text-white">
                   {existingTicket ? `แก้ไขใบงานเจียร (${existingTicket.jobCode})` : 'บันทึกงานเจียระไน & จัดคิวชิ้นงาน'}
                 </h3>
                 <span
-                  className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
+                  className={`text-[10px] sm:text-[11px] px-2 py-0.2 rounded-full font-bold ${
                     isEmergency
                       ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                       : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
@@ -590,33 +687,30 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                 >
                   {isEmergency ? '🚨 คิวด่วน #1' : '🟢 คิวปกติ'}
                 </span>
-                <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono font-bold border border-white/10">
+                <span className="text-[10px] sm:text-[11px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-mono font-bold border border-white/10">
                   LINE {lineId}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 mt-0.5 font-thai">
-                ระบบคำนวณสเปคมิติงานใหม่-ปัจจุบัน-หลังเจียร และตรวจสอบรอบการลับคมอัตโนมัติ
-              </p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer shrink-0"
             title="ปิดหน้าต่าง (Close)"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
 
-        {/* Scrollable Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-3 sm:p-4 pb-6 space-y-3 custom-scrollbar text-xs">
+        {/* Scrollable Form Body (Compact Fit) */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-2.5 sm:p-3 pb-3 space-y-2 custom-scrollbar text-xs">
           {/* Main Grid Wrapper: 2 Columns for Desktop */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-stretch">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-start">
             
             {/* LEFT COLUMN: Inputs (7/12 cols) */}
-            <div className="lg:col-span-7 flex flex-col justify-between space-y-2.5">
+            <div className="lg:col-span-7 flex flex-col justify-start space-y-2">
               
               {/* Mode Switcher */}
               <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950/60 rounded-xl border border-white/10 shrink-0">
@@ -845,8 +939,8 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
               )}
 
               {/* SECTION 3: ⚠️ DEFECT REASONS */}
-              <div className="p-2.5 rounded-xl bg-slate-950/90 border border-white/15 shrink-0">
-                <label className="block text-slate-100 font-extrabold text-xs sm:text-[13px] mb-2 flex items-center gap-1.5">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-950/90 border border-white/15 shrink-0">
+                <label className="block text-slate-100 font-extrabold text-xs mb-1.5 flex items-center gap-1.5">
                   <span>⚠️</span>
                   <span>
                     {isEnglish
@@ -857,7 +951,7 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                   </span>
                   <span className="text-rose-400">*</span>
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   {DEFECT_REASONS_LIST.map(item => {
                     const isSelected = defectReason === item.code;
                     const displayLabel = isEnglish
@@ -871,26 +965,37 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                         key={item.code}
                         type="button"
                         onClick={() => setDefectReason(item.code)}
-                        className={`py-2 px-2 border rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        className={`py-1.5 px-2 border rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-md ring-1 ring-cyan-400/50 font-black'
                             : 'bg-slate-900/80 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:bg-slate-850 hover:text-white font-bold'
                         }`}
                         title={displayDesc}
                       >
-                        <span className="text-base shrink-0">{item.icon}</span>
-                        <span className="text-[10.5px] sm:text-xs font-black leading-tight uppercase truncate">
+                        <span className="text-sm shrink-0">{item.icon}</span>
+                        <span className="text-[10px] sm:text-[11px] font-black leading-tight uppercase truncate">
                           {displayLabel}
                         </span>
                       </button>
                     );
                   })}
                 </div>
+
+                {/* Free-form Custom Defect Reason / Additional Info Field */}
+                <div className="mt-1.5">
+                  <input
+                    type="text"
+                    value={customDefectReason}
+                    onChange={e => setCustomDefectReason(e.target.value)}
+                    placeholder="✍️ กรอกเหตุผล / รายละเอียดสภาพปัญหาอื่นๆ เพิ่มเติมแบบอิสระ..."
+                    className="w-full px-2.5 py-1 bg-slate-900/90 border border-slate-700 hover:border-cyan-400 focus:border-cyan-400 rounded-lg text-white font-semibold text-xs placeholder-slate-500 focus:outline-none shadow-inner transition-colors"
+                  />
+                </div>
               </div>
- 
-              {/* SECTION 4: 📝 REMARKS (Aligned with Labor Time block on the right) */}
-              <div className="p-2.5 rounded-xl bg-slate-950/90 border border-white/15 space-y-2 shrink-0">
-                <label className="block text-slate-200 font-extrabold text-xs sm:text-[13px] leading-tight flex items-center gap-1.5">
+
+              {/* SECTION 4: 📝 REMARKS (ย้ายมาฝั่งซ้ายล่าง - Compact Fit) */}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-950/95 border border-cyan-500/40 space-y-1.5 shrink-0 shadow-md">
+                <label className="block text-cyan-200 font-extrabold text-xs leading-tight flex items-center gap-1.5">
                   <span>📝</span>
                   <span>หมายเหตุ / รายละเอียดงานเพิ่มเติม (Remarks)</span>
                 </label>
@@ -898,19 +1003,19 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                   type="text"
                   value={remarks || ''}
                   onChange={e => setRemarks(e.target.value)}
-                  placeholder="ระบุรายละเอียด เช่น ลับคมด้วยหิน CBN #400..."
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-semibold text-xs sm:text-[13px] focus:border-cyan-400 focus:outline-none shadow-inner"
+                  placeholder="พิมพ์บันทึกหมายเหตุ / รายละเอียดงานเพิ่มเติม (กรอกอิสระหรือกดเลือกข้อความด่วนด้านล่าง)..."
+                  className="w-full px-2.5 py-1 bg-slate-900 border border-cyan-500/60 hover:border-cyan-400 focus:border-cyan-400 rounded-lg text-white font-bold text-xs placeholder-slate-400 focus:outline-none shadow-inner transition-all"
                 />
-                <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                   {DEFAULT_REMARKS_PRESETS.map((preset, i) => (
                     <button
                       key={i}
                       type="button"
                       onClick={() => setRemarks(preset)}
-                      className={`px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold border cursor-pointer transition-all ${
+                      className={`px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold border cursor-pointer transition-all ${
                         remarks === preset
-                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 font-black'
-                          : 'bg-white/5 border-white/10 text-slate-300 hover:text-white hover:bg-white/10'
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-sm'
+                          : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700'
                       }`}
                     >
                       {preset}
@@ -922,10 +1027,10 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
             </div>
 
             {/* RIGHT COLUMN: Calculations & Remaining Data (5/12 cols) */}
-            <div className="lg:col-span-5 flex flex-col justify-between space-y-2.5">
+            <div className="lg:col-span-5 flex flex-col justify-start space-y-2">
               
               {/* SECTION 2: 📐 COMPLETE SPEC & REGRIND BREAKDOWN CALCULATOR */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-b from-slate-900/95 to-slate-950 border-2 border-cyan-500/35 shadow-lg space-y-2.5">
+              <div className="p-2.5 sm:p-3 rounded-2xl bg-gradient-to-b from-slate-900/95 to-slate-950 border-2 border-cyan-500/35 shadow-lg space-y-2">
                 <div className="flex items-center justify-between flex-wrap gap-1 border-b border-white/10 pb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-cyan-300 font-black text-sm">📐</span>
@@ -975,30 +1080,22 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Card 3: จะเจียรลง */}
-                  <div className="p-2.5 rounded-xl bg-slate-950 border border-amber-500/40 flex flex-col justify-between">
+                  {/* Card 3: จะเจียรลง (Direct Number Input - No Dropdown) */}
+                  <div className="p-2.5 rounded-xl bg-slate-950 border border-amber-500/50 flex flex-col justify-between">
                     <label className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
                       3. จะเจียรลง (mm)
                     </label>
-                    <div className="mt-1 flex items-center gap-1">
-                      <select
-                        value={grindDepthMm}
-                        onChange={e => handleGrindDepthChange(e.target.value)}
-                        className="flex-1 px-1 py-0.5 bg-slate-900 border border-amber-500/50 rounded-md text-amber-300 font-mono text-xs font-black focus:border-amber-400 focus:outline-none text-center shadow-inner"
-                      >
-                        {GRIND_STEP_PRESETS.map(p => (
-                          <option key={p} value={p}>{p.toFixed(2)}</option>
-                        ))}
-                      </select>
+                    <div className="mt-1">
                       <input
                         type="number"
                         step="0.01"
+                        min="0"
                         value={grindDepthMm === 0 ? '' : grindDepthMm}
-                        placeholder="0.00"
+                        placeholder="0.20"
                         onFocus={e => e.target.select()}
                         onChange={e => handleGrindDepthChange(e.target.value)}
-                        className="w-12 px-1 py-0.5 bg-slate-900 border border-amber-500/30 rounded-md text-amber-300 font-mono text-[10px] focus:outline-none text-center"
+                        className="w-full px-2.5 py-1 bg-slate-900 border border-amber-500/60 rounded-lg text-amber-300 font-mono text-sm sm:text-base font-black text-center focus:border-amber-400 focus:outline-none shadow-inner"
                       />
                     </div>
                   </div>
@@ -1104,131 +1201,195 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                 )}
               </div>
 
-              {/* Assigned Technician Card */}
-              <div className="p-2.5 rounded-2xl bg-slate-950/85 border border-white/15 flex items-center gap-2">
-                <label className="text-slate-200 font-extrabold text-xs shrink-0">
-                  ช่างผู้รับผิดชอบ <span className="text-rose-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={technician}
-                  onChange={e => setTechnician(e.target.value)}
-                  placeholder="ระบุชื่อช่าง..."
-                  className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold text-xs focus:border-cyan-400 focus:outline-none shadow-inner"
-                  required
-                />
-              </div>
-
-              {/* Labor Time & Cost Card */}
-              <div className="p-3 rounded-2xl bg-slate-950/85 border border-cyan-500/30 space-y-2">
-                <div className="flex items-center justify-between border-b border-white/10 pb-1.5 flex-wrap gap-1">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                    <span className="font-extrabold text-cyan-300 text-xs uppercase tracking-wide">
-                      เวลาแรงงาน & คำนวณต้นทุน (Labor Time)
+              {/* Integrated True Cost & Labor Time Calculator Block */}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-950/95 border-2 border-emerald-500/50 space-y-2 shrink-0 shadow-lg">
+                
+                {/* Live Savings Summary Banner */}
+                <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-cyan-950/80 border border-emerald-500/40 rounded-xl p-2.5 space-y-1.5 font-mono">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-emerald-300 font-black flex items-center gap-1.5">
+                      <Calculator className="w-4 h-4 text-emerald-400" />
+                      <span>คำนวณต้นทุนแท้จริง & ยอดประหยัด (True Cost & Savings)</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-[#00FF7F] border border-emerald-500/40 font-black text-[11px]">
+                      {liveCostResult.step5SavingPercentage}% ประหยัด
                     </span>
                   </div>
 
-                  {/* Unit Selector (นาที vs ชั่วโมง) */}
-                  <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-700">
-                    <button
-                      type="button"
-                      onClick={() => setLaborTimeUnit('MINUTES')}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                        laborTimeUnit === 'MINUTES'
-                          ? 'bg-cyan-500 text-slate-950 shadow'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      นาที
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLaborTimeUnit('HOURS')}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                        laborTimeUnit === 'HOURS'
-                          ? 'bg-cyan-500 text-slate-950 shadow'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      ชั่วโมง
-                    </button>
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-white/10">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">ยอดประหยัดสุทธิ (NET SAVING):</span>
+                      <span className="text-base font-black text-[#00FF7F]">
+                        ฿{liveCostResult.step5NetCostSaving.toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">ต้นทุนเจียรรวม ({quantity} ชิ้น):</span>
+                      <span className="text-sm font-black text-cyan-300">
+                        ฿{liveCostResult.step5GrandTotalJobCost.toLocaleString()}
+                        <span className="text-[10px] font-normal text-slate-400 block">
+                          (เทียบซื้อใหม่ ฿{liveCostResult.step5TotalNewToolEquivalentCost.toLocaleString()})
+                        </span>
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-200 text-xs font-bold">
-                    {laborTimeUnit === 'MINUTES' ? 'เวลาทำงาน (นาที)' : 'ชั่วโมงแรงงาน (ชั่วโมง)'}
-                  </span>
-                  <span className="text-cyan-400 font-mono text-xs font-black bg-cyan-950/60 border border-cyan-500/30 px-2 py-0.5 rounded-lg">
-                    ฿{(laborHours * 180).toLocaleString('th-TH', { minimumFractionDigits: 0 })} <span className="text-[10px] text-slate-400 font-normal font-sans">(@180/ชม.)</span>
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    step={laborTimeUnit === 'MINUTES' ? '5' : '0.25'}
-                    min="0"
-                    max={laborTimeUnit === 'MINUTES' ? '1440' : '24'}
-                    value={
-                      laborHours === 0
-                        ? ''
-                        : laborTimeUnit === 'MINUTES'
-                        ? Math.round(laborHours * 60)
-                        : laborHours
-                    }
-                    onChange={e => {
-                      const val = parseFloat(e.target.value) || 0;
-                      setLaborHours(laborTimeUnit === 'MINUTES' ? val / 60 : val);
-                    }}
-                    className="w-24 px-2.5 py-1 bg-slate-900 border border-cyan-500/50 rounded-lg text-cyan-300 font-mono font-black text-sm text-center focus:border-cyan-400 focus:outline-none shadow-inner"
-                  />
-                  <span className="text-slate-300 font-mono text-xs font-black">
-                    {laborTimeUnit === 'MINUTES' ? 'นาที' : 'ชม.'}
-                  </span>
-                  <span className="text-[11px] text-slate-400 font-mono ml-auto">
-                    (= {laborHours.toFixed(2)} ชม.)
-                  </span>
-                </div>
-
-                {/* Preset Buttons */}
-                <div className="pt-1 border-t border-white/5 space-y-1">
-                  <span className="text-[10px] text-slate-400 font-medium block">
-                    ปุ่มเลือกเวลารวดเร็ว (Quick Select):
-                  </span>
-                  <div className="flex items-center gap-1 flex-wrap">
-                    {[
-                      { label: '15 นาที', hours: 0.25 },
-                      { label: '30 นาที', hours: 0.5 },
-                      { label: '45 นาที', hours: 0.75 },
-                      { label: '1 ชม.', hours: 1.0 },
-                      { label: '1.5 ชม.', hours: 1.5 },
-                      { label: '2 ชม.', hours: 2.0 },
-                    ].map(p => {
-                      const isMatch = Math.abs(laborHours - p.hours) < 0.01;
-                      return (
+                {/* Labor Time & Tech Input Controls */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center text-xs">
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-slate-200 font-extrabold text-[11px]">
+                        {laborTimeUnit === 'MINUTES' ? 'เวลาซ่อม/เจียร (นาที)' : 'ชั่วโมงแรงงานซ่อม (ชม.)'}
+                      </span>
+                      <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded border border-slate-700">
                         <button
-                          key={p.label}
                           type="button"
-                          onClick={() => setLaborHours(p.hours)}
-                          className={`px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold cursor-pointer transition-all border ${
-                            isMatch
-                              ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-md'
-                              : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
+                          onClick={() => setLaborTimeUnit('MINUTES')}
+                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                            laborTimeUnit === 'MINUTES' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400'
                           }`}
                         >
-                          {p.label}
+                          นาที
                         </button>
-                      );
-                    })}
+                        <button
+                          type="button"
+                          onClick={() => setLaborTimeUnit('HOURS')}
+                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                            laborTimeUnit === 'HOURS' ? 'bg-cyan-500 text-slate-950 font-black' : 'text-slate-400'
+                          }`}
+                        >
+                          ชม.
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        step={laborTimeUnit === 'MINUTES' ? '5' : '0.25'}
+                        min="0"
+                        value={
+                          laborHours === 0
+                            ? ''
+                            : laborTimeUnit === 'MINUTES'
+                            ? Math.round(laborHours * 60)
+                            : laborHours
+                        }
+                        onChange={e => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setLaborHours(laborTimeUnit === 'MINUTES' ? val / 60 : val);
+                        }}
+                        className="w-20 px-2 py-1 bg-slate-900 border border-emerald-500/50 rounded-lg text-emerald-300 font-mono font-black text-xs text-center focus:border-emerald-400 focus:outline-none"
+                      />
+                      <span className="text-slate-300 font-mono text-[11px] font-bold">
+                        {laborTimeUnit === 'MINUTES' ? 'นาที' : 'ชม.'}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono ml-auto">
+                        (= {laborHours.toFixed(2)} ชม.)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-200 font-extrabold text-[11px] block mb-0.5">
+                      ช่างผู้รับผิดชอบ <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={technician}
+                      onChange={e => setTechnician(e.target.value)}
+                      placeholder="ระบุชื่อช่าง..."
+                      className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white font-bold text-xs focus:border-cyan-400 focus:outline-none shadow-inner"
+                      required
+                    />
                   </div>
                 </div>
+
+                {/* Preset Time Buttons */}
+                <div className="pt-1 border-t border-white/10 flex items-center gap-1 flex-wrap text-xs">
+                  <span className="text-[10px] text-slate-400 font-medium mr-1">เลือกด่วน:</span>
+                  {[
+                    { label: '15 น.', hours: 0.25 },
+                    { label: '30 น.', hours: 0.5 },
+                    { label: '45 น.', hours: 0.75 },
+                    { label: '1 ชม.', hours: 1.0 },
+                    { label: '1.5 ชม.', hours: 1.5 },
+                    { label: '2 ชม.', hours: 2.0 },
+                  ].map(p => {
+                    const isMatch = Math.abs(laborHours - p.hours) < 0.01;
+                    return (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => setLaborHours(p.hours)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer transition-all border ${
+                          isMatch
+                            ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Collapsible 5-Step Detailed Cost Breakdown Table */}
+                <div className="pt-1 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setShowCostBreakdown(!showCostBreakdown)}
+                    className="w-full py-1 px-2 bg-slate-900 hover:bg-slate-850 rounded-lg text-cyan-300 border border-cyan-500/30 text-[11px] font-mono font-bold flex items-center justify-between cursor-pointer transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Calculator className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>{showCostBreakdown ? 'ซ่อนการแจกแจง 5 ขั้นตอน' : 'ดูการแจกแจง 5 ขั้นตอนการคำนวณ (Step 1-5 Breakdown)'}</span>
+                    </span>
+                    {showCostBreakdown ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {showCostBreakdown && (
+                    <div className="mt-2 bg-slate-950 p-2 rounded-xl border border-cyan-500/30 font-mono text-[10.5px] space-y-1.5 animate-fadeIn">
+                      <div className="grid grid-cols-12 gap-1 text-slate-400 font-bold border-b border-white/10 pb-1">
+                        <span className="col-span-8">ขั้นตอนคำนวณต้นทุน</span>
+                        <span className="col-span-4 text-right">จำนวนเงิน (THB)</span>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-1 text-slate-300">
+                        <span className="col-span-8 truncate">Step 1: เครื่องจักร & ไฟฟ้า ({laborHours} ชม.)</span>
+                        <span className="col-span-4 text-right text-cyan-300 font-bold">฿{liveCostResult.step1TotalMachineAndPower.toLocaleString()}</span>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-1 text-slate-300">
+                        <span className="col-span-8 truncate">Step 2: ค่าแรงช่าง, OT & ค่าสกิล</span>
+                        <span className="col-span-4 text-right text-purple-300 font-bold">฿{liveCostResult.step2TotalLaborCost.toLocaleString()}</span>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-1 text-slate-300">
+                        <span className="col-span-8 truncate">Step 3: หินเจียร & วัสดุสิ้นเปลือง</span>
+                        <span className="col-span-4 text-right text-amber-300 font-bold">฿{liveCostResult.step3TotalConsumables.toLocaleString()}</span>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-1 text-slate-300">
+                        <span className="col-span-8 truncate">Step 4: ตรวจสอบ QC & โสหุ้ย</span>
+                        <span className="col-span-4 text-right text-blue-300 font-bold">฿{liveCostResult.step4TotalQcAndOverhead.toLocaleString()}</span>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-1 text-white font-bold pt-1 border-t border-white/10">
+                        <span className="col-span-8">รวมต้นทุนเจียรจริงสุทธิ</span>
+                        <span className="col-span-4 text-right text-emerald-400 font-black">฿{liveCostResult.step5GrandTotalJobCost.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
               </div>
 
               {/* Emergency Settings (if isEmergency === true) */}
               {isEmergency && (
-                <div className="p-2.5 rounded-xl bg-rose-950/35 border-2 border-rose-500/50 space-y-1 animate-fadeIn text-xs">
+                <div className="p-2 rounded-xl bg-rose-950/35 border-2 border-rose-500/50 space-y-1 animate-fadeIn text-xs shrink-0">
                   <label className="flex items-center gap-2 cursor-pointer leading-tight">
                     <input
                       type="checkbox"
@@ -1236,19 +1397,79 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
                       onChange={e => setPreemptActiveJob(e.target.checked)}
                       className="w-4 h-4 accent-rose-500 rounded cursor-pointer"
                     />
-                    <span className="text-rose-200 font-extrabold text-xs sm:text-sm">
+                    <span className="text-rose-200 font-extrabold text-xs">
                       ⚡ แทรกเป็นคิว #1 ทันที (Preempt Active Job)
                     </span>
                   </label>
                 </div>
               )}
 
+              {/* SECTION 5: 📸 REAL WORKPIECE EVIDENCE PHOTOS (Compact Single-Screen Fit) */}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-slate-950/95 border border-cyan-500/40 space-y-1.5 shrink-0 shadow-md">
+                <div className="flex items-center justify-between border-b border-white/10 pb-1 flex-wrap gap-1">
+                  <label className="text-cyan-200 font-extrabold text-xs leading-tight flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>📸 แนบรูปภาพประกอบงานเจียรจริง (Evidence Photos)</span>
+                  </label>
+                  <label className="px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-cyan-500 to-emerald-400 hover:from-cyan-400 hover:to-emerald-300 text-slate-950 font-black text-[11px] flex items-center gap-1 cursor-pointer transition-all shadow active:scale-95">
+                    <Upload className="w-3 h-3" />
+                    <span>แนบรูปงานจริง</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {/* Photos Preview Grid */}
+                {workpiecePhotos.length === 0 ? (
+                  <div className="border border-dashed border-slate-800 hover:border-cyan-500/40 rounded-xl py-2 px-3 text-center bg-slate-900/40 flex items-center justify-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-slate-500 shrink-0" />
+                    <p className="text-[10.5px] text-slate-400">ยังไม่มีรูปแนบ (กด "แนบรูปงานจริง" เพื่อเพิ่มภาพถ่ายสภาพชิ้นงาน)</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {workpiecePhotos.map((photoUrl, idx) => (
+                      <div key={idx} className="relative group rounded-lg overflow-hidden border border-white/15 h-16 bg-slate-900">
+                        <img src={photoUrl} alt={`งานจริง ${idx + 1}`} className="w-full h-full object-cover" />
+                        {idx === 0 && (
+                          <span className="absolute top-0.5 left-0.5 px-1 bg-emerald-500 text-slate-950 font-black text-[8px] rounded shadow">
+                            รูปหลัก
+                          </span>
+                        )}
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setZoomedPhotoUrl(photoUrl)}
+                            className="p-1 bg-cyan-500 text-slate-950 rounded hover:scale-110 cursor-pointer"
+                            title="ขยายดูรูปใหญ่"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(idx)}
+                            className="p-1 bg-rose-500 text-white rounded hover:scale-110 cursor-pointer"
+                            title="ลบรูป"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
         </form>
 
-        {/* Action Footer (Fixed at Bottom of Modal) */}
-        <div className="shrink-0 px-4 sm:px-6 py-3 border-t border-white/15 bg-slate-950/95 backdrop-blur-md flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+        {/* Action Footer (Fixed at Bottom of Modal - Compact) */}
+        <div className="shrink-0 px-3.5 sm:px-5 py-2 sm:py-2.5 border-t border-white/15 bg-slate-950/95 backdrop-blur-md flex items-center justify-between gap-2.5 flex-wrap sm:flex-nowrap">
           <div className="text-xs font-mono text-slate-300 flex items-center gap-2">
             <span>หลังเจียร:</span>
             <strong className={`text-base font-black ${isUnderMinLength ? 'text-rose-400' : 'text-emerald-300'}`}>
@@ -1311,6 +1532,27 @@ export const UnifiedRegrindJobModal: React.FC<UnifiedRegrindJobModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Zoomed Photo Modal Overlay */}
+      {zoomedPhotoUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setZoomedPhotoUrl(null)}
+        >
+          <div className="relative max-w-3xl w-full bg-slate-950 border border-white/20 rounded-2xl p-2 flex flex-col items-center shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setZoomedPhotoUrl(null)}
+              className="absolute top-3 right-3 p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600 transition-all cursor-pointer z-10"
+              title="ปิดภาพขยาย"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img src={zoomedPhotoUrl} alt="รูปงานจริงขยาย" className="max-h-[80vh] w-auto object-contain rounded-xl" />
+            <span className="mt-2 text-xs font-mono text-cyan-300 font-bold">📸 รูปถ่ายสภาพงานจริงก่อน-หลังเจียร (Real Workpiece Evidence)</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

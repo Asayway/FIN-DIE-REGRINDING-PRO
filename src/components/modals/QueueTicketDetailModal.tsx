@@ -15,6 +15,7 @@ import { RegrindWorkTicket } from '../../types/regrind';
 import { detectTubeSize } from '../common/LineFilteredPartCombobox';
 import { regrindService } from '../../services/regrindService';
 import { getUnifiedStatusMeta, resolveUnifiedStatusKey } from '../../utils/statusHelper';
+import { MoldSurfaceGrinderAnimation } from '../animations/MoldSurfaceGrinderAnimation';
 
 export interface QueueTicketDetailModalProps {
   ticket: RegrindWorkTicket | null;
@@ -91,11 +92,13 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                 isEmg
                   ? 'bg-rose-600 text-white'
                   : isInProcess
-                  ? 'bg-cyan-400 text-slate-950'
+                  ? 'bg-purple-600 text-white font-black animate-pulse shadow-md'
                   : isPaused
-                  ? 'bg-purple-500 text-white'
+                  ? 'bg-indigo-900 text-indigo-200'
                   : isReady
-                  ? 'bg-emerald-500 text-slate-950'
+                  ? 'bg-sky-500 text-white font-bold'
+                  : isCompleted
+                  ? 'bg-emerald-500 text-slate-950 font-bold'
                   : 'bg-slate-800 text-cyan-300'
               }`}
             >
@@ -199,6 +202,36 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
             </div>
           </div>
 
+          {/* Active Grinding Animation Banner when in IN_PROCESS state */}
+          {isInProcess && (
+            <div className="p-3 rounded-xl bg-gradient-to-r from-purple-950/70 via-indigo-950/50 to-purple-950/70 border-2 border-purple-400/70 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[0_0_20px_rgba(168,85,247,0.25)]">
+              <div className="flex items-center gap-3">
+                <MoldSurfaceGrinderAnimation size="sm" theme="purple" />
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-400 animate-ping" />
+                    <span className="text-xs font-black text-purple-300 font-mono tracking-wide">
+                      ⚡ กำลังเจียรราบ Spare Part Mold (IN_PROCESS)
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-300 block mt-0.5">
+                    OKAMOTO High-Precision Surface Grinder • กำลังปาดหน้าชิ้นงานตามสเปค
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  regrindService.markTicketAsReady(ticket.id);
+                  if (onSelectTicket) onSelectTicket({ ...ticket, status: 'READY', isEmergency: false });
+                }}
+                className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs cursor-pointer shadow flex items-center gap-1.5 shrink-0"
+              >
+                <span>🔵 เจียรเสร็จแล้ว (ส่งตรวจ QC)</span>
+              </button>
+            </div>
+          )}
+
           {/* Quick Status Action Toolbar (Standardized 6 States Workflow) */}
           <div className="p-2.5 rounded-xl bg-slate-900/90 border border-white/15 space-y-2">
             <div className="flex items-center justify-between text-[10.5px]">
@@ -293,6 +326,7 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                   }
 
                   if (onCompleteTicket) {
+                    onClose();
                     onCompleteTicket(ticket);
                   }
                 }}
@@ -402,6 +436,42 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
             </p>
           </div>
 
+          {/* True Cost & Savings Financial Badge */}
+          <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-950/70 via-slate-950 to-cyan-950/70 border border-emerald-500/40 space-y-1.5 font-mono">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                <span>💰</span>
+                <span>สรุปต้นทุนจริง & ยอดเงินประหยัด (True Cost & Net Saving)</span>
+              </span>
+              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-[#00FF7F] font-black border border-emerald-500/40">
+                {(ticket.netSavingPct || 95.95)}% ประหยัด
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+              <div className="p-2 rounded-lg bg-slate-900 border border-white/5">
+                <span className="text-[10px] text-slate-400 block font-sans">ต้นทุนเจียรจริง</span>
+                <strong className="text-xs text-cyan-300 font-bold">
+                  ฿{(ticket.totalTrueCost || (ticket.laborHours ? Math.round(ticket.laborHours * 180 + 320) : 506.50)).toLocaleString()}
+                </strong>
+              </div>
+
+              <div className="p-2 rounded-lg bg-slate-900 border border-white/5">
+                <span className="text-[10px] text-slate-400 block font-sans">ราคาชิ้นงานใหม่</span>
+                <strong className="text-xs text-white font-bold">
+                  ฿{(ticket.newPartPriceTotal || ((ticket.quantity || 1) * 12500)).toLocaleString()}
+                </strong>
+              </div>
+
+              <div className="p-2 rounded-lg bg-slate-900 border border-emerald-500/30 col-span-2 sm:col-span-1">
+                <span className="text-[10px] text-emerald-400 block font-sans font-bold">ยอดประหยัดสุทธิ</span>
+                <strong className="text-xs text-[#00FF7F] font-black">
+                  ฿{(ticket.netSavingTHB || Math.max(0, (ticket.newPartPriceTotal || ((ticket.quantity || 1) * 12500)) - (ticket.totalTrueCost || 506.50))).toLocaleString()}
+                </strong>
+              </div>
+            </div>
+          </div>
+
           {/* Action Bar */}
           <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -486,6 +556,7 @@ export const QueueTicketDetailModal: React.FC<QueueTicketDetailModalProps> = ({
                         }
 
                         if (onCompleteTicket) {
+                          onClose();
                           onCompleteTicket(ticket);
                         }
                       }}

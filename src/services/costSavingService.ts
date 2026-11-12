@@ -82,9 +82,9 @@ class CostSavingService {
         id: 'CR-GRIND-01',
         machineId: 'GRIND-01',
         machineName: 'OKAMOTO High-Precision Surface Grinder #1',
-        machineCostRatePerHour: 350.00,
-        operatorLaborRatePerHour: 180.00,
-        consumablesCostRatePerHour: 50.00,
+        machineCostRatePerHour: 205.63,
+        operatorLaborRatePerHour: 135.00,
+        consumablesCostRatePerHour: 38.26,
         qcCostRatePerHour: 120.00,
         includesLaborInMachineRate: false,
         rateCalculationMethod: 'STANDARD_FACTORY_APPROVED',
@@ -92,17 +92,17 @@ class CostSavingService {
         effectiveDate: '2025-01-01',
         updatedBy: 'Somchai Prasert (Industrial Eng.)',
         isActive: true,
-        notes: 'อัตรามาตรฐานโรงงานเครื่องเจียรหลัก: รวมค่าเสื่อมราคาเครื่องจักร (5 ปี Straight-Line), ค่าไฟฟ้า 15kW, coolant และ preventative maintenance แยกคิดค่าแรงช่างตามชั่วโมงจริง',
+        notes: 'อัตรามาตรฐานโรงงานเครื่องเจียรหลัก: ค่าเสื่อม ฿120/ชม. (2.4M/20,000h) + ค่าไฟ ฿50.63/ชม. (15kW @75% LF) + PM ฿35/ชม., ค่าแรงช่าง ฿135/ชม. (Base ฿85 + Senior ฿50), สิ้นเปลือง ฿38.26/ชม.',
         rateRevisionHistory: [
           {
             id: 'REV-CR-01-001',
             revisionDate: now,
-            oldMachineRate: 350.00,
-            newMachineRate: 350.00,
-            oldLaborRate: 180.00,
-            newLaborRate: 180.00,
+            oldMachineRate: 205.63,
+            newMachineRate: 205.63,
+            oldLaborRate: 135.00,
+            newLaborRate: 135.00,
             changedBy: 'Somchai Prasert',
-            reason: 'Baseline rate configuration 2025',
+            reason: 'Baseline rate configuration 2025 (OKAMOTO Surface Grinder)',
             effectiveDate: '2025-01-01',
             includesLaborInMachineRate: false
           }
@@ -159,7 +159,12 @@ class CostSavingService {
         if (
           existing.machineCostRatePerHour !== item.machineCostRatePerHour ||
           existing.operatorLaborRatePerHour !== item.operatorLaborRatePerHour ||
-          existing.includesLaborInMachineRate !== item.includesLaborInMachineRate
+          existing.consumablesCostRatePerHour !== item.consumablesCostRatePerHour ||
+          existing.consumablesFixedCostPerJob !== item.consumablesFixedCostPerJob ||
+          existing.qcCostRatePerHour !== item.qcCostRatePerHour ||
+          existing.includesLaborInMachineRate !== item.includesLaborInMachineRate ||
+          existing.ratedPowerKw !== item.ratedPowerKw ||
+          existing.electricityPricePerKwh !== item.electricityPricePerKwh
         ) {
           revisions.unshift({
             id: `REV-CR-${Date.now()}`,
@@ -171,7 +176,12 @@ class CostSavingService {
             changedBy: updatedBy,
             reason: revisionReason || 'Rate Adjustment / Policy Change',
             effectiveDate: item.effectiveDate || nowFormatted,
-            includesLaborInMachineRate: item.includesLaborInMachineRate
+            includesLaborInMachineRate: item.includesLaborInMachineRate,
+            ratedPowerKw: item.ratedPowerKw,
+            loadFactorPercent: item.loadFactorPercent,
+            electricityPricePerKwh: item.electricityPricePerKwh,
+            consumablesVariableRatePerHour: item.consumablesCostRatePerHour,
+            consumablesFixedCostPerJob: item.consumablesFixedCostPerJob
           });
         }
 
@@ -205,7 +215,12 @@ class CostSavingService {
               changedBy: updatedBy,
               reason: revisionReason || 'Initial Registration',
               effectiveDate: item.effectiveDate || nowFormatted,
-              includesLaborInMachineRate: item.includesLaborInMachineRate
+              includesLaborInMachineRate: item.includesLaborInMachineRate,
+              ratedPowerKw: item.ratedPowerKw,
+              loadFactorPercent: item.loadFactorPercent,
+              electricityPricePerKwh: item.electricityPricePerKwh,
+              consumablesVariableRatePerHour: item.consumablesCostRatePerHour,
+              consumablesFixedCostPerJob: item.consumablesFixedCostPerJob
             }
           ],
           createdAt: now,

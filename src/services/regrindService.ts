@@ -155,9 +155,34 @@ class RegrindService {
     const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
     const todayDay = now.getDate();
 
+    const todayStr = now.toISOString().slice(0, 10);
+
     // Separate active vs completed/scrapped
-    const active = deduplicatedTickets.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED');
+    const active = deduplicatedTickets.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED' || t.status === 'POSTPONED');
     const inactive = deduplicatedTickets.filter(t => t.status === 'READY' || t.status === 'SCRAP' || t.status === 'COMPLETED' || t.status === 'CANCELLED');
+
+    // Auto-roll over past active uncompleted tickets (where scheduledDate < todayStr and status is not finished)
+    active.forEach((t) => {
+      if (
+        t.scheduledDate &&
+        t.scheduledDate < todayStr &&
+        t.status !== 'READY' &&
+        t.status !== 'COMPLETED' &&
+        t.status !== 'SCRAP' &&
+        t.status !== 'CANCELLED'
+      ) {
+        if (!t.shiftedFromDate) {
+          t.shiftedFromDate = t.scheduledDate;
+        }
+        if (!t.originalScheduledDate) {
+          t.originalScheduledDate = t.scheduledDate;
+        }
+        t.status = 'POSTPONED';
+        t.scheduledDate = todayStr;
+        t.shiftedCount = (t.shiftedCount || 0) + 1;
+        t.updatedAt = now.toISOString();
+      }
+    });
 
     // Sort active: Emergency first, then by existing queueOrder (or index fallback)
     active.sort((a, b) => {
@@ -186,13 +211,14 @@ class RegrindService {
       }
     });
 
-    inactive.forEach((t, idx) => {
+    inactive.forEach((t) => {
       if (!t.scheduledDate) {
         if (t.completedDate && t.completedDate.length >= 10) {
           t.scheduledDate = t.completedDate.slice(0, 10);
+        } else if (t.receivedDate && t.receivedDate.length >= 10) {
+          t.scheduledDate = t.receivedDate.slice(0, 10);
         } else {
-          const pastDay = Math.max(1, todayDay - (idx + 1));
-          t.scheduledDate = `${currentYear}-${currentMonth}-${String(pastDay).padStart(2, '0')}`;
+          t.scheduledDate = `${currentYear}-${currentMonth}-${String(todayDay).padStart(2, '0')}`;
         }
       }
     });
@@ -333,6 +359,121 @@ class RegrindService {
     };
   }
 
+  // --- Centralized Live Two-Way Sync to Master Log Records in storageService ---
+  public syncTicketToMasterLogs(ticket: RegrindWorkTicket): void {
+    try {
+      const regrinds = storageService.getRegrindRecords();
+      const recIdx = regrinds.findIndex(r =>
+        r.jobCode === ticket.jobCode ||
+        r.workOrder === ticket.jobCode ||
+        r.id === ticket.id ||
+        (ticket.partCode && r.partCode === ticket.partCode && r.regrindDate === ticket.scheduledDate && r.lineId === ticket.lineId)
+      );
+
+      const pm = storageService.getPartMasters().find(p => p.partCode === ticket.partCode || p.partName === ticket.partName);
+      const calcNewPrice = pm?.unitCostThb || pm?.purchasePriceThb || 12500;
+      const calcLaborMinutes = Math.round((ticket.laborHours !== undefined ? ticket.laborHours : 1) * 60);
+      const calcLaborCost = Math.round((calcLaborMinutes / 60) * 180);
+      const calcSpareCost = ticket.sparePartsCost || 0;
+      const calcNetSaving = Math.max(0, calcNewPrice - (calcLaborCost + calcSpareCost));
+      const calcSavingPercent = calcNewPrice > 0 ? `${((calcNetSaving / calcNewPrice) * 100).toFixed(1)}%` : '0%';
+
+      let mappedStatus: any = 'WAITING REGRIND';
+      let inspectionRes: 'PASSED' | 'FAILED' | 'PENDING' | 'REWORK_REQUIRED' = 'PENDING';
+      let inspectionStat = 'PENDING';
+
+      if (ticket.status === 'COMPLETED') {
+        mappedStatus = 'READY TO USE';
+        inspectionRes = 'PASSED';
+        inspectionStat = 'PASSED';
+      } else if (ticket.status === 'READY') {
+        mappedStatus = 'READY TO USE';
+        inspectionRes = 'PENDING';
+        inspectionStat = 'AWAITING_QC';
+      } else if (ticket.status === 'IN_PROCESS') {
+        mappedStatus = 'REGRINDING';
+        inspectionRes = 'PENDING';
+        inspectionStat = 'IN_PROCESS';
+      } else if (ticket.status === 'SCRAP' || ticket.isScrapped) {
+        mappedStatus = 'SCRAP';
+        inspectionRes = 'FAILED';
+        inspectionStat = 'FAILED_SCRAPPED';
+      } else if (ticket.status === 'CANCELLED') {
+        mappedStatus = 'SCRAP';
+        inspectionRes = 'FAILED';
+        inspectionStat = 'CANCELLED';
+      } else if (ticket.status === 'POSTPONED') {
+        mappedStatus = 'HOLD';
+        inspectionRes = 'PENDING';
+        inspectionStat = 'POSTPONED';
+      } else if (ticket.isEmergency) {
+        mappedStatus = 'WAITING REGRIND';
+        inspectionRes = 'PENDING';
+        inspectionStat = 'EMERGENCY_URGENT';
+      }
+
+      const updatedPayload: any = {
+        id: ticket.id,
+        jobCode: ticket.jobCode,
+        workOrder: ticket.jobCode,
+        lineId: (ticket.lineId as ProductionLineId) || 'E1',
+        lineLastUsed: (ticket.lineId as ProductionLineId) || 'E1',
+        dieCode: ticket.dieCode || ticket.finDie || `FD-${ticket.lineId}-01`,
+        finDie: ticket.dieCode || ticket.finDie || `FD-${ticket.lineId}-01`,
+        partCode: ticket.partCode,
+        partName: ticket.partName,
+        drawingNo: pm?.drawingNumber || ticket.partCode,
+        drawingNumber: pm?.drawingNumber,
+        serialNumber: ticket.qrCode || `QR-${ticket.lineId}-${ticket.partCode}`,
+        partInstanceOrLot: ticket.qrCode || `LOT-${ticket.lineId}-01`,
+        quantity: ticket.quantity || 1,
+        previousLength: ticket.previousLengthMm !== undefined ? ticket.previousLengthMm : (ticket.nominalLengthMm || 70.0),
+        currentLength: ticket.lengthAfterGrindMm !== undefined ? ticket.lengthAfterGrindMm : (ticket.previousLengthMm !== undefined ? ticket.previousLengthMm : 69.80),
+        actualGrindingRemovedMm: ticket.grindDepthMm !== undefined ? ticket.grindDepthMm : 0.20,
+        mmRemovedThisCycle: ticket.grindDepthMm !== undefined ? ticket.grindDepthMm : 0.20,
+        regrindCountBefore: ticket.regrindCountBefore || 0,
+        regrindCountAfter: ticket.regrindCountAfter || 1,
+        regrindCycleCount: ticket.regrindCountAfter || 1,
+        remainingRegrindCount: Math.max(0, (ticket.maxRegrindAllowed || 4) - (ticket.regrindCountAfter || 1)),
+        maxAllowedCycles: ticket.maxRegrindAllowed || 4,
+        performedBy: ticket.assignedTechnician || 'Thanakorn Phonpayung',
+        technicianName: ticket.assignedTechnician || 'Thanakorn Phonpayung',
+        regrindDate: ticket.scheduledDate || new Date().toISOString().slice(0, 10),
+        completedDate: ticket.completedDate || ((ticket.status === 'READY' || ticket.status === 'COMPLETED') ? (ticket.updatedAt || new Date().toISOString()) : undefined),
+        timestamp: ticket.updatedAt || new Date().toISOString(),
+        defectReason: ticket.defectReason || 'NORMAL_WEAR',
+        laborTimeMinutes: calcLaborMinutes,
+        laborHours: ticket.laborHours || 1,
+        laborCostThb: calcLaborCost,
+        newPartPriceThb: calcNewPrice,
+        sparePartsCost: calcSpareCost,
+        sparePartsUsed: ticket.sparePartsUsed || '',
+        netSavingThb: calcNetSaving,
+        savingPercent: calcSavingPercent,
+        surfaceRoughnessRa: ticket.surfaceRoughnessRa || 0.12,
+        hardnessHrc: ticket.hardnessHrc || 62.0,
+        inspectionResult: inspectionRes,
+        inspectionStatus: inspectionStat,
+        note: ticket.remarks || ticket.defectNotes || `ใบงาน ${ticket.jobCode}`,
+        remarks: ticket.remarks || ticket.defectNotes,
+        status: mappedStatus
+      };
+
+      if (recIdx !== -1) {
+        regrinds[recIdx] = {
+          ...regrinds[recIdx],
+          ...updatedPayload
+        };
+      } else {
+        regrinds.unshift(updatedPayload);
+      }
+
+      storageService.saveRegrindRecords(regrinds);
+    } catch (err) {
+      console.warn('Failed to sync ticket to storageService regrinds:', err);
+    }
+  }
+
   // Update an existing Queue Ticket (Normal or Emergency) with full details
   public updateQueueTicket(
     ticketId: string,
@@ -356,87 +497,8 @@ class RegrindService {
     tickets[idx] = updatedTicket;
     this.saveQueueTickets(tickets);
 
-    // Synchronize 100% with Master Log Records in storageService
-    try {
-      const regrinds = storageService.getRegrindRecords();
-      const recIdx = regrinds.findIndex(r => 
-        r.jobCode === updatedTicket.jobCode || 
-        r.workOrder === updatedTicket.jobCode || 
-        r.id === updatedTicket.id ||
-        r.id === ticketId
-      );
-
-      const pm = storageService.getPartMasters().find(p => p.partCode === updatedTicket.partCode || p.partName === updatedTicket.partName);
-      const calcNewPrice = pm?.unitCostThb || pm?.purchasePriceThb || 12500;
-      const calcLaborMinutes = Math.round((updatedTicket.laborHours !== undefined ? updatedTicket.laborHours : 1) * 60);
-      const calcLaborCost = Math.round((calcLaborMinutes / 60) * 180);
-      const calcSpareCost = updatedTicket.sparePartsCost || 0;
-      const calcNetSaving = Math.max(0, calcNewPrice - (calcLaborCost + calcSpareCost));
-      const calcSavingPercent = calcNewPrice > 0 ? `${((calcNetSaving / calcNewPrice) * 100).toFixed(1)}%` : '0%';
-
-      if (recIdx !== -1) {
-        regrinds[recIdx] = {
-          ...regrinds[recIdx],
-          lineId: (updatedTicket.lineId as ProductionLineId) || regrinds[recIdx].lineId,
-          dieCode: (updatedTicket as any).dieCode || (updatedTicket as any).finDie || regrinds[recIdx].dieCode,
-          partCode: updatedTicket.partCode || regrinds[recIdx].partCode,
-          partName: updatedTicket.partName || regrinds[recIdx].partName,
-          quantity: updatedTicket.quantity || regrinds[recIdx].quantity || 1,
-          previousLength: updatedTicket.previousLengthMm !== undefined ? updatedTicket.previousLengthMm : regrinds[recIdx].previousLength,
-          currentLength: updatedTicket.lengthAfterGrindMm !== undefined ? updatedTicket.lengthAfterGrindMm : regrinds[recIdx].currentLength,
-          actualGrindingRemovedMm: updatedTicket.grindDepthMm !== undefined ? updatedTicket.grindDepthMm : regrinds[recIdx].actualGrindingRemovedMm,
-          regrindCountBefore: updatedTicket.regrindCountBefore !== undefined ? updatedTicket.regrindCountBefore : regrinds[recIdx].regrindCountBefore,
-          regrindCountAfter: updatedTicket.regrindCountAfter !== undefined ? updatedTicket.regrindCountAfter : regrinds[recIdx].regrindCountAfter,
-          maxAllowedCycles: updatedTicket.maxRegrindAllowed !== undefined ? updatedTicket.maxRegrindAllowed : regrinds[recIdx].maxAllowedCycles,
-          performedBy: updatedTicket.assignedTechnician || regrinds[recIdx].performedBy,
-          regrindDate: updatedTicket.scheduledDate || regrinds[recIdx].regrindDate,
-          defectReason: updatedTicket.defectReason || regrinds[recIdx].defectReason,
-          laborTimeMinutes: calcLaborMinutes,
-          laborHours: updatedTicket.laborHours,
-          laborCostThb: calcLaborCost,
-          newPartPriceThb: calcNewPrice,
-          sparePartsCost: calcSpareCost,
-          sparePartsUsed: updatedTicket.sparePartsUsed,
-          netSavingThb: calcNetSaving,
-          savingPercent: calcSavingPercent,
-          note: updatedTicket.remarks || updatedTicket.defectNotes || regrinds[recIdx].note,
-          status: updatedTicket.status === 'READY' || updatedTicket.status === 'COMPLETED' ? 'READY TO USE' : (updatedTicket.status === 'SCRAP' ? 'SCRAP' : (updatedTicket.isEmergency ? 'WAITING REGRIND' : regrinds[recIdx].status))
-        };
-        safeStorage.setItem('fin_press_regrinds', JSON.stringify(regrinds));
-      } else {
-        // Record new entry if not existing
-        storageService.recordRegrind({
-          id: updatedTicket.id,
-          jobCode: updatedTicket.jobCode,
-          lineId: updatedTicket.lineId,
-          dieCode: updatedTicket.dieCode,
-          partCode: updatedTicket.partCode,
-          partName: updatedTicket.partName,
-          quantity: updatedTicket.quantity,
-          previousLength: updatedTicket.previousLengthMm,
-          currentLength: updatedTicket.lengthAfterGrindMm,
-          actualGrindingRemovedMm: updatedTicket.grindDepthMm,
-          regrindCountBefore: updatedTicket.regrindCountBefore,
-          regrindCountAfter: updatedTicket.regrindCountAfter,
-          maxAllowedCycles: updatedTicket.maxRegrindAllowed,
-          performedBy: updatedTicket.assignedTechnician,
-          regrindDate: updatedTicket.scheduledDate,
-          defectReason: updatedTicket.defectReason,
-          laborTimeMinutes: calcLaborMinutes,
-          laborHours: updatedTicket.laborHours,
-          laborCostThb: calcLaborCost,
-          newPartPriceThb: calcNewPrice,
-          sparePartsCost: calcSpareCost,
-          sparePartsUsed: updatedTicket.sparePartsUsed,
-          netSavingThb: calcNetSaving,
-          savingPercent: calcSavingPercent,
-          note: updatedTicket.remarks || updatedTicket.defectNotes,
-          status: updatedTicket.status === 'READY' || updatedTicket.status === 'COMPLETED' ? 'READY TO USE' : (updatedTicket.status === 'SCRAP' ? 'SCRAP' : 'WAITING REGRIND')
-        });
-      }
-    } catch (err) {
-      console.warn('Failed to sync updated ticket to storageService regrinds:', err);
-    }
+    // Synchronize 100% in real-time with Master Log Records in storageService
+    this.syncTicketToMasterLogs(updatedTicket);
 
     if (willBeEmergency && !wasEmergency) {
       const emgRes = this.markTicketAsEmergency(ticketId, {
@@ -527,6 +589,12 @@ class RegrindService {
     if (!targetTicket) return { success: false, message: 'ไม่พบใบงาน' };
 
     const oldDate = targetTicket.scheduledDate;
+    if (oldDate && oldDate !== targetDateStr) {
+      if (!targetTicket.shiftedFromDate) {
+        targetTicket.shiftedFromDate = oldDate;
+      }
+      targetTicket.shiftedCount = (targetTicket.shiftedCount || 0) + 1;
+    }
     targetTicket.scheduledDate = targetDateStr;
     targetTicket.targetCompletionDate = `${targetDateStr}T17:00:00.000Z`;
     targetTicket.updatedAt = new Date().toISOString();
@@ -549,8 +617,8 @@ class RegrindService {
     // 1. Emergency tickets on earliest date first
     // 2. Scheduled date chronologically
     // 3. sequenceInDate within that date
-    const activeJobs = tickets.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED');
-    const inactiveJobs = tickets.filter(t => t.status === 'READY' || t.status === 'SCRAP');
+    const activeJobs = tickets.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED' || t.status === 'POSTPONED');
+    const inactiveJobs = tickets.filter(t => t.status === 'READY' || t.status === 'SCRAP' || t.status === 'COMPLETED' || t.status === 'CANCELLED');
 
     activeJobs.sort((a, b) => {
       const aEmg = a.isEmergency || a.urgency === 'EMERGENCY' ? 0 : 1;
@@ -566,6 +634,7 @@ class RegrindService {
     });
 
     this.saveQueueTickets([...activeJobs, ...inactiveJobs]);
+    this.syncTicketToMasterLogs(targetTicket);
 
     return {
       success: true,
@@ -623,6 +692,7 @@ class RegrindService {
     const etaTarget = new Date(now.getTime() + etaMins * 60 * 1000).toISOString();
 
     tickets[idx].status = 'IN_PROCESS';
+    tickets[idx].isScrapped = false;
     tickets[idx].assignedTechnician = technicianName;
     tickets[idx].inProcessDate = now.toISOString();
     tickets[idx].etaMinutes = etaMins;
@@ -630,9 +700,13 @@ class RegrindService {
     if (options?.machineAssigned) {
       tickets[idx].machineAssigned = options.machineAssigned;
     }
+    if (typeof tickets[idx].remarks === 'string' && tickets[idx].remarks.includes('ยกเลิก / คัดทิ้ง')) {
+      tickets[idx].remarks = tickets[idx].remarks.replace(/ยกเลิก\s*\/\s*คัดทิ้ง.*?(?:\||$)/g, '').trim();
+    }
     tickets[idx].updatedAt = now.toISOString();
 
     this.saveQueueTickets(tickets);
+    this.syncTicketToMasterLogs(tickets[idx]);
 
     storageService.addAuditLog(
       'REGRIND',
@@ -641,7 +715,7 @@ class RegrindService {
       tickets[idx].lineId
     );
 
-    return { success: true, message: `เริ่มดำเนินการเจียรลับคม ${tickets[idx].partName} (ETA ${etaMins} นาที) เรียบร้อยแล้ว` };
+    return { success: true, message: `⚡ เริ่มดำเนินการเจียรลับคม ${tickets[idx].partName} (${tickets[idx].jobCode}) เรียบร้อยแล้ว (สถานะ: กำลังเจียร)` };
   }
 
   // 2. Complete Grinding (In-Process -> Ready to Use / Auto-Scrap on Dimension Fail)
@@ -707,6 +781,7 @@ class RegrindService {
       ticket.purchasingAlertSent = true;
       ticket.purchasingPrNumber = prItem.prNumber;
       this.saveQueueTickets(tickets);
+      this.syncTicketToMasterLogs(ticket);
 
       // Increment Daily Defect in Matrix
       const now = new Date();
@@ -732,6 +807,7 @@ class RegrindService {
       ticket.addedToSpareStock = true;
 
       this.saveQueueTickets(tickets);
+      this.syncTicketToMasterLogs(ticket);
 
       // Auto-Adjust Spare Stock in storageService
       this.adjustSpareStockInWarehouse(ticket.partCode, 1);
@@ -834,6 +910,7 @@ class RegrindService {
       ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}ยืนยันจบงานสำเร็จ (${verdict}) - ${commentTxt}`;
 
       this.saveQueueTickets(tickets);
+      this.syncTicketToMasterLogs(ticket);
 
       if (!ticket.addedToSpareStock && verdict !== 'FAIL') {
         ticket.addedToSpareStock = true;
@@ -868,10 +945,12 @@ class RegrindService {
 
       const ticket = tickets[idx];
       ticket.status = 'IN_PROCESS';
+      ticket.isScrapped = false;
       ticket.updatedAt = new Date().toISOString();
       ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เปิดงานซ่อมใหม่ (Reopened: ${reason})`;
 
       this.saveQueueTickets(tickets);
+      this.syncTicketToMasterLogs(ticket);
 
       storageService.addAuditLog(
         'REGRIND',
@@ -900,12 +979,14 @@ class RegrindService {
 
     const ticket = tickets[idx];
     ticket.status = 'READY';
+    ticket.isScrapped = false;
     ticket.updatedAt = new Date().toISOString();
     if (!ticket.completedDate) ticket.completedDate = new Date().toISOString();
     if (technicianName) ticket.assignedTechnician = technicianName;
     ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เจียรเสร็จแล้ว พร้อมใช้งาน`;
 
     this.saveQueueTickets(tickets);
+    this.syncTicketToMasterLogs(ticket);
 
     storageService.addAuditLog(
       'REGRIND',
@@ -927,6 +1008,9 @@ class RegrindService {
     if (idx === -1) return { success: false, message: 'Ticket not found' };
 
     const ticket = tickets[idx];
+    if (!ticket.shiftedFromDate) {
+      ticket.shiftedFromDate = ticket.scheduledDate || new Date().toISOString().slice(0, 10);
+    }
     ticket.status = 'POSTPONED';
     ticket.shiftedCount = (ticket.shiftedCount || 0) + 1;
     if (newDateStr) ticket.scheduledDate = newDateStr;
@@ -934,6 +1018,7 @@ class RegrindService {
     ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เลื่อนกำหนดการ${newDateStr ? ` เป็น ${newDateStr}` : ''}${reason ? ` (${reason})` : ''}`;
 
     this.saveQueueTickets(tickets);
+    this.syncTicketToMasterLogs(ticket);
 
     storageService.addAuditLog(
       'REGRIND',
@@ -956,10 +1041,12 @@ class RegrindService {
 
     const ticket = tickets[idx];
     ticket.status = 'CANCELLED';
+    ticket.isScrapped = true;
     ticket.updatedAt = new Date().toISOString();
     ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}ยกเลิกงาน${reason ? ` (${reason})` : ''}`;
 
     this.saveQueueTickets(tickets);
+    this.syncTicketToMasterLogs(ticket);
 
     storageService.addAuditLog(
       'REGRIND',
@@ -1007,6 +1094,7 @@ class RegrindService {
     ticket.purchasingAlertSent = true;
     ticket.purchasingPrNumber = prItem.prNumber;
     this.saveQueueTickets(tickets);
+    this.syncTicketToMasterLogs(ticket);
 
     const now = new Date();
     this.incrementDailyMatrixCount(now.getFullYear(), now.getMonth() + 1, 'DEFECT_SCRAP', ticket.partName, now.getDate(), 1);
@@ -1185,6 +1273,7 @@ class RegrindService {
 
     tickets.push(newTicket);
     this.saveQueueTickets(tickets);
+    this.syncTicketToMasterLogs(newTicket);
 
     // If flagged as emergency, immediately promote to #1 and shift subsequent jobs down while preserving their sequence order
     if (newTicket.isEmergency || newTicket.urgency === 'EMERGENCY') {

@@ -19,7 +19,8 @@ import {
   Edit2,
   X,
   SlidersHorizontal,
-  CalendarDays
+  CalendarDays,
+  AlertTriangle
 } from 'lucide-react';
 import { ProductionLineId } from '../../types';
 import { RegrindWorkTicket } from '../../types/regrind';
@@ -31,6 +32,7 @@ import { UnifiedRegrindJobModal } from '../../components/modals/UnifiedRegrindJo
 import { QueueTicketDetailModal } from '../../components/modals/QueueTicketDetailModal';
 import { JobCompletionConfirmModal } from '../../components/modals/JobCompletionConfirmModal';
 import { getUnifiedStatusMeta, resolveUnifiedStatusKey, CanonicalStatusKey } from '../../utils/statusHelper';
+import { MoldSurfaceGrinderAnimation } from '../../components/animations/MoldSurfaceGrinderAnimation';
 
 export const getTicketStatusMeta = (ticket: RegrindWorkTicket) => {
   return getUnifiedStatusMeta(ticket);
@@ -102,6 +104,25 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
   const [isDraggingSplitter, setIsDraggingSplitter] = useState<boolean>(false);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
 
+  // Collapsible Queue Sequence Sidebar State
+  const [isQueueCollapsed, setIsQueueCollapsed] = useState<boolean>(() => {
+    try {
+      return safeStorage.getItem('smart_queue_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleQueueCollapse = () => {
+    setIsQueueCollapsed(prev => {
+      const next = !prev;
+      try {
+        safeStorage.setItem('smart_queue_collapsed', String(next));
+      } catch (_) {}
+      return next;
+    });
+  };
+
   // Status Filter for Queue & Schedule: All or 6 Canonical States
   const [statusFilter, setStatusFilter] = useState<CanonicalStatusKey | 'ALL'>('ALL');
 
@@ -155,12 +176,13 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
     setTimeout(() => setBannerMessage(null), 5000);
   };
 
-  // Accurate counts across the 6 Canonical Statuses
+  // Accurate counts across all Canonical Statuses
   const statusCounts = useMemo(() => {
     const list = selectedLineFilter === 'ALL' ? tickets : tickets.filter(t => t.lineId === selectedLineFilter);
     const counts = {
       all: list.length,
       emergency: 0,
+      inProcess: 0,
       waiting: 0,
       postponed: 0,
       ready: 0,
@@ -171,6 +193,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
     list.forEach(t => {
       const k = resolveUnifiedStatusKey(t);
       if (k === 'EMERGENCY') counts.emergency++;
+      else if (k === 'IN_PROCESS') counts.inProcess++;
       else if (k === 'WAITING') counts.waiting++;
       else if (k === 'POSTPONED') counts.postponed++;
       else if (k === 'READY') counts.ready++;
@@ -181,12 +204,12 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
     return counts;
   }, [tickets, selectedLineFilter]);
 
-  // Active Sorted Queue (All)
+  // Active Sorted Queue (All: Emergency, In Process, Waiting, Postponed)
   const allActiveQueue = useMemo(() => {
     return tickets
       .filter(t => {
         const k = resolveUnifiedStatusKey(t);
-        const isActive = k === 'EMERGENCY' || k === 'WAITING' || k === 'POSTPONED';
+        const isActive = k === 'EMERGENCY' || k === 'IN_PROCESS' || k === 'WAITING' || k === 'POSTPONED';
         if (!isActive) return false;
         if (selectedLineFilter !== 'ALL' && t.lineId !== selectedLineFilter) return false;
         return true;
@@ -283,6 +306,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
 
   // Complete Grinding directly via mandatory QC Confirmation Modal
   const handleCompleteTicketFromDetail = (ticket: RegrindWorkTicket) => {
+    setSelectedDetailTicket(null);
     setConfirmingCompletionTicket(ticket);
   };
 
@@ -306,10 +330,12 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
       isToday: boolean;
       isSelected: boolean;
       jobs: RegrindWorkTicket[];
+      postponedOriginJobs: RegrindWorkTicket[];
+      postponedSpanJobs: RegrindWorkTicket[];
     }> = [];
 
     for (let i = 0; i < startWeekday; i++) {
-      cells.push({ dateStr: null, dayNumber: null, isToday: false, isSelected: false, jobs: [] });
+      cells.push({ dateStr: null, dayNumber: null, isToday: false, isSelected: false, jobs: [], postponedOriginJobs: [], postponedSpanJobs: [] });
     }
 
     for (let d = 1; d <= daysInMonth; d++) {
@@ -327,12 +353,36 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
           return (a.queueOrder ?? a.sequenceInDate ?? 999) - (b.queueOrder ?? b.sequenceInDate ?? 999);
         });
 
+      // Find jobs that have an ACTIVE postponement span crossing this date
+      // (Once a postponed job is marked READY, COMPLETED, or SCRAP, its origin & span bars on past dates disappear automatically)
+      const postponedOriginJobs = tickets.filter(t => {
+        if (selectedLineFilter !== 'ALL' && t.lineId !== selectedLineFilter) return false;
+        const isFinished = t.status === 'READY' || t.status === 'COMPLETED' || t.status === 'SCRAP' || t.status === 'CANCELLED';
+        if (isFinished) return false;
+
+        const origin = t.shiftedFromDate;
+        const dest = t.scheduledDate || (t.targetCompletionDate ? t.targetCompletionDate.slice(0, 10) : '');
+        return Boolean(origin && dest && origin < dest && origin === dateStr);
+      });
+
+      const postponedSpanJobs = tickets.filter(t => {
+        if (selectedLineFilter !== 'ALL' && t.lineId !== selectedLineFilter) return false;
+        const isFinished = t.status === 'READY' || t.status === 'COMPLETED' || t.status === 'SCRAP' || t.status === 'CANCELLED';
+        if (isFinished) return false;
+
+        const origin = t.shiftedFromDate;
+        const dest = t.scheduledDate || (t.targetCompletionDate ? t.targetCompletionDate.slice(0, 10) : '');
+        return Boolean(origin && dest && origin < dest && origin < dateStr && dateStr < dest);
+      });
+
       cells.push({
         dateStr,
         dayNumber: d,
         isToday: dateStr === todayIsoStr,
         isSelected: dateStr === selectedCalendarDate,
-        jobs: dayJobs
+        jobs: dayJobs,
+        postponedOriginJobs,
+        postponedSpanJobs
       });
     }
 
@@ -426,39 +476,55 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
     setSelectedCalendarDate(todayIsoStr);
   };
 
-  const emergencyCount = allActiveQueue.filter(t => t.isEmergency || t.urgency === 'EMERGENCY').length;
-  const shiftedCount = allActiveQueue.filter(t => (t.shiftedCount || 0) > 0).length;
-  const pausedCount = allActiveQueue.filter(t => t.status === 'PAUSED').length;
+  const totalSystemTicketsCount = statusCounts.all;
+  const emergencyCount = statusCounts.emergency;
+  const shiftedCount = statusCounts.postponed;
+  const pausedCount = tickets.filter(t => t.status === 'PAUSED').length;
 
   return (
-    <div className="space-y-3.5 font-sans text-white select-none">
+    <div className="space-y-2 font-sans text-white select-none">
       {/* Toast Feedback Banner */}
       {bannerMessage && (
-        <div className="fixed top-5 right-5 z-50 p-3.5 bg-slate-950/95 border border-cyan-400 text-cyan-200 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-mono max-w-md animate-bounce">
+        <div className="fixed top-5 right-5 z-50 p-3 bg-slate-950/95 border border-cyan-400 text-cyan-200 rounded-2xl shadow-2xl flex items-center gap-2 text-xs font-mono max-w-md animate-bounce">
           <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
           <span>{bannerMessage}</span>
         </div>
       )}
 
       {/* Top Header Bar */}
-      <div className="bg-[#0c1018]/95 border border-white/15 rounded-2xl p-3.5 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/30">
-            <Flame className="w-5 h-5" />
+      <div className="bg-[#0c1018]/95 border border-white/15 rounded-2xl p-2 sm:p-2.5 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/30">
+            <Flame className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
           <div>
-            <h1 className="text-sm sm:text-base font-black text-white tracking-wide">
+            <h1 className="text-xs sm:text-sm font-black text-white tracking-wide">
               ระบบจัดลำดับคิวเจียร & ปฏิทินตารางคิว (Smart Queue Schedule)
             </h1>
-            <p className="text-[11px] text-slate-400">
-              คลิกช่องวันที่ในปฏิทินเพื่อดูคิวของวันนั้น • ลากเส้นคั่นเพื่อปรับขนาดกรอบซ้าย-ขวาได้อิสระ
-            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Toggle Queue Sidebar Button */}
+          <button
+            type="button"
+            onClick={toggleQueueCollapse}
+            className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all ${
+              isQueueCollapsed
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+                : 'bg-white/[0.04] text-slate-300 border-white/10 hover:text-white hover:bg-white/[0.08]'
+            }`}
+            title={isQueueCollapsed ? "คลิกเพื่อแสดงแถบลำดับคิว (Show Queue)" : "คลิกเพื่อย่อซ่อนแถบลำดับคิวไปด้านข้าง (Hide Queue)"}
+          >
+            <Layers className="w-3 h-3 text-cyan-400" />
+            <span>{isQueueCollapsed ? 'แสดงลำดับคิว' : 'ย่อซ่อนลำดับคิว'}</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-mono">
+              {displayedQueue.length}
+            </span>
+          </button>
+
           {/* Line Filter */}
-          <div className="flex items-center gap-1 p-1 bg-black/40 border border-white/10 rounded-xl font-mono text-xs">
+          <div className="flex items-center gap-1 p-0.5 bg-black/40 border border-white/10 rounded-xl font-mono text-[11px]">
             <button
               type="button"
               onClick={() => setSelectedLineFilter('ALL')}
@@ -482,100 +548,82 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
             ))}
           </div>
 
-          {/* Free Split Slider Control (Default 20%) */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-black/40 border border-white/10 rounded-xl font-mono text-xs">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-            <span className="text-slate-400 text-[11px]">สัดส่วนกรอบ:</span>
-            <input
-              type="range"
-              min={15}
-              max={75}
-              step={1}
-              value={leftSplitPercent}
-              onChange={e => {
-                const val = Number(e.target.value);
-                setLeftSplitPercent(val);
-                try {
-                  safeStorage.setItem('smart_queue_split_percent', String(val));
-                } catch (_) {}
-              }}
-              className="w-24 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-              title="เลื่อนสไลด์เพื่อปรับขนาดระยะกรอบซ้าย-ขวาได้อิสระ (ค่าเริ่มต้น 20%)"
-            />
-            <span className="text-cyan-300 font-bold min-w-[66px] text-center">
-              {leftSplitPercent}% : {100 - leftSplitPercent}%
-            </span>
-            {leftSplitPercent !== 20 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setLeftSplitPercent(20);
+          {/* Free Split Slider Control (Default 20%) - shown only when queue is expanded */}
+          {!isQueueCollapsed && (
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-0.5 bg-black/40 border border-white/10 rounded-xl font-mono text-[11px]">
+              <SlidersHorizontal className="w-3 h-3 text-cyan-400 shrink-0" />
+              <span className="text-slate-400 text-[10px]">สัดส่วน:</span>
+              <input
+                type="range"
+                min={15}
+                max={75}
+                step={1}
+                value={leftSplitPercent}
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  setLeftSplitPercent(val);
                   try {
-                    safeStorage.setItem('smart_queue_split_percent', '20');
+                    safeStorage.setItem('smart_queue_split_percent', String(val));
                   } catch (_) {}
                 }}
-                className="text-[10px] text-cyan-400 hover:text-cyan-200 underline cursor-pointer shrink-0"
-                title="คืนค่าสัดส่วนเป็น 20% (ค่าเริ่มต้น)"
-              >
-                20% เริ่มต้น
-              </button>
-            )}
-          </div>
-
-          {/* Emergency Insert Button */}
-          <button
-            type="button"
-            onClick={() => handleOpenCreateForDate(selectedCalendarDate || todayIsoStr, true)}
-            className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl text-xs flex items-center gap-1.5 shadow-lg cursor-pointer active:scale-95 transition-all"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span>+ แทรกคิวด่วน (#1)</span>
-          </button>
-
-          {/* Normal Queue Add Button */}
-          <button
-            type="button"
-            onClick={() => handleOpenCreateForDate(selectedCalendarDate || todayIsoStr, false)}
-            className="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ เพิ่มคิวปกติ</span>
-          </button>
+                className="w-20 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                title="เลื่อนสไลด์เพื่อปรับขนาดระยะกรอบซ้าย-ขวาได้อิสระ (ค่าเริ่มต้น 20%)"
+              />
+              <span className="text-cyan-300 font-bold min-w-[55px] text-center text-[10px]">
+                {leftSplitPercent}% : {100 - leftSplitPercent}%
+              </span>
+              {leftSplitPercent !== 20 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLeftSplitPercent(20);
+                    try {
+                      safeStorage.setItem('smart_queue_split_percent', '20');
+                    } catch (_) {}
+                  }}
+                  className="text-[9px] text-cyan-400 hover:text-cyan-200 underline cursor-pointer shrink-0"
+                  title="คืนค่าสัดส่วนเป็น 20% (ค่าเริ่มต้น)"
+                >
+                  20% เริ่มต้น
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Summary Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 font-mono text-xs">
-        <div className="bg-[#0c1018]/90 border border-white/10 rounded-xl p-2.5 flex items-center justify-between">
+      {/* Summary Strip (4 Main Operational Pillars - Compact Fit) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 font-mono text-xs">
+        <div className="bg-[#0c1018]/90 border border-cyan-500/30 rounded-xl p-2 flex items-center justify-between">
           <div>
-            <span className="text-slate-400 block font-sans text-[11px]">คิวงานเจียรทั้งหมด</span>
-            <strong className="text-lg text-white font-black">{allActiveQueue.length} คิว</strong>
+            <span className="text-slate-400 block font-sans text-[10px]">คิวงานเจียรทั้งหมด (ทุกสถานะ)</span>
+            <strong className="text-base text-white font-black">{statusCounts.all} คิว</strong>
           </div>
-          <Wrench className="w-4 h-4 text-cyan-400" />
+          <Wrench className="w-3.5 h-3.5 text-cyan-400" />
         </div>
 
-        <div className="bg-[#0c1018]/90 border border-rose-500/30 rounded-xl p-2.5 flex items-center justify-between">
+        <div className="bg-[#0c1018]/90 border border-purple-500/40 rounded-xl p-2 flex items-center justify-between">
           <div>
-            <span className="text-rose-300 block font-sans text-[11px]">คิวด่วนแทรก (Emergency #1)</span>
-            <strong className="text-lg text-rose-400 font-black">{emergencyCount} งาน</strong>
+            <span className="text-purple-300 block font-sans text-[10px]">งานกำลังเจียร (In-Process)</span>
+            <strong className="text-base text-purple-300 font-black">{statusCounts.inProcess} งาน</strong>
           </div>
-          <Flame className="w-4 h-4 text-rose-400" />
+          <Zap className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
         </div>
 
-        <div className="bg-[#0c1018]/90 border border-amber-500/30 rounded-xl p-2.5 flex items-center justify-between">
+        <div className="bg-[#0c1018]/90 border border-emerald-500/40 rounded-xl p-2 flex items-center justify-between">
           <div>
-            <span className="text-amber-300 block font-sans text-[11px]">คิวเดิมที่ถูกเลื่อนลำดับลง</span>
-            <strong className="text-lg text-amber-300 font-black">{shiftedCount} งาน</strong>
+            <span className="text-emerald-300 block font-sans text-[10px]">งานเจียรเสร็จแล้ว & QC ผ่าน</span>
+            <strong className="text-base text-emerald-300 font-black">{statusCounts.ready + statusCounts.completed} งาน</strong>
           </div>
-          <Clock className="w-4 h-4 text-amber-400" />
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
         </div>
 
-        <div className="bg-[#0c1018]/90 border border-purple-500/30 rounded-xl p-2.5 flex items-center justify-between">
+        <div className="bg-[#0c1018]/90 border border-rose-500/40 rounded-xl p-2 flex items-center justify-between">
           <div>
-            <span className="text-purple-300 block font-sans text-[11px]">งานที่พักชั่วคราว (Paused)</span>
-            <strong className="text-lg text-purple-300 font-black">{pausedCount} งาน</strong>
+            <span className="text-rose-300 block font-sans text-[10px]">งานยกเลิก / คัดทิ้ง (Scrap)</span>
+            <strong className="text-base text-rose-400 font-black">{statusCounts.scrap} งาน</strong>
           </div>
-          <RotateCcw className="w-4 h-4 text-purple-400" />
+          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
         </div>
       </div>
 
@@ -587,51 +635,91 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
         {/* =================================================================== */}
         {/* LEFT COLUMN: LIVE QUEUE SEQUENCE / SELECTED DATE QUEUE VIEW         */}
         {/* =================================================================== */}
-        <div
-          style={{ flexBasis: `${leftSplitPercent}%` }}
-          className="w-full xl:shrink-0 bg-[#0c1018]/95 border border-white/15 rounded-2xl p-3.5 shadow-2xl space-y-2.5 flex flex-col min-w-[260px] transition-[flex-basis] duration-75"
-        >
-          {/* Left Panel Header with Date Sync Information & Reset Button */}
-          <div className="flex items-center justify-between border-b border-white/10 pb-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-cyan-400 shrink-0" />
-                <h2 className="text-xs sm:text-sm font-black text-white truncate">
-                  {selectedCalendarDate ? (
-                    <span className="flex items-center gap-1.5 text-cyan-300">
-                      <CalendarDays className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>คิวงานวันที่ {selectedCalendarDate}</span>
-                    </span>
-                  ) : (
-                    'ลำดับคิวงานเจียรปัจจุบัน (Queue Sequence)'
-                  )}
-                </h2>
-              </div>
-              <p className="text-[10.5px] text-slate-400 mt-0.5 truncate">
-                {selectedCalendarDate
-                  ? `แสดง ${displayedQueue.length} คิวของวันที่เลือก • ลากสลับหรือกด "ดันขึ้นคิวด่วน #1"`
-                  : `เรียงตามลำดับ #1 → #${displayedQueue.length} • คลิกที่คิวเพื่อดูสเปก`}
-              </p>
+        {isQueueCollapsed ? (
+          <div
+            onClick={toggleQueueCollapse}
+            className="w-12 xl:shrink-0 bg-[#0c1018]/95 border border-white/15 hover:border-cyan-500/40 rounded-2xl p-2 shadow-2xl flex flex-col items-center justify-between cursor-pointer hover:bg-slate-900/80 transition-all select-none group min-h-[420px] py-4"
+            title="คลิกเพื่อขยายแถบลำดับคิว (Expand Queue Sequence)"
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleQueueCollapse();
+              }}
+              className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 group-hover:bg-cyan-500/30 transition-colors cursor-pointer"
+              title="ขยายแถบลำดับคิว"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+
+            <div className="flex flex-col items-center gap-2 [writing-mode:vertical-rl] rotate-180 text-xs font-bold text-slate-300 group-hover:text-cyan-300 tracking-wider">
+              <span>ลำดับคิวงานเจียร</span>
+              <span className="font-mono text-[10.5px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 not-[writing-mode] rotate-180 font-bold">
+                {displayedQueue.length}
+              </span>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {selectedCalendarDate ? (
-                <button
-                  type="button"
-                  onClick={() => setSelectedCalendarDate(null)}
-                  className="px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-300 border border-cyan-500/30 text-[10.5px] font-bold flex items-center gap-1 cursor-pointer"
-                  title="ดูคิวงานทั้งหมดทุกวัน"
-                >
-                  <X className="w-3 h-3" />
-                  <span>ดูคิวทั้งหมด</span>
-                </button>
-              ) : (
-                <span className="text-[11px] font-mono text-cyan-300 font-bold px-1.5 py-0.5 rounded bg-white/5">
-                  {displayedQueue.length} คิว
-                </span>
-              )}
+            <div className="p-1.5 rounded-lg bg-white/[0.04] text-slate-400 group-hover:text-cyan-400 group-hover:bg-white/[0.08] transition-colors">
+              <Layers className="w-4 h-4" />
             </div>
           </div>
+        ) : (
+          <div
+            style={{ flexBasis: `${leftSplitPercent}%` }}
+            className="w-full xl:shrink-0 bg-[#0c1018]/95 border border-white/15 rounded-2xl p-3.5 shadow-2xl space-y-2.5 flex flex-col min-w-[260px] transition-[flex-basis] duration-75"
+          >
+            {/* Left Panel Header with Date Sync Information & Reset Button */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <h2 className="text-xs sm:text-sm font-black text-white truncate">
+                    {selectedCalendarDate ? (
+                      <span className="flex items-center gap-1.5 text-cyan-300">
+                        <CalendarDays className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>คิวงานวันที่ {selectedCalendarDate}</span>
+                      </span>
+                    ) : (
+                      'ลำดับคิวงานเจียรปัจจุบัน (Queue Sequence)'
+                    )}
+                  </h2>
+                </div>
+                <p className="text-[10.5px] text-slate-400 mt-0.5 truncate">
+                  {selectedCalendarDate
+                    ? `แสดง ${displayedQueue.length} คิวของวันที่เลือก • ลากสลับหรือกด "ดันขึ้นคิวด่วน #1"`
+                    : `เรียงตามลำดับ #1 → #${displayedQueue.length} • คลิกที่คิวเพื่อดูสเปก`}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {selectedCalendarDate ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCalendarDate(null)}
+                    className="px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-300 border border-cyan-500/30 text-[10.5px] font-bold flex items-center gap-1 cursor-pointer"
+                    title="ดูคิวงานทั้งหมดทุกวัน"
+                  >
+                    <X className="w-3 h-3" />
+                    <span>ดูคิวทั้งหมด</span>
+                  </button>
+                ) : (
+                  <span className="text-[11px] font-mono text-cyan-300 font-bold px-1.5 py-0.5 rounded bg-white/5">
+                    {displayedQueue.length} คิว
+                  </span>
+                )}
+
+                {/* Collapse to side button */}
+                <button
+                  type="button"
+                  onClick={toggleQueueCollapse}
+                  className="p-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.12] text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title="ย่อซ่อนแถบลำดับคิวไปด้านข้าง (Collapse Queue to Side)"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
 
           {/* Status Filter Tabs Bar (6 Canonical Operational States) */}
           <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs custom-scrollbar">
@@ -659,6 +747,21 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
               <span>🚨 งานด่วน #1</span>
               <span className="text-[10px] px-1 py-0.2 rounded-full bg-rose-900/60 font-mono">
                 {statusCounts.emergency}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'IN_PROCESS' ? 'ALL' : 'IN_PROCESS')}
+              className={`px-2 py-1 rounded-lg font-mono font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 ${
+                statusFilter === 'IN_PROCESS'
+                  ? 'bg-purple-600 text-white border border-purple-400 shadow-md font-black animate-pulse'
+                  : 'bg-purple-950/30 text-purple-300 hover:bg-purple-900/40 border border-purple-500/20'
+              }`}
+            >
+              <span>⚡ กำลังเจียร</span>
+              <span className="text-[10px] px-1 py-0.2 rounded-full bg-purple-900/60 font-mono text-purple-200">
+                {statusCounts.inProcess}
               </span>
             </button>
 
@@ -827,12 +930,22 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
                                 : ticket.status === 'CANCELLED' || ticket.status === 'SCRAP'
                                 ? '❌ ยกเลิก/คัดทิ้ง'
                                 : ticket.status === 'IN_PROCESS'
-                                ? '⚙️ กำลังเจียร'
+                                ? '⚡ กำลังเจียร (In-Process)'
                                 : ticket.status === 'PAUSED'
                                 ? '⏸️ พักชั่วคราว'
                                 : '⏳ รอคิวเจียร'}
                             </span>
                           </div>
+
+                          {/* Animated Surface Grinder for IN_PROCESS */}
+                          {isInProcess && (
+                            <div className="mt-1.5 px-2 py-1 rounded-lg bg-purple-950/70 border border-purple-400/60 flex items-center justify-between gap-1 shadow-sm">
+                              <MoldSurfaceGrinderAnimation size="sm" showLabel partName={ticket.partName} />
+                              <span className="text-[9px] font-mono text-purple-300 font-bold animate-pulse">
+                                OKAMOTO GRINDER
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -867,10 +980,14 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
                       </div>
                     </div>
 
-                    {/* Preemption Notice */}
+                    {/* Preemption or Postponed Notice */}
                     {wasShifted && (
                       <div className="mt-1.5 ml-1.5 px-2 py-0.5 rounded bg-amber-950/40 border border-amber-500/40 text-[10.5px] text-amber-200 flex items-center justify-between gap-1">
-                        <span>↪️ เลื่อนจาก คิว #{ticket.originalQueueOrder ?? orderNum - 1} &rarr; #{orderNum}</span>
+                        <span>
+                          {ticket.shiftedFromDate
+                            ? `↪️ เลื่อนจากวันที่ ${ticket.shiftedFromDate} ➔ ${ticket.scheduledDate}`
+                            : `↪️ เลื่อนจาก คิว #${ticket.originalQueueOrder ?? orderNum - 1} ➔ #${orderNum}`}
+                        </span>
                         {ticket.preemptedByJobCode && <span className="font-mono text-[9.5px]">โดย {ticket.preemptedByJobCode}</span>}
                       </div>
                     )}
@@ -923,21 +1040,24 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
             )}
           </div>
         </div>
+      )}
 
         {/* =================================================================== */}
         {/* INTERACTIVE DRAG SPLITTER HANDLE (LEFT / RIGHT FREE RESIZE)          */}
         {/* =================================================================== */}
-        <div
-          onMouseDown={handleStartSplitterDrag}
-          className={`hidden xl:flex flex-col items-center justify-center w-3 cursor-col-resize select-none rounded-xl transition-all group ${
-            isDraggingSplitter
-              ? 'bg-cyan-500/30 border border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)]'
-              : 'bg-white/[0.03] hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-400/50'
-          }`}
-          title="คลิกค้างแล้วลากซ้าย-ขวา เพื่อปรับขนาดกรอบคิวและปฏิทินได้อิสระ"
-        >
-          <div className="w-1 h-12 rounded-full bg-slate-600 group-hover:bg-cyan-400 transition-colors" />
-        </div>
+        {!isQueueCollapsed && (
+          <div
+            onMouseDown={handleStartSplitterDrag}
+            className={`hidden xl:flex flex-col items-center justify-center w-3 cursor-col-resize select-none rounded-xl transition-all group ${
+              isDraggingSplitter
+                ? 'bg-cyan-500/30 border border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)]'
+                : 'bg-white/[0.03] hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-400/50'
+            }`}
+            title="คลิกค้างแล้วลากซ้าย-ขวา เพื่อปรับขนาดกรอบคิวและปฏิทินได้อิสระ"
+          >
+            <div className="w-1 h-12 rounded-full bg-slate-600 group-hover:bg-cyan-400 transition-colors" />
+          </div>
+        )}
 
         {/* =================================================================== */}
         {/* RIGHT COLUMN: CALENDAR SCHEDULE GRID                                 */}
@@ -985,7 +1105,7 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
             </div>
           </div>
 
-          {/* Status Color Legend Strip (6 Canonical States) */}
+          {/* Status Color Legend Strip (Canonical States) */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-white/10 text-[11px] font-mono flex-wrap">
             <span className="text-slate-400 font-sans font-bold flex items-center gap-1">
               🏷️ สัญลักษณ์สถานะ:
@@ -993,11 +1113,14 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
             <span className="px-2 py-0.5 rounded bg-rose-600 text-white font-bold flex items-center gap-1 shadow-sm">
               <span>🚨</span> <span>งานด่วน #1</span>
             </span>
+            <span className="px-2 py-0.5 rounded bg-purple-600 text-white font-black flex items-center gap-1 shadow-[0_0_12px_rgba(168,85,247,0.4)] border border-purple-400 animate-pulse">
+              <span>⚡</span> <span>กำลังเจียร (In-Process)</span>
+            </span>
             <span className="px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold flex items-center gap-1">
               <span>⏳</span> <span>รอคิวเจียร</span>
             </span>
             <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black flex items-center gap-1 shadow-sm">
-              <span>🟡</span> <span>งานเลื่อน</span>
+              <span>🟡</span> <span>งานเลื่อน (Postponed)</span>
             </span>
             <span className="px-2 py-0.5 rounded bg-sky-500 text-white font-black flex items-center gap-1 shadow-sm">
               <span>🔵</span> <span>งานเจียรเสร็จแล้ว (รอตรวจ QC)</span>
@@ -1148,8 +1271,54 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
 
                   {/* Clickable & Draggable Job Items inside this Date Cell */}
                   <div className="space-y-1 flex-1">
+                    {/* 1. Postponed Origin Indicators: jobs that started on this date and were postponed to a future date */}
+                    {cell.postponedOriginJobs && cell.postponedOriginJobs.map((pJob, pIdx) => (
+                      <div
+                        key={`postpone-orig-${pJob.id}-${pIdx}`}
+                        onClick={e => {
+                          e.stopPropagation();
+                          setSelectedDetailTicket(pJob);
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-500/50 text-amber-200 text-[9px] font-mono font-bold flex items-center justify-between gap-1 shadow-sm cursor-pointer hover:bg-amber-900/60 hover:border-amber-400 transition-all"
+                        title={`เริ่มลงคิวตั้งแต่วันที่ ${pJob.shiftedFromDate} ➔ เลื่อนไปวันที่ ${pJob.scheduledDate} (คลิกเพื่อดูรายละเอียด)`}
+                      >
+                        <span className="truncate flex items-center gap-1">
+                          <span>🟡</span>
+                          <span className="text-amber-300">เริ่มคิว (เลื่อน ➔ {pJob.scheduledDate?.slice(8)} พ.ย.)</span>
+                        </span>
+                        <span className="font-bold shrink-0 text-[8.5px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-200">
+                          #{pJob.queueOrder ?? 1}
+                        </span>
+                      </div>
+                    ))}
+
+                    {/* 2. Spanning Continuous Postponement Bar: connects original queued date to postponed target date */}
+                    {cell.postponedSpanJobs && cell.postponedSpanJobs.map((pJob, pIdx) => (
+                      <div
+                        key={`postpone-span-${pJob.id}-${pIdx}`}
+                        onClick={e => {
+                          e.stopPropagation();
+                          setSelectedDetailTicket(pJob);
+                        }}
+                        className="py-1 px-1.5 rounded-lg bg-gradient-to-r from-amber-500/25 via-amber-400/35 to-amber-500/25 border border-amber-400/60 text-amber-200 text-[9px] font-mono font-bold flex items-center justify-between gap-1 shadow-sm hover:border-amber-300 hover:bg-amber-400/30 transition-all cursor-pointer relative overflow-hidden group/span"
+                        title={`บาร์ลากยาวงานเลื่อน: ใบงาน ${pJob.jobCode} (${pJob.partName}) เลื่อนจาก ${pJob.shiftedFromDate} ➔ ${pJob.scheduledDate}`}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-400/10 to-transparent -translate-x-full group-hover/span:translate-x-full transition-transform duration-1000" />
+                        <span className="truncate flex items-center gap-1">
+                          <span className="text-amber-400 animate-pulse font-black">━ ➔</span>
+                          <span className="truncate text-slate-100 font-sans">{pJob.partName}</span>
+                        </span>
+                        <span className="text-[8px] px-1 py-0.2 rounded bg-amber-950/80 border border-amber-500/40 text-amber-300 font-mono shrink-0">
+                          ➔ {pJob.scheduledDate?.slice(8)}
+                        </span>
+                      </div>
+                    ))}
+
+                    {/* 3. Direct Scheduled Jobs in this cell */}
                     {cell.jobs.map((job, jIdx) => {
                       const meta = getTicketStatusMeta(job);
+                      const isInProcess = meta.key === 'IN_PROCESS' || job.status === 'IN_PROCESS';
+                      const isPostponedArrival = Boolean(job.shiftedFromDate && cell.dateStr && job.shiftedFromDate < cell.dateStr);
 
                       return (
                         <div
@@ -1161,24 +1330,39 @@ export const SmartQueueAndCalendarScheduleView: React.FC<SmartQueueAndCalendarSc
                           }}
                           onDragStart={e => handleDragStartTicket(e, job.id)}
                           onDrop={e => handleDropOnCalendarCell(e, cell.dateStr!, jIdx)}
-                          className={`p-1.5 rounded-lg border text-[10px] leading-tight cursor-pointer transition-all hover:scale-[1.02] hover:ring-1 hover:ring-cyan-400 relative overflow-hidden ${meta.cardClass}`}
+                          className={`p-1.5 rounded-lg border text-[10px] leading-tight cursor-pointer transition-all hover:scale-[1.02] hover:ring-1 hover:ring-cyan-400 relative overflow-hidden ${
+                            isInProcess
+                              ? 'bg-purple-950/50 border-purple-400/90 shadow-[0_0_14px_rgba(168,85,247,0.3)] ring-1 ring-purple-400/60'
+                              : meta.cardClass
+                          }`}
                           title={`คลิกดูรายละเอียด: ${job.jobCode} • ${job.partName} (${meta.label})`}
                         >
                           {/* Accent line on left */}
-                          <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${meta.leftBar}`} />
+                          <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${isInProcess ? 'bg-purple-400 animate-pulse' : meta.leftBar}`} />
 
                           <div className="flex items-center justify-between gap-1 font-mono font-bold pl-1">
                             <span className="truncate flex items-center gap-1">
-                              <span>{meta.icon}</span>
+                              {isInProcess ? (
+                                <MoldSurfaceGrinderAnimation size="xs" />
+                              ) : (
+                                <span>{meta.icon}</span>
+                              )}
                               <span>{job.queueOrder ? `#${job.queueOrder}` : `#${jIdx + 1}`} {job.lineId}</span>
                             </span>
-                            <span className={`text-[8.5px] px-1 py-0.2 rounded font-sans font-bold shrink-0 ${meta.pillClass}`}>
-                              {meta.label.slice(0, 9)}
+                            <span className={`text-[8.5px] px-1 py-0.2 rounded font-sans font-bold shrink-0 ${isInProcess ? 'bg-purple-600 text-white font-black' : meta.pillClass}`}>
+                              {isInProcess ? 'กำลังเจียร' : meta.shortLabel}
                             </span>
                           </div>
-                          <div className="truncate font-sans font-semibold mt-0.5 pl-1 text-slate-100">
-                            {job.partName}
+
+                          <div className="truncate font-sans font-semibold mt-0.5 pl-1 text-slate-100 flex items-center justify-between gap-1">
+                            <span className="truncate">{job.partName}</span>
                           </div>
+
+                          {isPostponedArrival && (
+                            <div className="mt-0.5 pl-1 text-[8.5px] font-mono text-amber-300 flex items-center gap-1">
+                              <span>↳ เลื่อนมาจาก {job.shiftedFromDate?.slice(8)} พ.ย.</span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

@@ -35,7 +35,8 @@ import {
   DowntimeCategory,
   DowntimeSummaryByLine,
   Downtime30DayReport,
-  PartWorkpiecePhoto
+  PartWorkpiecePhoto,
+  PartRepairStockItem
 } from '../types';
 
 import {
@@ -100,6 +101,7 @@ const STORAGE_KEYS = {
   STAGE_GROUPS: 'fin_press_custom_stage_groups',
   TV_DISPLAY_CONFIGS: 'fin_press_tv_display_configs',
   PART_WORKPIECE_PHOTOS: 'fin_press_part_workpiece_photos_v1',
+  PART_REPAIR_STOCKS: 'fin_press_part_repair_stocks_v1',
   SEED_INITIALIZED: 'fin_press_seed_init_v12_stages_2025'
 };
 
@@ -119,7 +121,7 @@ class StorageService {
     };
   }
 
-  private notify() {
+  public notify() {
     queueMicrotask(() => {
       this.listeners.forEach(fn => {
         try {
@@ -129,6 +131,11 @@ class StorageService {
         }
       });
     });
+  }
+
+  public saveRegrindRecords(records: RegrindingRecord[]): void {
+    safeStorage.setItem(STORAGE_KEYS.REGRINDS, JSON.stringify(records));
+    this.notify();
   }
 
   private ensureInitialized() {
@@ -4534,6 +4541,33 @@ class StorageService {
     }));
 
     safeStorage.setItem(STORAGE_KEYS.PART_WORKPIECE_PHOTOS, JSON.stringify(all));
+    this.notify();
+  }
+
+  // ==========================================
+  // STOCK PART REPAIR (สต็อกอะไหล่หมุนเวียนงานซ่อม)
+  // ==========================================
+  public getPartRepairStocks(): Record<string, PartRepairStockItem> {
+    const raw = safeStorage.getItem(STORAGE_KEYS.PART_REPAIR_STOCKS);
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        // fallback
+      }
+    }
+    return {};
+  }
+
+  public savePartRepairStock(item: PartRepairStockItem): void {
+    const all = this.getPartRepairStocks();
+    all[item.partCode] = item;
+    safeStorage.setItem(STORAGE_KEYS.PART_REPAIR_STOCKS, JSON.stringify(all));
+    this.notify();
+  }
+
+  public saveAllPartRepairStocks(stocks: Record<string, PartRepairStockItem>): void {
+    safeStorage.setItem(STORAGE_KEYS.PART_REPAIR_STOCKS, JSON.stringify(stocks));
     this.notify();
   }
 

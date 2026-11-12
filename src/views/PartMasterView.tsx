@@ -34,7 +34,10 @@ import {
   Repeat,
   Box,
   QrCode,
-  Barcode
+  Barcode,
+  Camera,
+  Upload,
+  Image as ImageIcon
 } from 'lucide-react';
 import { PartMaster, PartLifeStandard, LineActiveConfiguration, ProductionLineId } from '../types';
 import { storageService } from '../services/storageService';
@@ -210,6 +213,28 @@ export const PartMasterView: React.FC = () => {
   const [selectedPartFor3D, setSelectedPartFor3D] = useState<UnifiedPartMasterRow | null>(null);
   const [selectedPartForQrModal, setSelectedPartForQrModal] = useState<UnifiedPartMasterRow | null>(null);
   const [showRegrindOnly, setShowRegrindOnly] = useState(false);
+  const [selectedPartForPhoto, setSelectedPartForPhoto] = useState<UnifiedPartMasterRow | null>(null);
+
+  const handleUploadPhotoForPart = (partKey: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        storageService.savePartWorkpiecePhoto(partKey, {
+          dataUrl: base64,
+          fileName: file.name,
+          caption: `รูปถ่ายชิ้นงาน ${partKey}`,
+          uploadedBy: 'Master Admin',
+          isPrimary: true
+        });
+        storageService.notify();
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Inline Add New Part Row State (Top of table, no popup)
   const [isAddingInline, setIsAddingInline] = useState(false);
@@ -1215,7 +1240,7 @@ export const PartMasterView: React.FC = () => {
               {/* Header Tier 1 (Sticky Top 0) */}
               <tr className="text-white text-[11px] select-none">
                 <th 
-                  colSpan={4} 
+                  colSpan={5} 
                   className="sticky top-0 z-20 py-1.5 px-2 border-b border-r border-[#666666] text-white font-bold text-left bg-[#444455] shadow-xs"
                 >
                   1. PART IDENTIFICATION & SPEC
@@ -1251,6 +1276,10 @@ export const PartMasterView: React.FC = () => {
                 {/* 1. Identification */}
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center w-8 border-b border-r border-[#666666] bg-[#555566]">No</th>
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 border-b border-r border-[#666666] bg-[#555566] min-w-[145px] w-36">Stage</th>
+                <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#666666] bg-[#4a4a5a] min-w-[85px] w-24">
+                  <div className="font-bold text-white text-[11px]">รูปชิ้นงาน</div>
+                  <div className="text-[9px] text-slate-300 font-normal">Photo / Spec</div>
+                </th>
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 border-b border-r border-[#666666] bg-[#555566] min-w-[150px]">Part Name & Drawing No.</th>
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#666666] bg-[#4a4a5a] min-w-[125px]">
                   <div className="font-bold text-cyan-300 text-[11px]">Installed Lines</div>
@@ -1333,6 +1362,10 @@ export const PartMasterView: React.FC = () => {
                         <option value="Stage 1: Piercing & Burring">Stage 1: Piercing & Burring</option>
                       )}
                     </select>
+                  </td>
+                  {/* Photo / Spec Cell */}
+                  <td className="py-1 px-1 border-r border-[#444444] text-center min-w-[85px] w-24">
+                    <span className="text-[10px] font-mono text-slate-500">+ แนบหลังเซฟ</span>
                   </td>
                   <td className="py-1 px-1 border-r border-[#444444]">
                     <div className="space-y-1">
@@ -1603,6 +1636,22 @@ export const PartMasterView: React.FC = () => {
                             ))}
                           </select>
                         </td>
+                        {/* Photo / Spec Cell */}
+                        <td className="py-1 px-1 border-r border-[#444444] text-center min-w-[85px] w-24">
+                          <label 
+                            className="flex flex-col items-center justify-center p-1 rounded bg-[#111111] hover:bg-cyan-950 border border-dashed border-[#444444] text-cyan-300 font-mono cursor-pointer w-14 h-10 mx-auto"
+                            title="แนบรูปถ่ายงานจริง"
+                          >
+                            <Camera className="w-3 h-3 text-cyan-400 mb-0.5" />
+                            <span className="text-[8.5px] font-bold">+ ลงรูป</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              className="hidden" 
+                              onChange={(e) => handleUploadPhotoForPart(item.partCode, e)} 
+                            />
+                          </label>
+                        </td>
                         <td className="py-1 px-1 border-r border-[#444444]">
                           <input
                             type="text"
@@ -1817,6 +1866,22 @@ export const PartMasterView: React.FC = () => {
                               </option>
                             ))}
                           </select>
+                        </td>
+                        {/* Photo / Spec Cell */}
+                        <td className="py-1 px-1 border-r border-[#444444] text-center min-w-[85px] w-24">
+                          <label 
+                            className="flex flex-col items-center justify-center p-1 rounded bg-[#111111] hover:bg-cyan-950 border border-dashed border-[#444444] text-cyan-300 font-mono cursor-pointer w-14 h-10 mx-auto"
+                            title="แนบรูปถ่ายงานจริง"
+                          >
+                            <Camera className="w-3 h-3 text-cyan-400 mb-0.5" />
+                            <span className="text-[8.5px] font-bold">+ ลงรูป</span>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              className="hidden" 
+                              onChange={(e) => handleUploadPhotoForPart(item.partCode, e)} 
+                            />
+                          </label>
                         </td>
                         <td className="py-1 px-1 border-r border-[#444444]">
                           <div className="space-y-1">
@@ -2067,6 +2132,58 @@ export const PartMasterView: React.FC = () => {
                         <span className={`inline-block px-1.5 py-0.5 text-[10px] font-bold border bg-[#111111] uppercase whitespace-nowrap ${getStageColor(item.stage)}`}>
                           {item.stage}
                         </span>
+                      </td>
+
+                      {/* Photo / Spec Cell */}
+                      <td className="py-1 px-1 border-r border-[#444444] text-center min-w-[85px] w-24">
+                        {(() => {
+                          const partPhotos = storageService.getPartWorkpiecePhotos(item.partCode);
+                          const hasPhoto = partPhotos && partPhotos.length > 0;
+                          const photoUrl = hasPhoto
+                            ? partPhotos[0].dataUrl
+                            : (item.partName.includes('PIERCE PUNCH (Ø5)') || item.partCode === 'PB-001'
+                            ? '/public/assets/aistudio/image_4fd6ff61.png'
+                            : null);
+
+                          if (photoUrl) {
+                            return (
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedPartForPhoto(item);
+                                }}
+                                className="flex flex-col items-center justify-center gap-0.5 cursor-pointer group"
+                                title="คลิกเพื่อขยายดูรูปภาพจริง / จัดการรูปแนบ"
+                              >
+                                <div className="w-9 h-9 rounded bg-[#111111] border border-emerald-500/60 overflow-hidden flex items-center justify-center shadow-xs">
+                                  <img src={photoUrl} alt={item.partName} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+                                </div>
+                                <span className="text-[8.5px] px-1 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-600 font-bold font-mono">
+                                  🟢 มีรูปจริง
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <label
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex flex-col items-center justify-center p-1 rounded bg-[#111111] hover:bg-cyan-950 border border-dashed border-[#444444] hover:border-cyan-400 text-cyan-300 font-mono cursor-pointer transition-colors w-14 h-10 mx-auto"
+                              title="คลิกเพื่อแนบรูปถ่ายงานจริง (Upload Real Workpiece Photo)"
+                            >
+                              <div className="flex items-center gap-1 text-[9px] font-bold">
+                                <Camera className="w-3 h-3 text-cyan-400" />
+                                <span>+ ลงรูป</span>
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleUploadPhotoForPart(item.partCode, e)}
+                              />
+                            </label>
+                          );
+                        })()}
                       </td>
                       <td className="py-1 px-2 font-bold text-white border-r border-[#444444]">
                         <div className="flex items-center justify-between gap-1 group">
@@ -2352,6 +2469,69 @@ export const PartMasterView: React.FC = () => {
         onClose={() => setSelectedPartForQrModal(null)}
         partRow={selectedPartForQrModal}
       />
+
+      {/* ======================================================== */}
+      {/* 10. REAL WORKPIECE PHOTO VIEWER & UPLOADER MODAL */}
+      {/* ======================================================== */}
+      {selectedPartForPhoto && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setSelectedPartForPhoto(null)}
+        >
+          <div 
+            className="bg-[#0b101b] border-2 border-cyan-500/50 rounded-2xl p-4 max-w-md w-full text-slate-100 shadow-2xl relative space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs font-bold text-white">รูปถ่ายงานจริง: {selectedPartForPhoto.partName}</h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setSelectedPartForPhoto(null)}
+                className="p-1 text-slate-400 hover:text-white rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {(() => {
+              const photos = storageService.getPartWorkpiecePhotos(selectedPartForPhoto.partCode);
+              const hasPhoto = photos && photos.length > 0;
+              const photoUrl = hasPhoto ? photos[0].dataUrl : '/public/assets/aistudio/image_4fd6ff61.png';
+
+              return (
+                <div className="space-y-3">
+                  <div className="relative rounded-xl overflow-hidden border border-white/15 bg-slate-950 h-56 flex items-center justify-center">
+                    <img src={photoUrl} alt={selectedPartForPhoto.partName} className="max-h-full max-w-full object-contain" />
+                    <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40">
+                      🟢 รูปภาพถ่ายชิ้นงานจริง (Workpiece Photo)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/10">
+                    <span className="text-[11px] font-mono text-slate-400">DWG: {selectedPartForPhoto.drawingNo || '-'}</span>
+                    <label className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:brightness-110 shadow">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>อัปโหลดรูปใหม่</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          handleUploadPhotoForPart(selectedPartForPhoto.partCode, e);
+                          setSelectedPartForPhoto(null);
+                        }} 
+                      />
+                    </label>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
     </div>
   );

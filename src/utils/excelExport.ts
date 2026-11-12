@@ -541,4 +541,57 @@ export function exportInstallMatrixExcel(matrixRows: any[], lineColumns: any[]) 
   saveWorkbookAsExcel(workbook, `FinDie_Past_Install_Matrix_${dateStr}.xlsx`);
 }
 
+/**
+ * Export Stock Part Repair (สต็อกอะไหล่หมุนเวียนงานซ่อม) to Excel (.xlsx)
+ */
+export function exportPartRepairStockExcel(repairRows: any[], lineColumns: any[]) {
+  const data = repairRows.map(row => {
+    const rowObj: Record<string, any> = {
+      'NO.': row.no,
+      'STAGE (สเตจ)': row.stageName || '',
+      'PART CODE (รหัสพาร์ท)': row.partCode || '',
+      'PART NAME (ชื่อชิ้นส่วน)': row.partName || '',
+      'DRAWING NO. (เลขที่แบบ)': row.drawingCode || '',
+      'พร้อมเบิกใช้งาน (READY EA)': row.readyToUseQty || 0,
+      'กำลังเจียร (IN-PROCESS EA)': row.inProcessQty || 0,
+      'รอส่งซ่อม (AWAITING REPAIR EA)': row.awaitingRepairQty || 0,
+      'รวมสต็อกหมุนเวียน (TOTAL POOL EA)': row.totalCirculationQty || 0
+    };
+
+    lineColumns.forEach((col: any) => {
+      rowObj[`READY LINE ${col.id} (${col.subName})`] = row.lineAllocations?.[col.id] || 0;
+    });
+
+    rowObj['SAFETY TARGET (เกณฑ์สำรอง EA)'] = row.safetyStockTarget || 0;
+    rowObj['BUFFER STATUS (สถานะความพร้อม)'] = row.isBelowSafety ? 'ต่ำกว่าเกณฑ์สำรอง' : (row.readyToUseQty === 0 ? 'หมดสต็อกพร้อมเบิก' : 'ปกติพร้อมเบิก');
+    rowObj['REMARKS (หมายเหตุงานซ่อม)'] = row.notes || '';
+    return rowObj;
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const cols = [
+    { wch: 6 },  // NO.
+    { wch: 20 }, // STAGE
+    { wch: 16 }, // PART CODE
+    { wch: 28 }, // PART NAME
+    { wch: 18 }, // DRAWING NO.
+    { wch: 16 }, // READY
+    { wch: 16 }, // IN-PROCESS
+    { wch: 18 }, // AWAITING
+    { wch: 20 }  // TOTAL POOL
+  ];
+  lineColumns.forEach(() => {
+    cols.push({ wch: 16 });
+  });
+  cols.push({ wch: 16 }); // SAFETY
+  cols.push({ wch: 22 }); // STATUS
+  cols.push({ wch: 28 }); // REMARKS
+  worksheet['!cols'] = cols;
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Stock Part Repair');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  saveWorkbookAsExcel(workbook, `FinDie_Stock_Part_Repair_${dateStr}.xlsx`);
+}
+
 

@@ -90,7 +90,7 @@ export const UnifiedToolingMasterView: React.FC<UnifiedToolingMasterViewProps> =
           >
             <Box className="w-3.5 h-3.5" />
             <span>
-              {language === 'TH' ? '4. จำนวนสต็อกอะไหล่' : '4. STOCK MATRIX'}
+              {language === 'TH' ? '4. สต็อกอะไหล่หมุนเวียนงานซ่อม' : '4. STOCK PART REPAIR'}
             </span>
           </button>
         </div>

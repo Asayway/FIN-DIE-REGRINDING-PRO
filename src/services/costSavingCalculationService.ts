@@ -3,7 +3,9 @@ import {
   RegrindingTransactionItem,
   DecisionSupportResult,
   DecisionVerdict,
-  CostSummaryMetrics
+  CostSummaryMetrics,
+  TrueJobCostSimulationInput,
+  TrueJobCostSimulationResult
 } from '../types/costSaving';
 
 export interface CalculationInput {
@@ -787,5 +789,136 @@ export class CostSavingCalculationService {
       };
     });
   }
+
+  /**
+   * STEP-BY-STEP TRUE GRINDING COST CALCULATION ENGINE
+   * 
+   * Deconstructs 1 repair job into transparent sequential building blocks:
+   * Step 1: Machine Capital Depreciation & Variable Electricity (kW * load% * tariff)
+   * Step 2: Employee Labor (Base wage) + OT Multiplier (1.5x, 2x, 3x) + Skill Tier Premium
+   * Step 3: Consumables & Tooling Wear (CBN/Diamond wheel, dressing tip, cloths, coolant)
+   * Step 4: Quality Control Inspection & Factory Overhead Allocation
+   * Step 5: Grand Total True Cost, Unit Cost per Piece, and Cost Saving Comparison
+   */
+  public static calculateTrueJobCostStepByStep(input: TrueJobCostSimulationInput): TrueJobCostSimulationResult {
+    // --- STEP 1: Machine & Electricity ---
+    const assetVal = Math.max(0, input.machineAssetValueThb || 0);
+    const lifeHours = Math.max(1, input.usefulLifeHours || 20000);
+    const maintPerHour = Math.max(0, input.maintenanceReservePerHour || 0);
+    const kw = Math.max(0, input.ratedPowerKw || 0);
+    const loadFactor = Math.min(100, Math.max(0, input.loadFactorPercent || 75)) / 100;
+    const tariff = Math.max(0, input.electricityPricePerKwh || 0);
+    const mHours = Math.max(0, input.machineRunningHours || 0);
+
+    const depreciationPerHour = Number((assetVal / lifeHours).toFixed(2));
+    const electricityPerHour = Number((kw * loadFactor * tariff).toFixed(2));
+    const totalMachineRatePerHour = Number((depreciationPerHour + electricityPerHour + maintPerHour).toFixed(2));
+
+    const step1MachineDepreciationCost = Number((depreciationPerHour * mHours).toFixed(2));
+    const step1ElectricityCost = Number((electricityPerHour * mHours).toFixed(2));
+    const step1MaintenanceCost = Number((maintPerHour * mHours).toFixed(2));
+    const step1TotalMachineAndPower = Number((totalMachineRatePerHour * mHours).toFixed(2));
+
+    // --- STEP 2: Employee Labor, Overtime & Skill Allowance ---
+    const baseWage = Math.max(0, input.baseLaborRatePerHour || 0);
+    let skillAllowancePerHour = 0;
+    switch (input.skillGrade) {
+      case 'GRADE_S': skillAllowancePerHour = 90; break; // Master Toolmaker
+      case 'GRADE_A': skillAllowancePerHour = 50; break; // Senior Specialist
+      case 'GRADE_B': skillAllowancePerHour = 20; break; // Standard Technician
+      case 'GRADE_C':
+      default:
+        skillAllowancePerHour = 0; break; // Junior
+    }
+
+    const effectiveBaseRatePerHour = Number((baseWage + skillAllowancePerHour).toFixed(2));
+
+    let otMultiplier = 1.0;
+    switch (input.overtimeCondition) {
+      case 'OT_1_5X': otMultiplier = 1.5; break; // Weekday OT
+      case 'OT_2_0X': otMultiplier = 2.0; break; // Weekend Day
+      case 'OT_3_0X': otMultiplier = 3.0; break; // Holiday / Night OT
+      case 'NORMAL':
+      default:
+        otMultiplier = 1.0; break;
+    }
+
+    const effectiveOtRatePerHour = Number((effectiveBaseRatePerHour * otMultiplier).toFixed(2));
+    const sHours = Math.max(0, input.setupLaborHours || 0);
+    const dHours = Math.max(0, input.directLaborHours || 0);
+
+    // Setup is always manual
+    const step2SetupLaborCost = Number((sHours * effectiveOtRatePerHour).toFixed(2));
+
+    // Anti-double-counting rule: If machine rate includes operator labor, direct machining labor is zero!
+    const laborDoubleCountingPrevented = !!input.includesLaborInMachineRate;
+    const step2DirectLaborCost = laborDoubleCountingPrevented
+      ? 0
+      : Number((dHours * effectiveOtRatePerHour).toFixed(2));
+
+    const step2TotalLaborCost = Number((step2SetupLaborCost + step2DirectLaborCost).toFixed(2));
+
+    // --- STEP 3: Consumables & Abrasive Tooling Wear ---
+    const step3WheelWearCost = Number(Math.max(0, input.wheelWearCostPerJob || 0).toFixed(2));
+    const step3DressingToolCost = Number(Math.max(0, input.dressingToolWearCost || 0).toFixed(2));
+    const step3SundriesCost = Number(Math.max(0, input.consumableSundriesCost || 0).toFixed(2));
+    const step3CoolantCost = Number(Math.max(0, input.coolantCostPerJob || 0).toFixed(2));
+    const step3TotalConsumables = Number((step3WheelWearCost + step3DressingToolCost + step3SundriesCost + step3CoolantCost).toFixed(2));
+
+    // --- STEP 4: Quality Assurance & Overhead ---
+    const qHours = Math.max(0, input.qcInspectionHours || 0);
+    const qRate = Math.max(0, input.qcHourlyRate || 0);
+    const step4QcCost = Number((qHours * qRate).toFixed(2));
+    const step4OverheadCost = Number(Math.max(0, input.shopfloorOverheadFixedThb || 0).toFixed(2));
+    const step4TotalQcAndOverhead = Number((step4QcCost + step4OverheadCost).toFixed(2));
+
+    // --- STEP 5: Grand Total & Per-Piece Economics ---
+    const step5GrandTotalJobCost = Number((step1TotalMachineAndPower + step2TotalLaborCost + step3TotalConsumables + step4TotalQcAndOverhead).toFixed(2));
+    const qty = Math.max(1, input.quantityPieces || 1);
+    const step5CostPerPiece = Number((step5GrandTotalJobCost / qty).toFixed(2));
+
+    const unitNewPrice = Math.max(0, input.newPurchasePricePerPiece || 0);
+    const step5TotalNewToolEquivalentCost = Number((qty * unitNewPrice).toFixed(2));
+    const step5NetCostSaving = Number(Math.max(0, step5TotalNewToolEquivalentCost - step5GrandTotalJobCost).toFixed(2));
+    const step5SavingPercentage = step5TotalNewToolEquivalentCost > 0
+      ? Number(((step5NetCostSaving / step5TotalNewToolEquivalentCost) * 100).toFixed(2))
+      : 0;
+
+    return {
+      depreciationPerHour,
+      electricityPerHour,
+      totalMachineRatePerHour,
+      step1MachineDepreciationCost,
+      step1ElectricityCost,
+      step1MaintenanceCost,
+      step1TotalMachineAndPower,
+
+      skillAllowancePerHour,
+      effectiveBaseRatePerHour,
+      otMultiplier,
+      effectiveOtRatePerHour,
+      step2SetupLaborCost,
+      step2DirectLaborCost,
+      step2TotalLaborCost,
+      laborDoubleCountingPrevented,
+
+      step3WheelWearCost,
+      step3DressingToolCost,
+      step3SundriesCost,
+      step3CoolantCost,
+      step3TotalConsumables,
+
+      step4QcCost,
+      step4OverheadCost,
+      step4TotalQcAndOverhead,
+
+      step5GrandTotalJobCost,
+      step5CostPerPiece,
+      step5TotalNewToolEquivalentCost,
+      step5NetCostSaving,
+      step5SavingPercentage
+    };
+  }
 }
+
 

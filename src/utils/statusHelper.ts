@@ -12,6 +12,7 @@
 
 export type CanonicalStatusKey =
   | 'EMERGENCY'
+  | 'IN_PROCESS'
   | 'WAITING'
   | 'POSTPONED'
   | 'READY'
@@ -30,6 +31,7 @@ export interface UnifiedStatusMeta {
   subLabel?: string;
   allowQcApproval: boolean;
   isScrapped: boolean;
+  isInProcess?: boolean;
 }
 
 export const CANONICAL_STATUS_LIST: {
@@ -49,6 +51,14 @@ export const CANONICAL_STATUS_LIST: {
     badgeClass: 'bg-rose-600 text-white font-black animate-pulse shadow-md'
   },
   {
+    key: 'IN_PROCESS',
+    label: '⚡ กำลังเจียร',
+    shortLabel: 'กำลังเจียร',
+    description: 'งานที่อยู่ระหว่างการเจียรบนแท่นเครื่องเจียรราบ Okamoto',
+    icon: '⚡',
+    badgeClass: 'bg-purple-600 text-white font-black shadow-[0_0_12px_rgba(168,85,247,0.5)] border border-purple-400 animate-pulse'
+  },
+  {
     key: 'WAITING',
     label: '⏳ รอคิวเจียร',
     shortLabel: 'รอคิวเจียร',
@@ -60,7 +70,7 @@ export const CANONICAL_STATUS_LIST: {
     key: 'POSTPONED',
     label: '🟡 งานเลื่อน',
     shortLabel: 'งานเลื่อน',
-    description: 'งานที่ยังไม่เสร็จหรือยังไม่กดยืนยัน เลื่อนบันทึกคงไว้เพื่อดูประวัติตกค้าง',
+    description: 'งานที่ยังไม่เสร็จหรือเลื่อนบันทึกคงไว้เพื่อดูประวัติตกค้าง',
     icon: '🟡',
     badgeClass: 'bg-amber-500 text-slate-950 font-black shadow-sm'
   },
@@ -84,20 +94,36 @@ export const CANONICAL_STATUS_LIST: {
     key: 'SCRAP',
     label: '❌ ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร)',
     shortLabel: 'ยกเลิก / คัดทิ้ง',
-    description: 'ระยะเจียรต่ำกว่าสเปค Min หรือเกินรอบเจียร คัดทิ้งโดยไม่ต้องผ่านตรวจ QC',
+    description: 'ระยะเจียรต่ำกว่าสเปค Min หรือเกินรอบเจียร หรือกดยกเลิกคัดทิ้ง',
     icon: '❌',
     badgeClass: 'bg-rose-950/90 text-rose-300 border border-rose-600 font-bold'
   }
 ];
 
 /**
- * Resolves any work ticket or historical regrind record to one of the 6 canonical statuses.
+ * Resolves any work ticket or historical regrind record to one of the canonical statuses.
  */
 export function resolveUnifiedStatusKey(item: any): CanonicalStatusKey {
   if (!item) return 'WAITING';
 
-  // 1. Scrap Check: Explicit scrap, cancelled, or dimension / cycle limit exceeded
   const rawStatus = String(item.status || '').toUpperCase();
+
+  // 1. Explicit Completed Check (QC Passed & Closed)
+  if (rawStatus === 'COMPLETED' || rawStatus === 'CLOSED') {
+    return 'COMPLETED';
+  }
+
+  // 2. Explicit Ready Check (Grinding Done by Tech, Awaiting QC)
+  if (rawStatus === 'READY' || rawStatus === 'READY TO USE' || rawStatus === 'READY_FOR_QC') {
+    return 'READY';
+  }
+
+  // 3. Explicit In-Process (Grinding Active on Machine)
+  if (rawStatus === 'IN_PROCESS' || rawStatus === 'REGRINDING') {
+    return 'IN_PROCESS';
+  }
+
+  // 4. Scrap Check: Explicit scrap, cancelled, or dimension / cycle limit exceeded
   const isExplicitScrap =
     rawStatus === 'SCRAP' ||
     rawStatus === 'SCRAPPED' ||
@@ -117,17 +143,7 @@ export function resolveUnifiedStatusKey(item: any): CanonicalStatusKey {
     return 'SCRAP';
   }
 
-  // 2. Completed Check (QC Passed & Closed)
-  if (rawStatus === 'COMPLETED' || rawStatus === 'CLOSED') {
-    return 'COMPLETED';
-  }
-
-  // 3. Ready Check (Grinding Done by Tech, Awaiting QC)
-  if (rawStatus === 'READY' || rawStatus === 'READY TO USE' || rawStatus === 'READY_FOR_QC') {
-    return 'READY';
-  }
-
-  // 4. Emergency Check (Urgent Job #1)
+  // 5. Emergency Check (Urgent Job #1)
   const isExplicitEmergency =
     Boolean(item.isEmergency) ||
     item.urgency === 'EMERGENCY' ||
@@ -138,33 +154,18 @@ export function resolveUnifiedStatusKey(item: any): CanonicalStatusKey {
     return 'EMERGENCY';
   }
 
-  // 5. Postponed Check (Shifted past due date or explicit postpone)
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const itemDate =
-    item.scheduledDate ||
-    item.regrindDate ||
-    (item.targetCompletionDate ? item.targetCompletionDate.slice(0, 10) : '') ||
-    (item.timestamp ? item.timestamp.slice(0, 10) : '');
-
-  const isPastDueUnfinished =
-    Boolean(itemDate) &&
-    itemDate < todayStr &&
-    rawStatus !== 'COMPLETED' &&
-    rawStatus !== 'READY' &&
-    rawStatus !== 'SCRAP';
-
+  // 6. Postponed Check (Shifted past due date or explicit postpone)
   const isExplicitPostponed =
     rawStatus === 'POSTPONED' ||
     rawStatus === 'HOLD' ||
-    (Number(item.shiftedCount || 0) > 0) ||
-    (typeof item.note === 'string' && item.note.includes('เลื่อน')) ||
-    (typeof item.remarks === 'string' && item.remarks.includes('เลื่อน'));
+    Boolean(item.shiftedFromDate && item.scheduledDate && item.shiftedFromDate !== item.scheduledDate) ||
+    (Number(item.shiftedCount || 0) > 0 && rawStatus !== 'IN_PROCESS' && rawStatus !== 'READY' && rawStatus !== 'COMPLETED');
 
-  if (isExplicitPostponed || isPastDueUnfinished) {
+  if (isExplicitPostponed) {
     return 'POSTPONED';
   }
 
-  // 6. Default Waiting Queue
+  // 7. Default Waiting Queue
   return 'WAITING';
 }
 
@@ -173,7 +174,6 @@ export function resolveUnifiedStatusKey(item: any): CanonicalStatusKey {
  */
 export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
   const key = resolveUnifiedStatusKey(item);
-  const rawStatus = String(item?.status || '').toUpperCase();
 
   switch (key) {
     case 'EMERGENCY':
@@ -186,28 +186,40 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
         pillClass: 'bg-rose-950/90 border border-rose-500 text-rose-100 shadow-sm font-bold',
         leftBar: 'bg-rose-500',
         icon: '🚨',
-        allowQcApproval: false, // QC can only inspect AFTER grinding is confirmed done (READY)
-        isScrapped: false
-      };
-
-    case 'WAITING': {
-      const isInProcess = rawStatus === 'IN_PROCESS';
-      return {
-        key: 'WAITING',
-        label: isInProcess ? '⚙️ กำลังเจียร' : '⏳ รอคิวเจียร',
-        shortLabel: isInProcess ? 'กำลังเจียร' : 'รอคิวเจียร',
-        badgeClass: isInProcess
-          ? 'bg-cyan-500 text-slate-950 font-bold border border-cyan-400'
-          : 'bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold',
-        cardClass: 'bg-slate-950/70 border-white/10 hover:border-cyan-400/40',
-        pillClass: 'bg-slate-900 border border-cyan-500/40 text-cyan-200 font-bold',
-        leftBar: 'bg-cyan-500',
-        icon: isInProcess ? '⚙️' : '⏳',
-        subLabel: isInProcess ? 'กำลังดำเนินการ' : 'รอเริ่มงาน',
         allowQcApproval: false,
         isScrapped: false
       };
-    }
+
+    case 'IN_PROCESS':
+      return {
+        key: 'IN_PROCESS',
+        label: '⚡ กำลังเจียร (In-Process)',
+        shortLabel: 'กำลังเจียร',
+        badgeClass: 'bg-purple-600 text-white font-black shadow-[0_0_12px_rgba(168,85,247,0.5)] border border-purple-400 animate-pulse',
+        cardClass: 'bg-purple-950/40 border-purple-400/80 shadow-[0_0_18px_rgba(168,85,247,0.25)] ring-1 ring-purple-400/50 hover:border-purple-300',
+        pillClass: 'bg-purple-950/90 border border-purple-400 text-purple-200 font-bold shadow-sm',
+        leftBar: 'bg-purple-500 animate-pulse',
+        icon: '⚡',
+        subLabel: 'กำลังเจียรบนแท่นเครื่อง Okamoto',
+        allowQcApproval: false,
+        isScrapped: false,
+        isInProcess: true
+      };
+
+    case 'WAITING':
+      return {
+        key: 'WAITING',
+        label: '⏳ รอคิวเจียร',
+        shortLabel: 'รอคิวเจียร',
+        badgeClass: 'bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold',
+        cardClass: 'bg-slate-950/70 border-white/10 hover:border-cyan-400/40',
+        pillClass: 'bg-slate-900 border border-cyan-500/40 text-cyan-200 font-bold',
+        leftBar: 'bg-cyan-500',
+        icon: '⏳',
+        subLabel: 'รอเริ่มงานตามลำดับคิว',
+        allowQcApproval: false,
+        isScrapped: false
+      };
 
     case 'POSTPONED':
       return {
@@ -235,7 +247,7 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
         leftBar: 'bg-sky-400',
         icon: '🔵',
         subLabel: 'ช่างเจียรเสร็จแล้ว • รอตรวจ QC',
-        allowQcApproval: true, // Only READY status allows QC confirmation
+        allowQcApproval: true,
         isScrapped: false
       };
 
@@ -265,7 +277,7 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
         leftBar: 'bg-rose-700',
         icon: '❌',
         subLabel: 'ต่ำกว่า Min Spec หรือ เกินรอบเจียร (ไม่ผ่าน QC)',
-        allowQcApproval: false, // SCRAP completely bypasses QC confirmation
+        allowQcApproval: false,
         isScrapped: true
       };
   }

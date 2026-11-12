@@ -129,6 +129,8 @@ export interface RegrindWorkTicket {
   preemptedByJobCode?: string; // Job code of emergency ticket that shifted this job down
   shiftedCount?: number; // Number of times shifted down by emergency insertions
   scheduledDate?: string; // YYYY-MM-DD calendar schedule date
+  originalScheduledDate?: string; // YYYY-MM-DD initial date when ticket was first queued
+  shiftedFromDate?: string; // YYYY-MM-DD origin date when job was postponed/shifted
   sequenceInDate?: number; // 1-based sequence within scheduledDate cell
   pausedAt?: string; // ISO timestamp if paused due to emergency preemption
   

@@ -37,17 +37,38 @@ export interface RateRevisionHistoryEntry {
   reason: string;
   effectiveDate: string;
   includesLaborInMachineRate: boolean;
+  ratedPowerKw?: number;
+  loadFactorPercent?: number;
+  electricityPricePerKwh?: number;
+  consumablesVariableRatePerHour?: number;
+  consumablesFixedCostPerJob?: number;
 }
 
 export interface CostRateMasterItem {
   id: string;
   machineId: string; // e.g. "GRIND-01", "GRIND-02", "INTERNAL_CELL"
   machineName: string; // e.g. "OKAMOTO High-Precision Surface Grinder #1"
-  machineCostRatePerHour: number; // THB / hour
-  operatorLaborRatePerHour: number; // THB / hour
-  consumablesCostRatePerHour?: number; // THB / hour or default
-  qcCostRatePerHour?: number; // THB / hour
+  machineCostRatePerHour: number; // THB / hour (Machine Cost Rate)
+  operatorLaborRatePerHour: number; // THB / hour (Labor Rate)
+  consumablesCostRatePerHour?: number; // THB / hour (Variable Consumables Rate)
+  consumablesFixedCostPerJob?: number; // THB / job (Fixed Consumables Cost per repair job)
+  qcCostRatePerHour?: number; // THB / hour (QC Inspection Rate)
   includesLaborInMachineRate: boolean; // Flag: TRUE = Machine rate already includes operator labor (prevent double-counting!)
+  
+  // SECTION A: Physical Machine & Electricity Engineering Parameters
+  ratedPowerKw?: number; // Rated Power in kW (default: 15 kW)
+  loadFactorPercent?: number; // Load Factor in % (default: 75%)
+  electricityPricePerKwh?: number; // Electricity price in THB/kWh (default: 4.50 THB/kWh)
+  auxiliaryPowerKw?: number; // Auxiliary Power in kW (default: 0 kW)
+
+  // Optional Granular Machine Cost Breakdown (THB/hour)
+  depreciationCostPerHour?: number; // Depreciation Cost
+  maintenanceCostPerHour?: number; // Preventative & Corrective Maintenance Cost
+  coolantCostPerHour?: number; // Coolant & Lubrication Cost
+  machineToolingCostPerHour?: number; // Grinding Wheel & Tooling Cost
+  factoryOverheadCostPerHour?: number; // Factory Overhead Allocation
+  otherMachineCostPerHour?: number; // Other Machine Direct Costs
+
   rateCalculationMethod: 'FULL_COSTING' | 'DIRECT_COSTING' | 'ACTIVITY_BASED' | 'STANDARD_FACTORY_APPROVED' | string;
   currency: CurrencyCode; // 'THB'
   effectiveDate: string; // YYYY-MM-DD
@@ -298,4 +319,87 @@ export interface CostSummaryMetrics {
   avgSavingPerTransaction: number;
   avgCostPerShotRatio: number; // regrindCostPerShot / newToolCostPerShot
 }
+
+// ==========================================
+// STEP-BY-STEP TRUE GRINDING COST SIMULATION
+// ==========================================
+
+export type TechnicianSkillGrade = 'GRADE_C' | 'GRADE_B' | 'GRADE_A' | 'GRADE_S';
+export type OvertimeMultiplierType = 'NORMAL' | 'OT_1_5X' | 'OT_2_0X' | 'OT_3_0X';
+
+export interface TrueJobCostSimulationInput {
+  // Step 1: Machine Capital, Useful Life & Electricity
+  machineAssetValueThb: number; // e.g. 2,400,000 THB
+  usefulLifeHours: number; // e.g. 20,000 operating hours (Depreciation = 120 THB/hr)
+  maintenanceReservePerHour: number; // e.g. 35 THB/hr
+  ratedPowerKw: number; // e.g. 15 kW
+  loadFactorPercent: number; // e.g. 75%
+  electricityPricePerKwh: number; // e.g. 4.50 THB/kWh
+  machineRunningHours: number; // from repair job, e.g. 1.5 hrs
+
+  // Step 2: Employee Labor, Overtime & Skill Tier
+  baseLaborRatePerHour: number; // e.g. 150 THB/hr
+  skillGrade: TechnicianSkillGrade; // e.g. GRADE_A (+50 THB/hr)
+  overtimeCondition: OvertimeMultiplierType; // NORMAL (1x), OT_1_5X (1.5x), OT_2_0X (2x), OT_3_0X (3x)
+  setupLaborHours: number; // e.g. 0.5 hr
+  directLaborHours: number; // e.g. 1.0 hr
+  includesLaborInMachineRate: boolean; // Flag to prevent double counting
+
+  // Step 3: Consumables & Abrasive Tooling Wear
+  wheelWearCostPerJob: number; // CBN / Diamond wheel wear, e.g. 45 THB
+  dressingToolWearCost: number; // Diamond dresser tip amortized, e.g. 15 THB
+  consumableSundriesCost: number; // Wiping rags, deburring brushes, abrasive paste, e.g. 25 THB
+  coolantCostPerJob: number; // Synthetic coolant fluid usage, e.g. 20 THB
+
+  // Step 4: Quality Control & Overhead
+  qcInspectionHours: number; // e.g. 0.25 hr (15 mins)
+  qcHourlyRate: number; // e.g. 120 THB/hr
+  shopfloorOverheadFixedThb: number; // e.g. 50 THB allocated overhead
+
+  // Step 5: Output & Tooling Benchmark
+  quantityPieces: number; // e.g. 5 pcs in this job batch
+  newPurchasePricePerPiece: number; // e.g. 2,500 THB per new tool
+  targetToolLifeShots?: number; // e.g. 15,000,000 shots
+}
+
+export interface TrueJobCostSimulationResult {
+  // Step 1 Subtotals
+  depreciationPerHour: number;
+  electricityPerHour: number;
+  totalMachineRatePerHour: number;
+  step1MachineDepreciationCost: number;
+  step1ElectricityCost: number;
+  step1MaintenanceCost: number;
+  step1TotalMachineAndPower: number;
+
+  // Step 2 Subtotals
+  skillAllowancePerHour: number;
+  effectiveBaseRatePerHour: number;
+  otMultiplier: number;
+  effectiveOtRatePerHour: number;
+  step2SetupLaborCost: number;
+  step2DirectLaborCost: number;
+  step2TotalLaborCost: number;
+  laborDoubleCountingPrevented: boolean;
+
+  // Step 3 Subtotals
+  step3WheelWearCost: number;
+  step3DressingToolCost: number;
+  step3SundriesCost: number;
+  step3CoolantCost: number;
+  step3TotalConsumables: number;
+
+  // Step 4 Subtotals
+  step4QcCost: number;
+  step4OverheadCost: number;
+  step4TotalQcAndOverhead: number;
+
+  // Step 5 Grand Totals & Economics
+  step5GrandTotalJobCost: number;
+  step5CostPerPiece: number;
+  step5TotalNewToolEquivalentCost: number;
+  step5NetCostSaving: number;
+  step5SavingPercentage: number;
+}
+
 

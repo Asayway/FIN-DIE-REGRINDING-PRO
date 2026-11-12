@@ -465,7 +465,8 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                 <th className="p-2.5 text-center w-10">#</th>
                 <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Status' : 'สถานะ'}</th>
                 <th className="p-2.5 whitespace-nowrap">Job Code</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Date' : 'วันที่'}</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Scheduled Date' : 'วันที่ลงคิว'}</th>
+                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Grind Finished Date' : 'วันที่เจียรเสร็จสิ้น'}</th>
                 <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Line' : 'ไลน์'}</th>
                 <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Die Code' : 'แม่พิมพ์'}</th>
                 <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Part Name' : 'ชื่อชิ้นงาน'}</th>
@@ -489,7 +490,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             <tbody className="divide-y divide-slate-800/80 bg-slate-950/40 font-mono">
               {filteredHistory.length === 0 ? (
                 <tr>
-                  <td colSpan={22} className="p-8 text-center text-slate-500 font-sans">
+                  <td colSpan={23} className="p-8 text-center text-slate-500 font-sans">
                     ไม่พบข้อมูลงานเจียระไนที่ตรงกับเงื่อนไขการค้นหา
                   </td>
                 </tr>
@@ -569,9 +570,21 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                       <span className="font-bold text-cyan-300 block text-xs">{rec.jobCode || 'N/A'}</span>
                     </td>
 
-                    {/* 4. Date */}
+                    {/* 4. Scheduled Date */}
                     <td className="p-2.5 text-slate-300 text-[11px] whitespace-nowrap">
                       {rec.regrindDate || (rec.timestamp ? rec.timestamp.substring(0, 10) : '-')}
+                    </td>
+
+                    {/* 4.1. Grind Finished Date */}
+                    <td className="p-2.5 whitespace-nowrap">
+                      {rec.completedDate ? (
+                        <span className="text-emerald-300 font-bold flex items-center gap-1">
+                          <span>✓</span>
+                          <span>{rec.completedDate.length >= 10 ? rec.completedDate.substring(0, 10) : rec.completedDate}</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 font-mono text-[10px]">-</span>
+                      )}
                     </td>
 
                     {/* 5. Line */}

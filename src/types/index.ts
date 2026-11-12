@@ -635,11 +635,26 @@ export interface RegrindingRecord {
   remainingRegrindCount?: number;
   inspectionResult?: 'PENDING' | 'PASSED' | 'FAILED' | 'CONDITIONAL';
   regrindDate?: string;
+  completedDate?: string; // Date/Time when technician marked grinding as finished (READY/COMPLETED)
   supplierOrInternalProcess?: 'INTERNAL_TOOL_ROOM' | 'EXTERNAL_VENDOR' | string;
   vendorName?: string;
   workOrder?: string;
   cost?: number; // THB
   laborHours?: number; // Technician labor hours
+  setupLaborHours?: number;
+  directLaborHours?: number;
+  totalTrueCost?: number; // Total True Cost from 5-step engine (THB)
+  unitTrueCost?: number; // Cost per piece (THB)
+  newPartPriceTotal?: number; // Total purchase value for batch (THB)
+  netSavingTHB?: number; // Net Money Saved in THB
+  netSavingPct?: number; // Net Savings %
+  wheelWearCost?: number;
+  dressingToolCost?: number;
+  sundriesCost?: number;
+  coolantCost?: number;
+  qcInspectionHours?: number;
+  qcHourlyRate?: number;
+  overheadCost?: number;
   sparePartsUsed?: string; // Spare parts / shims replaced or consumed
   sparePartsCost?: number; // THB cost of spare parts
   performedBy?: string;
@@ -777,6 +792,21 @@ export interface SpareStockItem {
   poEtaDate?: string; // legacy alias for expectedDeliveryDate
   storageLocation?: string; // legacy alias for warehouseLocation
   isImportedSeed?: boolean;
+}
+
+export interface PartRepairStockItem {
+  id: string;
+  partCode: string;
+  partName: string;
+  stageName?: string;
+  readyToUseQty: number; // ชิ้นส่วนที่ซ่อมเสร็จผ่าน QC แล้ว พร้อมเบิกไปใช้งาน
+  inProcessQty?: number; // กำลังเจียรซ่อมบนแท่นเครื่อง
+  awaitingRepairQty: number; // ชิ้นส่วนชำรุด/สึกหรอที่รอส่งซ่อม/รอคิวเจียร
+  totalCirculationQty: number; // รวมสต็อกหมุนเวียนงานซ่อม (ready + inProcess + awaiting)
+  safetyStockTarget: number; // เกณฑ์จำนวนพร้อมเบิกขั้นต่ำที่ควรมีสำรอง
+  lineAllocations: Record<string, number>; // จำนวนพร้อมเบิกแยกตามไลน์ E1-E5
+  notes?: string;
+  updatedAt?: string;
 }
 
 export type AuditActionType =

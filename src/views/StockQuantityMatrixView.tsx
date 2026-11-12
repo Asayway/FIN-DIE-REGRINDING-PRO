@@ -1,38 +1,35 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Grid3X3, 
   Search, 
   Save, 
   CheckCircle2, 
   AlertTriangle, 
   Layers, 
   FileSpreadsheet, 
-  Download, 
-  Upload, 
-  RefreshCw, 
-  Plus, 
-  Info, 
-  Filter, 
-  Check, 
   X, 
-  Factory, 
   Edit3, 
-  Trash2, 
   Sliders, 
-  Database,
-  Copy,
-  Zap,
-  Wrench,
-  RotateCcw
+  Wrench, 
+  RotateCcw,
+  Check,
+  RefreshCw,
+  Image as ImageIcon,
+  ExternalLink,
+  Plus,
+  Minus,
+  Sparkles,
+  ShieldAlert,
+  Flame,
+  ArrowRight,
+  Filter
 } from 'lucide-react';
-import { ProductionLineId, LineActiveConfiguration, PartMaster } from '../types';
+import { ProductionLineId, LineActiveConfiguration, PartMaster, PartRepairStockItem, PartWorkpiecePhoto } from '../types';
 import { storageService } from '../services/storageService';
-import { formatShots } from '../services/calculationService';
+import { regrindService } from '../services/regrindService';
+import { RegrindWorkTicket } from '../types/regrind';
 import { useLanguage } from '../i18n';
-
-import { DeleteConfirmationModal } from '../components/common/DeleteConfirmationModal';
 import { StageManagementModal } from '../components/common/StageManagementModal';
-import { exportInstallMatrixExcel } from '../utils/excelExport';
+import { exportPartRepairStockExcel } from '../utils/excelExport';
 import { DEFAULT_STAGE_GROUPS, deriveLogicalStage, sortStagesInOrder } from '../utils/stageUtils';
 
 interface LineColDefinition {
@@ -62,53 +59,21 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
   const { language } = useLanguage();
   const [lines, setLines] = useState<LineActiveConfiguration[]>([]);
   const [partMasters, setPartMasters] = useState<PartMaster[]>([]);
-  const [monitoringData, setMonitoringData] = useState<Record<string, any>>({});
+  const [queueTickets, setQueueTickets] = useState<RegrindWorkTicket[]>([]);
+  const [storedRepairStocks, setStoredRepairStocks] = useState<Record<string, PartRepairStockItem>>({});
+  const [workpiecePhotos, setWorkpiecePhotos] = useState<Record<string, PartWorkpiecePhoto[]>>({});
+  
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedStageFilter, setSelectedStageFilter] = useState<string>('ALL');
+  const [statusQuickFilter, setStatusQuickFilter] = useState<'ALL' | 'LOW' | 'IN_PROCESS' | 'AWAITING'>('ALL');
   
   const [isEditing, setIsEditing] = useState(false);
-  const [spareStocks, setSpareStocks] = useState<any[]>([]);
-  const [editMatrixValues, setEditMatrixValues] = useState<Record<string, number>>({});
-  const [editNoteValues, setEditNoteValues] = useState<Record<string, string>>({});
-  const [editMinValues, setEditMinValues] = useState<Record<string, number>>({});
-  const [editMaxValues, setEditMaxValues] = useState<Record<string, number>>({});
-  const [editSafetyValues, setEditSafetyValues] = useState<Record<string, number>>({});
+  const [editValues, setEditValues] = useState<Record<string, Partial<PartRepairStockItem>>>({});
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // Inline Add State
-  const [isAddingInline, setIsAddingInline] = useState(false);
-  const [newRowData, setNewRowData] = useState<{
-    stage: string;
-    partName: string;
-    partCode: string;
-    quantities: Record<string, number>;
-  }>({
-    stage: DEFAULT_STAGE_GROUPS[0],
-    partName: '',
-    partCode: '',
-    quantities: {
-      'E1': 0,
-      'E2': 0,
-      'E3-1': 0,
-      'E3-2': 0,
-      'E3-3': 0,
-      'E4': 0,
-      'E5': 0,
-    }
-  });
-
-  // CRUD Modals
-  const [deleteTargetPart, setDeleteTargetPart] = useState<{ partCode: string; partName: string; stage: string; total: number } | null>(null);
-
-  // Batch Update Modal / Panel State
-  const [showBatchModal, setShowBatchModal] = useState(false);
-  const [batchActionType, setBatchActionType] = useState<'FILL' | 'COPY' | 'RESET'>('FILL');
-  const [batchTargetStage, setBatchTargetStage] = useState<string>('ALL');
-  const [batchTargetLine, setBatchTargetLine] = useState<string>('ALL');
-  const [batchFillQty, setBatchFillQty] = useState<number>(180);
-  const [batchCopySourceLine, setBatchCopySourceLine] = useState<ProductionLineId>('E4');
-  const [batchCopyTargetLine, setBatchCopyTargetLine] = useState<ProductionLineId>('E5');
+  // Photo Preview Modal
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; title: string; partCode: string } | null>(null);
 
   // Stage Grouping Manager Modal State
   const [isStageManagerOpen, setIsStageManagerOpen] = useState(false);
@@ -116,92 +81,25 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
   const loadData = () => {
     setLines(storageService.getLineConfigs());
     setPartMasters(storageService.getPartMasters());
-    setMonitoringData(storageService.getLinesMonitoring());
-    setSpareStocks(storageService.getSpareStocks());
+    setQueueTickets(regrindService.getQueueTickets());
+    setStoredRepairStocks(storageService.getPartRepairStocks());
+    setWorkpiecePhotos(storageService.getAllPartWorkpiecePhotos());
   };
 
   useEffect(() => {
     loadData();
-    const unsub = storageService.subscribe(loadData);
-    return () => unsub();
+    const unsubStorage = storageService.subscribe(loadData);
+    const unsubRegrind = regrindService.subscribe(loadData);
+    return () => {
+      unsubStorage();
+      unsubRegrind();
+    };
   }, []);
 
-  const handleSaveNewRowInline = () => {
-    if (!newRowData.partName.trim()) {
-      alert('กรุณากรอก Part Name');
-      return;
-    }
-    const finalPartCode = newRowData.partCode.trim() 
-      ? newRowData.partCode.trim().toUpperCase() 
-      : `P-${Date.now().toString().slice(-4)}`;
-
-    const exists = partMasters.some(p => p.partCode.toUpperCase() === finalPartCode);
-    if (exists) {
-      alert(`รหัส Part Code "${finalPartCode}" มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`);
-      return;
-    }
-
-    try {
-      // 1. Save new Part Master
-      const newPart: PartMaster = {
-        partCode: finalPartCode,
-        partName: newRowData.partName.trim(),
-        partNameTh: newRowData.partName.trim(),
-        stageName: newRowData.stage,
-        description: `${newRowData.stage} Part`,
-        category: 'PUNCH',
-        unit: 'PCS',
-        unitCostThb: 0,
-        tubeSizeCompat: 'BOTH',
-        drawingNumber: finalPartCode
-      };
-      storageService.savePartMaster(newPart);
-
-      // 2. Save line quantities
-      const currentConfigs = storageService.getLineConfigs();
-      const updatedConfigs = currentConfigs.map(lineConfig => {
-        const lineId = lineConfig.lineId;
-        const qty = newRowData.quantities[lineId] || 0;
-        return {
-          ...lineConfig,
-          stockQuantities: {
-            ...(lineConfig.stockQuantities || {}),
-            [finalPartCode]: qty
-          }
-        };
-      });
-      storageService.saveLineConfigs(updatedConfigs);
-
-      // Reset and notify
-      setIsAddingInline(false);
-      setNewRowData({
-        stage: stageOptions[0] || DEFAULT_STAGE_GROUPS[0],
-        partName: '',
-        partCode: '',
-        quantities: {
-          'E1': 0,
-          'E2': 0,
-          'E3-1': 0,
-          'E3-2': 0,
-          'E3-3': 0,
-          'E4': 0,
-          'E5': 0,
-        }
-      });
-      loadData();
-      setSaveSuccessMsg(`เพิ่มชิ้นส่วน "${newPart.partName}" (${finalPartCode}) สำเร็จแล้ว`);
-      setTimeout(() => setSaveSuccessMsg(null), 4000);
-    } catch (err: any) {
-      alert(`เกิดข้อผิดพลาด: ${err.message}`);
-    }
-  };
-
-  // Stage color badge style - Unified with PART INSTALL aesthetic
+  // Stage color badge style
   const getStageColor = (stage: string) => {
     const stg = (stage || '').toUpperCase();
-    
-    // Define colors for standard stages
-    if (stg.includes('PIERCE') || stg.includes('BURRING')) return 'border-[#FFCC00] text-[#FFCC00]'; // Yellow/Amber
+    if (stg.includes('PIERCE') || stg.includes('BURRING')) return 'border-[#FFCC00] text-[#FFCC00]';
     if (stg.includes('IRONING')) return 'border-blue-400 text-blue-400';
     if (stg.includes('LOUVER') || stg.includes('SLIT')) return 'border-emerald-400 text-emerald-400';
     if (stg.includes('REFLAIRE') || stg.includes('REFLARE')) return 'border-purple-400 text-purple-400';
@@ -209,20 +107,15 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
     if (stg.includes('CUT OFF') || stg.includes('SIDE CUT')) return 'border-rose-400 text-rose-400';
     if (stg.includes('FORMING')) return 'border-teal-400 text-teal-400';
     if (stg.includes('PILOT') || stg.includes('FEED')) return 'border-orange-400 text-orange-400';
-    
-    // Fallback for custom stages
     return 'border-slate-500 text-slate-300';
   };
 
-  const getCellKey = (partCode: string, lineId: string) => `${partCode}__${lineId}`;
-
-  // Unique list of stages for dropdown (combining custom stage groups and active stages)
+  // Unique list of stages for dropdown
   const stageOptions = useMemo(() => {
     const rawGroups = storageService.getStageGroups();
     const seen = new Set<string>();
     const uniqueList: string[] = [];
 
-    // First add managed groups
     rawGroups.forEach(g => {
       const normalized = g.trim().toUpperCase();
       if (normalized && !seen.has(normalized)) {
@@ -231,7 +124,6 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
       }
     });
 
-    // Then add any stages from items that aren't in groups yet
     partMasters.forEach(pm => {
       const derived = pm.stageName || deriveLogicalStage(pm.partName, pm.stageName);
       if (derived && derived !== '-') {
@@ -246,89 +138,103 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
     return sortStagesInOrder(uniqueList);
   }, [partMasters]);
 
-  // Build the live matrix rows
-  const matrixRows = useMemo(() => {
+  // Aggregate queue tickets counts by part (in-process vs awaiting regrind)
+  const ticketsByPart = useMemo(() => {
+    const map: Record<string, { inProcess: number; pending: number }> = {};
+    queueTickets.forEach(ticket => {
+      const nameKey = (ticket.partName || '').trim().toUpperCase();
+      const codeKey = (ticket.partCode || '').trim().toUpperCase();
+      const qty = Number(ticket.quantity) || 1;
+
+      const keysToUpdate = [nameKey, codeKey].filter(Boolean);
+      keysToUpdate.forEach(key => {
+        if (!map[key]) {
+          map[key] = { inProcess: 0, pending: 0 };
+        }
+        if (ticket.status === 'IN_PROCESS') {
+          map[key].inProcess += qty;
+        } else if (ticket.status === 'PENDING') {
+          map[key].pending += qty;
+        }
+      });
+    });
+    return map;
+  }, [queueTickets]);
+
+  // Build the repaired part stock items rows
+  const repairStockRows = useMemo(() => {
     return partMasters.map((pm, index) => {
-      const stkItem = spareStocks.find(s => s.partCode === pm.partCode);
-      const rowData: {
-        no: number;
-        partCode: string;
-        partName: string;
-        drawingCode: string;
-        stageName: string;
-        material?: string;
-        maintenanceType?: 'REGRIND' | 'DISPOSE';
-        quantities: Record<string, number>;
-        installQuantities: Record<string, number>;
-        total: number;
-        stockNote: string;
-        minimumStock: number;
-        maximumStock: number;
-        safetyStockQty: number;
-      } = {
-        no: index + 1,
-        partCode: pm.partCode,
-        partName: pm.partName,
-        drawingCode: (pm as any).drawingNumber || pm.partCode,
-        stageName: pm.stageName || deriveLogicalStage(pm.partName, pm.stageName),
-        material: (pm as any).material || 'SKD11',
-        maintenanceType: (pm as any).maintenanceType || 'REGRIND',
-        quantities: {},
-        installQuantities: {},
-        total: 0,
-        stockNote: pm.stockNote || (stkItem?.note || ''),
-        minimumStock: stkItem?.minimumStock ?? 10,
-        maximumStock: stkItem?.maximumStock ?? 50,
-        safetyStockQty: stkItem?.safetyStockQty ?? (stkItem?.minimumStock ?? 10)
-      };
+      const pCode = pm.partCode;
+      const cleanCode = pCode.trim().toUpperCase();
+      const cleanName = pm.partName.trim().toUpperCase();
+      const stored = storedRepairStocks[pCode] || storedRepairStocks[cleanCode];
 
-      if (isEditing && editMinValues[pm.partCode] !== undefined) {
-        rowData.minimumStock = editMinValues[pm.partCode];
-      }
-      if (isEditing && editMaxValues[pm.partCode] !== undefined) {
-        rowData.maximumStock = editMaxValues[pm.partCode];
-      }
-      if (isEditing && editSafetyValues[pm.partCode] !== undefined) {
-        rowData.safetyStockQty = editSafetyValues[pm.partCode];
-      }
-      if (isEditing && editNoteValues[pm.partCode] !== undefined) {
-        rowData.stockNote = editNoteValues[pm.partCode];
-      }
+      // Auto-synced live counts from tickets
+      const liveQueue = ticketsByPart[cleanCode] || ticketsByPart[cleanName] || { inProcess: 0, pending: 0 };
 
-      let rowTotal = 0;
-      LINE_COLUMNS.forEach(col => {
-        let val = 0;
-        let installVal = 0;
-        const lineConfig = lines.find(l => l.lineId === col.id);
-        if (lineConfig && lineConfig.stockQuantities) {
-          val = lineConfig.stockQuantities[pm.partCode] || 0;
-        }
-        if (lineConfig && lineConfig.installedPartQuantities) {
-          installVal = lineConfig.installedPartQuantities[pm.partCode] || 0;
-        }
-        
-        rowData.installQuantities[col.id] = installVal;
-
-        // If in edit mode and user modified this cell, reflect the edit value
-        if (isEditing) {
-          const key = getCellKey(pm.partCode, col.id);
-          if (editMatrixValues[key] !== undefined) {
-            val = editMatrixValues[key];
-          }
-        }
-
-        rowData.quantities[col.id] = val;
-        rowTotal += val;
+      // Calculate initial installed baseline to seed reasonable safety targets
+      let installedTotal = 0;
+      const lineInstalled: Record<string, number> = {};
+      lines.forEach(lineConfig => {
+        const qty = lineConfig.installedPartQuantities?.[pCode] || 0;
+        lineInstalled[lineConfig.lineId] = qty;
+        installedTotal += qty;
       });
 
-      rowData.total = rowTotal;
-      return rowData;
+      // Default safety target: ~10% to 20% of install quantity (or 10 min)
+      const defaultSafetyTarget = installedTotal > 0 ? Math.max(10, Math.round(installedTotal * 0.15)) : 10;
+
+      // Ready-to-use qty
+      let readyToUseQty = stored ? stored.readyToUseQty : (installedTotal > 0 ? Math.round(defaultSafetyTarget * 1.2) : 10);
+      let inProcessQty = liveQueue.inProcess;
+      let awaitingRepairQty = stored ? (stored.awaitingRepairQty ?? liveQueue.pending) : liveQueue.pending;
+      let safetyStockTarget = stored ? (stored.safetyStockTarget ?? defaultSafetyTarget) : defaultSafetyTarget;
+      let lineAllocations: Record<string, number> = stored?.lineAllocations || {};
+      let notes = stored?.notes || '';
+
+      // Override if in editing mode
+      if (isEditing && editValues[pCode]) {
+        const e = editValues[pCode];
+        if (e.readyToUseQty !== undefined) readyToUseQty = e.readyToUseQty;
+        if (e.awaitingRepairQty !== undefined) awaitingRepairQty = e.awaitingRepairQty;
+        if (e.inProcessQty !== undefined) inProcessQty = e.inProcessQty;
+        if (e.safetyStockTarget !== undefined) safetyStockTarget = e.safetyStockTarget;
+        if (e.lineAllocations !== undefined) lineAllocations = e.lineAllocations;
+        if (e.notes !== undefined) notes = e.notes;
+      }
+
+      const totalCirculationQty = readyToUseQty + inProcessQty + awaitingRepairQty;
+      const isBelowSafety = readyToUseQty < safetyStockTarget;
+      const isCriticalEmpty = readyToUseQty === 0;
+
+      // Photo thumbnail lookup
+      const photos = workpiecePhotos[cleanCode] || workpiecePhotos[cleanName] || [];
+      const primaryPhoto = photos.find(p => p.isPrimary) || photos[0];
+
+      return {
+        no: index + 1,
+        partCode: pCode,
+        partName: pm.partName,
+        drawingCode: (pm as any).drawingNumber || pCode,
+        stageName: pm.stageName || deriveLogicalStage(pm.partName, pm.stageName),
+        readyToUseQty,
+        inProcessQty,
+        awaitingRepairQty,
+        totalCirculationQty,
+        safetyStockTarget,
+        lineAllocations,
+        isBelowSafety,
+        isCriticalEmpty,
+        notes,
+        liveQueue,
+        primaryPhoto
+      };
     });
-  }, [partMasters, lines, spareStocks, isEditing, editMatrixValues, editNoteValues, editMinValues, editMaxValues, editSafetyValues, monitoringData]);
+  }, [partMasters, storedRepairStocks, ticketsByPart, lines, isEditing, editValues, workpiecePhotos]);
 
   // Filtered rows
   const filteredRows = useMemo(() => {
-    return matrixRows.filter(row => {
+    return repairStockRows.filter(row => {
       const matchSearch = 
         row.partName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         row.partCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -344,61 +250,91 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
         }
       }
 
+      if (statusQuickFilter === 'LOW') {
+        if (!row.isBelowSafety) return false;
+      } else if (statusQuickFilter === 'IN_PROCESS') {
+        if (row.inProcessQty <= 0) return false;
+      } else if (statusQuickFilter === 'AWAITING') {
+        if (row.awaitingRepairQty <= 0) return false;
+      }
+
       return true;
     });
-  }, [matrixRows, searchTerm, selectedStageFilter]);
+  }, [repairStockRows, searchTerm, selectedStageFilter, statusQuickFilter]);
 
-  // Grand totals across all lines
-  const grandTotalActiveTooling = useMemo(() => {
-    return matrixRows.reduce((sum, row) => sum + row.total, 0);
-  }, [matrixRows]);
+  // Overall KPIs
+  const kpis = useMemo(() => {
+    let totalReady = 0;
+    let totalInProcess = 0;
+    let totalAwaiting = 0;
+    let totalPool = 0;
+    let lowBufferCount = 0;
+    let inProcessCount = 0;
+    let awaitingCount = 0;
 
-  const lineSubTotals = useMemo(() => {
-    const totals: Record<string, number> = {};
-    LINE_COLUMNS.forEach(col => {
-      totals[col.id] = matrixRows.reduce((sum, row) => sum + (row.quantities[col.id] || 0), 0);
+    repairStockRows.forEach(row => {
+      totalReady += row.readyToUseQty;
+      totalInProcess += row.inProcessQty;
+      totalAwaiting += row.awaitingRepairQty;
+      totalPool += row.totalCirculationQty;
+      if (row.isBelowSafety) lowBufferCount++;
+      if (row.inProcessQty > 0) inProcessCount++;
+      if (row.awaitingRepairQty > 0) awaitingCount++;
     });
-    return totals;
-  }, [matrixRows]);
 
-  // Enter Edit Mode
+    return {
+      totalReady,
+      totalInProcess,
+      totalAwaiting,
+      totalPool,
+      lowBufferCount,
+      inProcessCount,
+      awaitingCount
+    };
+  }, [repairStockRows]);
+
+  // Quick adjust single row ready stock (+1 or -1)
+  const handleQuickAdjustReady = (row: typeof repairStockRows[0], delta: number) => {
+    const newQty = Math.max(0, row.readyToUseQty + delta);
+    const updatedItem: PartRepairStockItem = {
+      id: row.partCode,
+      partCode: row.partCode,
+      partName: row.partName,
+      stageName: row.stageName,
+      readyToUseQty: newQty,
+      inProcessQty: row.inProcessQty,
+      awaitingRepairQty: row.awaitingRepairQty,
+      totalCirculationQty: newQty + row.inProcessQty + row.awaitingRepairQty,
+      safetyStockTarget: row.safetyStockTarget,
+      lineAllocations: row.lineAllocations,
+      notes: row.notes,
+      updatedAt: new Date().toISOString()
+    };
+
+    storageService.savePartRepairStock(updatedItem);
+    setSaveSuccessMsg(`ปรับสต็อกพร้อมเบิก "${row.partName}": ${newQty} ชิ้น (${delta > 0 ? '+1' : '-1'})`);
+    setTimeout(() => setSaveSuccessMsg(null), 3000);
+  };
+
+  // Start Full Edit Mode
   const handleStartEdit = () => {
-    const currentValues: Record<string, number> = {};
-    const currentMin: Record<string, number> = {};
-    const currentMax: Record<string, number> = {};
-    const currentSafety: Record<string, number> = {};
-    const currentNote: Record<string, string> = {};
-
-    matrixRows.forEach(row => {
-      LINE_COLUMNS.forEach(col => {
-        currentValues[getCellKey(row.partCode, col.id)] = row.quantities[col.id] || 0;
-      });
-      currentMin[row.partCode] = row.minimumStock;
-      currentMax[row.partCode] = row.maximumStock;
-      currentSafety[row.partCode] = row.safetyStockQty;
-      currentNote[row.partCode] = row.stockNote;
+    const initial: Record<string, Partial<PartRepairStockItem>> = {};
+    repairStockRows.forEach(r => {
+      initial[r.partCode] = {
+        readyToUseQty: r.readyToUseQty,
+        inProcessQty: r.inProcessQty,
+        awaitingRepairQty: r.awaitingRepairQty,
+        safetyStockTarget: r.safetyStockTarget,
+        lineAllocations: { ...r.lineAllocations },
+        notes: r.notes
+      };
     });
-
-    setEditMatrixValues(currentValues);
-    setEditMinValues(currentMin);
-    setEditMaxValues(currentMax);
-    setEditSafetyValues(currentSafety);
-    setEditNoteValues(currentNote);
+    setEditValues(initial);
     setIsEditing(true);
     setHasUnsavedChanges(false);
   };
 
-  // Cell Value Changed
-  const handleCellChange = (partCode: string, lineId: string, val: number) => {
-    const safeVal = Math.max(0, Math.floor(val || 0));
-    setEditMatrixValues(prev => ({
-      ...prev,
-      [getCellKey(partCode, lineId)]: safeVal
-    }));
-    setHasUnsavedChanges(true);
-  };
-
-  // Cancel Edit Mode
+  // Cancel Edit
   const handleCancelEdit = () => {
     if (hasUnsavedChanges) {
       if (!window.confirm('คุณมีการแก้ไขที่ยังไม่ได้บันทึก ต้องการยกเลิกใช่หรือไม่?')) {
@@ -406,244 +342,169 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
       }
     }
     setIsEditing(false);
-    setEditMatrixValues({});
-    setEditMinValues({});
-    setEditMaxValues({});
-    setEditSafetyValues({});
-    setEditNoteValues({});
+    setEditValues({});
     setHasUnsavedChanges(false);
   };
 
-  // Apply Batch Update into Matrix Edit State
-  const handleApplyBatchOperation = () => {
-    let updatedValues: Record<string, number> = { ...editMatrixValues };
-    if (!isEditing) {
-      matrixRows.forEach(row => {
-        LINE_COLUMNS.forEach(col => {
-          updatedValues[getCellKey(row.partCode, col.id)] = row.quantities[col.id] || 0;
-        });
-      });
-    }
-
-    let affectedCount = 0;
-
-    if (batchActionType === 'FILL') {
-      matrixRows.forEach(row => {
-        if (batchTargetStage === 'ALL' || row.stageName.toUpperCase() === batchTargetStage.toUpperCase()) {
-          LINE_COLUMNS.forEach(col => {
-            if (batchTargetLine === 'ALL' || col.id === batchTargetLine) {
-              updatedValues[getCellKey(row.partCode, col.id)] = batchFillQty;
-              affectedCount++;
-            }
-          });
-        }
-      });
-    } else if (batchActionType === 'COPY') {
-      matrixRows.forEach(row => {
-        if (batchTargetStage === 'ALL' || row.stageName.toUpperCase() === batchTargetStage.toUpperCase()) {
-          const sourceVal = updatedValues[getCellKey(row.partCode, batchCopySourceLine)] ?? row.quantities[batchCopySourceLine] ?? 0;
-          updatedValues[getCellKey(row.partCode, batchCopyTargetLine)] = sourceVal;
-          affectedCount++;
-        }
-      });
-    } else if (batchActionType === 'RESET') {
-      matrixRows.forEach(row => {
-        if (batchTargetStage === 'ALL' || row.stageName.toUpperCase() === batchTargetStage.toUpperCase()) {
-          LINE_COLUMNS.forEach(col => {
-            if (batchTargetLine === 'ALL' || col.id === batchTargetLine) {
-              updatedValues[getCellKey(row.partCode, col.id)] = 0;
-              affectedCount++;
-            }
-          });
-        }
-      });
-    }
-
-    setEditMatrixValues(updatedValues);
-    setIsEditing(true);
-    setHasUnsavedChanges(true);
-    setShowBatchModal(false);
-    setSaveSuccessMsg(`ดำเนินการ Batch Update เสร็จสิ้น (${affectedCount} จุด) - กรุณากดบันทึกเพื่อยืนยัน`);
-  };
-
-  // Save All Changes to Database
-  const handleSaveMatrix = () => {
+  // Save All Changes
+  const handleSaveAll = () => {
     try {
-      // 1. Perform validation for Min <= Max and Safety <= Max
-      const keys = Object.keys(editMinValues);
-      for (const pCode of keys) {
-        const minVal = editMinValues[pCode];
-        const maxVal = editMaxValues[pCode] !== undefined ? editMaxValues[pCode] : 9999;
-        const safetyVal = editSafetyValues[pCode] !== undefined ? editSafetyValues[pCode] : 0;
-        const pm = partMasters.find(p => p.partCode === pCode);
-        const name = pm ? pm.partName : pCode;
+      const allStocks = storageService.getPartRepairStocks();
+      repairStockRows.forEach(r => {
+        const edited = editValues[r.partCode] || {};
+        const readyToUseQty = edited.readyToUseQty ?? r.readyToUseQty;
+        const inProcessQty = edited.inProcessQty ?? r.inProcessQty;
+        const awaitingRepairQty = edited.awaitingRepairQty ?? r.awaitingRepairQty;
+        const safetyStockTarget = edited.safetyStockTarget ?? r.safetyStockTarget;
+        const lineAllocations = edited.lineAllocations ?? r.lineAllocations;
+        const notes = edited.notes ?? r.notes;
 
-        if (minVal < 0 || maxVal < 0 || safetyVal < 0) {
-          alert(language === 'TH' ? 'ค่าสต็อกต้องไม่ติดลบ' : 'Stock values cannot be negative');
-          return;
-        }
-        if (minVal > maxVal) {
-          alert(language === 'TH' 
-            ? `พาร์ท ${name}: ค่าสต็อกขั้นต่ำ (Min: ${minVal}) ต้องไม่มากกว่าสต็อกสูงสุด (Max: ${maxVal})` 
-            : `Part ${name}: Min Stock (${minVal}) cannot be greater than Max Stock (${maxVal})`
-          );
-          return;
-        }
-        if (safetyVal > maxVal) {
-          alert(language === 'TH' 
-            ? `พาร์ท ${name}: ค่าสต็อกเพื่อความปลอดภัย (Safety: ${safetyVal}) ต้องไม่มากกว่าสต็อกสูงสุด (Max: ${maxVal})` 
-            : `Part ${name}: Safety Stock (${safetyVal}) cannot be greater than Max Stock (${maxVal})`
-          );
-          return;
-        }
-      }
-
-      const currentConfigs = storageService.getLineConfigs();
-      const updatedConfigs = currentConfigs.map(lineConfig => {
-        const lineId = lineConfig.lineId;
-        const newQuantities: Record<string, number> = { ...(lineConfig.stockQuantities || {}) };
-
-        partMasters.forEach(pm => {
-          const key = getCellKey(pm.partCode, lineId);
-          if (editMatrixValues[key] !== undefined) {
-            newQuantities[pm.partCode] = editMatrixValues[key];
-          }
-        });
-
-        return {
-          ...lineConfig,
-          stockQuantities: newQuantities
+        allStocks[r.partCode] = {
+          id: r.partCode,
+          partCode: r.partCode,
+          partName: r.partName,
+          stageName: r.stageName,
+          readyToUseQty,
+          inProcessQty,
+          awaitingRepairQty,
+          totalCirculationQty: readyToUseQty + inProcessQty + awaitingRepairQty,
+          safetyStockTarget,
+          lineAllocations,
+          notes,
+          updatedAt: new Date().toISOString()
         };
       });
 
-      storageService.saveLineConfigs(updatedConfigs);
-
-      // Save Notes to PartMasters
-      const updatedParts = partMasters.map(pm => {
-        if (editNoteValues[pm.partCode] !== undefined) {
-          return { ...pm, stockNote: editNoteValues[pm.partCode] };
-        }
-        return pm;
-      });
-      storageService.savePartMasters(updatedParts);
-
-      // Save Stock limits to SpareStockItem
-      const currentStocks = storageService.getSpareStocks();
-      const updatedStocks = currentStocks.map(stk => {
-        const pCode = stk.partCode;
-        const minVal = editMinValues[pCode] !== undefined ? editMinValues[pCode] : stk.minimumStock;
-        const maxVal = editMaxValues[pCode] !== undefined ? editMaxValues[pCode] : stk.maximumStock;
-        const safetyVal = editSafetyValues[pCode] !== undefined ? editSafetyValues[pCode] : (stk.safetyStockQty ?? stk.minimumStock);
-        const noteVal = editNoteValues[pCode] !== undefined ? editNoteValues[pCode] : (stk.note || '');
-
-        // Sum up total stock quantity across all lines
-        let totalQty = 0;
-        LINE_COLUMNS.forEach(col => {
-          const key = getCellKey(pCode, col.id);
-          if (editMatrixValues[key] !== undefined) {
-            totalQty += editMatrixValues[key];
-          } else {
-            const lineConfig = currentConfigs.find(l => l.lineId === col.id);
-            if (lineConfig && lineConfig.stockQuantities) {
-              totalQty += lineConfig.stockQuantities[pCode] || 0;
-            }
-          }
-        });
-
-        const reserved = stk.reservedQuantity || 0;
-        const quarantine = stk.quarantineQuantity || 0;
-        const available = Math.max(0, totalQty - reserved - quarantine);
-        const requiredPerFull = stk.requiredQuantityPerFullReplacement || 1;
-
-        let stockStatus: any = 'AVAILABLE';
-        if (available === 0) stockStatus = 'NO_STOCK';
-        else if (available < requiredPerFull) stockStatus = 'LOW_STOCK';
-        else if (available <= minVal) stockStatus = 'MINIMUM';
-
-        let combinedRisk: any = 'NORMAL';
-        if (stk.hasDeliveryRisk) {
-          combinedRisk = 'DELIVERY RISK';
-        } else if (available === 0) {
-          combinedRisk = 'STOP RISK';
-        } else if (available < requiredPerFull) {
-          combinedRisk = 'CRITICAL SUPPLY';
-        } else if (available <= safetyVal) {
-          combinedRisk = 'WARNING';
-        }
-
-        return {
-          ...stk,
-          onHandQuantity: totalQty,
-          availableQuantity: available,
-          minimumStock: minVal,
-          maximumStock: maxVal,
-          safetyStockQty: safetyVal,
-          safetyStockMin: minVal,
-          note: noteVal,
-          stockStatus,
-          combinedRisk
-        };
-      });
-
-      storageService.saveSpareStocksList(updatedStocks);
-
+      storageService.saveAllPartRepairStocks(allStocks);
       storageService.addAuditLog(
         'STOCK',
-        `Batch updated Stock Matrix and safety limits across ${partMasters.length} parts and 7 lines`,
-        `อัปเดตตารางจำนวนสต็อกและเกณฑ์ควบคุมความปลอดภัยเรียบร้อยแล้ว`
+        `Updated Stock Part Repair matrix for ${repairStockRows.length} parts`,
+        `บันทึกข้อมูลสต็อกอะไหล่หมุนเวียนงานซ่อม ${repairStockRows.length} รายการเรียบร้อยแล้ว`
       );
 
       setIsEditing(false);
+      setEditValues({});
       setHasUnsavedChanges(false);
-      setEditMatrixValues({});
-      setEditMinValues({});
-      setEditMaxValues({});
-      setEditSafetyValues({});
-      setEditNoteValues({});
-      setSaveSuccessMsg(`บันทึกจำนวนสต็อกและเกณฑ์ความปลอดภัย ${partMasters.length} รายการสำเร็จแล้ว`);
+      setSaveSuccessMsg(`บันทึกสต็อกอะไหล่หมุนเวียนงานซ่อม ${repairStockRows.length} รายการสำเร็จแล้ว`);
       setTimeout(() => setSaveSuccessMsg(null), 4000);
       loadData();
     } catch (err: any) {
-      alert(`เกิดข้อผิดพลาดในการบันทึก: ${err.message}`);
+      alert(`บันทึกไม่สำเร็จ: ${err.message}`);
     }
   };
 
-  // Delete Part
-  const handleConfirmDelete = () => {
-    if (!deleteTargetPart) return;
-    try {
-      storageService.deletePartMaster(deleteTargetPart.partCode);
-      setSaveSuccessMsg(`ลบชิ้นส่วน ${deleteTargetPart.partName} (${deleteTargetPart.partCode}) เรียบร้อยแล้ว`);
-      setDeleteTargetPart(null);
-      loadData();
-    } catch (err: any) {
-      alert(`ลบไม่สำเร็จ: ${err.message}`);
-    }
-  };
-
-  // Open Edit Modal for a row (navigate to Part Master tab)
-  const handleOpenEditModalForRow = (row: typeof matrixRows[0]) => {
-    if (onNavigateToMaster) {
-      onNavigateToMaster();
-    }
-  };
-
-  // Export Matrix to Excel (.xlsx)
-  const handleExportCsv = () => {
-    exportInstallMatrixExcel(matrixRows, LINE_COLUMNS);
+  // Export Excel
+  const handleExportExcel = () => {
+    exportPartRepairStockExcel(repairStockRows, LINE_COLUMNS);
   };
 
   return (
-    <div className="space-y-3.5 font-sans text-white animate-fadeIn pb-8">
-      
-      {/* Note Options Datalist */}
-      <datalist id="note-options">
-        <option value="รอของเข้า (Waiting for PO)" />
-        <option value="ของมีปัญหา/รอเคลม (Claim/Quarantine)" />
-        <option value="ยืมจาก Line อื่น (Borrowed)" />
-        <option value="ปรับปรุงสต็อก (Stock Adjusted)" />
-        <option value="ส่งซ่อม (Sent for Repair)" />
-      </datalist>
+    <div className="space-y-3 font-sans text-white animate-fadeIn pb-8">
+
+      {/* ======================================================== */}
+      {/* 1. TOP HEADER & KPI SUMMARY STRIP (Industrial LG Dark) */}
+      {/* ======================================================== */}
+      <div className="bg-[#111622] border border-[#232f48] p-3 shadow-lg rounded-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-[#00FF00]/10 border border-[#00FF00]/40 rounded text-[#00FF00]">
+                <Wrench className="w-4 h-4" />
+              </span>
+              <h2 className="text-base sm:text-lg font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
+                <span>STOCK PART REPAIR</span>
+                <span className="text-xs px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800 font-mono font-normal">
+                  สต็อกอะไหล่หมุนเวียนเฉพาะงานซ่อมเจียร
+                </span>
+              </h2>
+            </div>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+              ติดตามและควบคุมจำนวนอะไหล่หมุนเวียนงานซ่อมแยก 3 สถานะ: <span className="text-emerald-400 font-semibold">พร้อมเบิกใช้งาน</span>, <span className="text-purple-400 font-semibold">กำลังเจียรบนแท่นเครื่อง</span>, และ <span className="text-amber-400 font-semibold">รอส่งซ่อม</span> (แยกอิสระจากสต็อกของใหม่ ไม่ปะปนกับคลังใหญ่)
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 self-start lg:self-center">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#162132] border border-[#2d3e58] text-[11px] font-mono text-cyan-300">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              <span>ซิงค์อัตโนมัติจากระบบคิวงาน</span>
+            </span>
+          </div>
+        </div>
+
+        {/* 5 KPI Summary Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-1 font-mono">
+          {/* Card 1: Ready to Use */}
+          <div className="bg-[#0f1d17] border border-emerald-500/40 p-2.5 rounded-sm relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider">พร้อมเบิกใช้งาน</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-emerald-300 mt-1">
+              {kpis.totalReady.toLocaleString()} <span className="text-xs font-normal text-slate-400">EA</span>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">ผ่าน QC พร้อมเบิกเข้าไลน์</div>
+          </div>
+
+          {/* Card 2: In-Process Grinding */}
+          <div className="bg-[#1c152e] border border-purple-500/40 p-2.5 rounded-sm relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-purple-300 font-bold uppercase tracking-wider">กำลังเจียรบนเครื่อง</span>
+              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-purple-200 mt-1">
+              {kpis.totalInProcess.toLocaleString()} <span className="text-xs font-normal text-slate-400">EA</span>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">ซิงค์จาก {kpis.inProcessCount} รายการในคิว</div>
+          </div>
+
+          {/* Card 3: Awaiting Regrind */}
+          <div className="bg-[#241c10] border border-amber-500/40 p-2.5 rounded-sm relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-amber-300 font-bold uppercase tracking-wider">รอส่งซ่อม / รอคิว</span>
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-amber-200 mt-1">
+              {kpis.totalAwaiting.toLocaleString()} <span className="text-xs font-normal text-slate-400">EA</span>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">บัฟเฟอร์รอเจียรใน Toolroom</div>
+          </div>
+
+          {/* Card 4: Total Circulation Pool */}
+          <div className="bg-[#121c2c] border border-cyan-500/40 p-2.5 rounded-sm relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-cyan-300 font-bold uppercase tracking-wider">รวมสต็อกหมุนเวียน</span>
+              <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-cyan-200 mt-1">
+              {kpis.totalPool.toLocaleString()} <span className="text-xs font-normal text-slate-400">EA</span>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">ยอดรวม 3 สถานะงานซ่อม</div>
+          </div>
+
+          {/* Card 5: Low Buffer Alerts */}
+          <div 
+            onClick={() => setStatusQuickFilter(prev => prev === 'LOW' ? 'ALL' : 'LOW')}
+            className={`border p-2.5 rounded-sm relative overflow-hidden cursor-pointer transition-all ${
+              kpis.lowBufferCount > 0 
+                ? 'bg-[#2a111a] border-rose-500/60 hover:bg-[#341622]' 
+                : 'bg-[#141b24] border-slate-700 hover:bg-[#1a222e]'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className={`text-[11px] font-bold uppercase tracking-wider ${kpis.lowBufferCount > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                ต่ำกว่าเกณฑ์สำรอง
+              </span>
+              {kpis.lowBufferCount > 0 && (
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+              )}
+            </div>
+            <div className={`text-xl sm:text-2xl font-black mt-1 ${kpis.lowBufferCount > 0 ? 'text-rose-300' : 'text-slate-400'}`}>
+              {kpis.lowBufferCount} <span className="text-xs font-normal text-slate-400">พาร์ท</span>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-0.5">คลิกเพื่อกรองเฉพาะรายการวิกฤต</div>
+          </div>
+        </div>
+      </div>
 
       {/* Alert Banner for Success */}
       {saveSuccessMsg && (
@@ -658,55 +519,102 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
         </div>
       )}
 
-      {/* Search and Stage Selector Bar + Actions */}
-      <div className="bg-[#111111] border border-[#666666] p-3 space-y-2.5 shadow-md mb-2">
-        <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 pt-1">
-          {/* Left Side: Filters & Search */}
-          <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            {/* Stage Dropdown Filter & Manager Button */}
-            <div className="flex items-center gap-1.5">
-              <div className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#666666] px-2.5 py-1 text-xs min-w-[200px]">
-                <Layers className="w-3.5 h-3.5 text-[#00FF00]" />
-                <select
-                  value={selectedStageFilter}
-                  onChange={e => setSelectedStageFilter(e.target.value)}
-                  className="bg-transparent text-[#00FF00] font-mono text-xs font-bold focus:outline-none cursor-pointer w-full"
-                >
-                  <option value="ALL" className="bg-[#111111] text-white">
-                    {language === 'TH' ? 'ทุกสเตจ (All Stages)' : 'All Stages'}
+      {/* ======================================================== */}
+      {/* 2. SEARCH, FILTER & ACTIONS BAR */}
+      {/* ======================================================== */}
+      <div className="bg-[#111111] border border-[#334155] p-2.5 space-y-2.5 shadow-md">
+        <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5">
+          {/* Left Side: Stage filter & Search */}
+          <div className="flex flex-wrap items-center gap-2 flex-1">
+            {/* Stage Dropdown */}
+            <div className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#475569] px-2.5 py-1 text-xs min-w-[200px]">
+              <Layers className="w-3.5 h-3.5 text-[#00FF00]" />
+              <select
+                value={selectedStageFilter}
+                onChange={e => setSelectedStageFilter(e.target.value)}
+                className="bg-transparent text-[#00FF00] font-mono text-xs font-bold focus:outline-none cursor-pointer w-full"
+              >
+                <option value="ALL" className="bg-[#111111] text-white">
+                  {language === 'TH' ? 'ทุกสเตจ (All Stages)' : 'All Stages'}
+                </option>
+                {stageOptions.map(stage => (
+                  <option key={stage} value={stage} className="bg-[#111111] text-white">
+                    {stage}
                   </option>
-                  {stageOptions.map(stage => (
-                    <option key={stage} value={stage} className="bg-[#111111] text-white">
-                      {stage}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                ))}
+              </select>
+            </div>
 
+            <button
+              type="button"
+              onClick={() => setIsStageManagerOpen(true)}
+              className="px-2.5 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-[#00FF00] border border-[#475569] text-xs font-bold rounded flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap"
+              title="เปิดหน้าต่างจัดกลุ่มและจัดการ Stage"
+            >
+              <Sliders className="w-3.5 h-3.5 text-[#00FF00]" />
+              <span>⚙️ {language === 'TH' ? 'จัดกลุ่ม Stage' : 'Group Stages'}</span>
+            </button>
+
+            {/* Quick Status Filters */}
+            <div className="flex items-center gap-1 text-[11px] font-mono">
               <button
                 type="button"
-                onClick={() => setIsStageManagerOpen(true)}
-                className="px-2.5 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-[#00FF00] border border-[#666666] text-xs font-bold rounded flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap"
-                title="เปิดหน้าต่างจัดกลุ่มและจัดการ Stage"
+                onClick={() => setStatusQuickFilter('ALL')}
+                className={`px-2 py-1 rounded border transition-colors cursor-pointer ${
+                  statusQuickFilter === 'ALL'
+                    ? 'bg-slate-700 text-white border-slate-500 font-bold'
+                    : 'bg-[#181818] text-slate-400 border-slate-700 hover:text-white'
+                }`}
               >
-                <Sliders className="w-3.5 h-3.5 text-[#00FF00]" />
-                <span>⚙️ {language === 'TH' ? 'จัดกลุ่ม Stage' : 'Group Stages'}</span>
+                ทั้งหมด ({repairStockRows.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusQuickFilter('LOW')}
+                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
+                  statusQuickFilter === 'LOW'
+                    ? 'bg-rose-950 text-rose-300 border-rose-600 font-bold'
+                    : 'bg-[#181818] text-slate-400 border-slate-700 hover:text-rose-300'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                <span>ต่ำกว่าเกณฑ์ ({kpis.lowBufferCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusQuickFilter('IN_PROCESS')}
+                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
+                  statusQuickFilter === 'IN_PROCESS'
+                    ? 'bg-purple-950 text-purple-300 border-purple-600 font-bold'
+                    : 'bg-[#181818] text-slate-400 border-slate-700 hover:text-purple-300'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                <span>กำลังเจียร ({kpis.inProcessCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusQuickFilter('AWAITING')}
+                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
+                  statusQuickFilter === 'AWAITING'
+                    ? 'bg-amber-950 text-amber-300 border-amber-600 font-bold'
+                    : 'bg-[#181818] text-slate-400 border-slate-700 hover:text-amber-300'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                <span>รอส่งซ่อม ({kpis.awaitingCount})</span>
               </button>
             </div>
 
             {/* Search Input */}
-            <div className="relative w-full max-w-md">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={
-                  language === 'TH'
-                    ? 'ค้นหาชื่อชิ้นส่วน หรือ Stage...'
-                    : 'Search Part Name or Stage...'
-                }
-                className="w-full pl-8 pr-7 py-1.5 bg-[#1a1a1a] border border-[#666666] text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-[#00FF00]"
+                placeholder="ค้นหาชื่อชิ้นส่วน หรือ Stage..."
+                className="w-full pl-8 pr-7 py-1 bg-[#1a1a1a] border border-[#475569] text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-[#00FF00]"
               />
               {searchTerm && (
                 <button
@@ -720,7 +628,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
             </div>
           </div>
 
-          {/* Right Side: Action Buttons */}
+          {/* Right Side: Actions */}
           <div className="flex flex-wrap items-center gap-2 font-mono">
             {isEditing ? (
               <>
@@ -734,7 +642,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                 </button>
                 <button
                   type="button"
-                  onClick={handleSaveMatrix}
+                  onClick={handleSaveAll}
                   className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
@@ -745,8 +653,8 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
               <>
                 <button
                   type="button"
-                  onClick={handleExportCsv}
-                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-300 border border-[#666666] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  onClick={handleExportExcel}
+                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-300 border border-[#475569] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-[#00FF00]" />
                   <span>Export Excel (.xlsx)</span>
@@ -766,24 +674,33 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
       </div>
 
       {/* ======================================================== */}
-      {/* 2. INDUSTRIAL DATA TABLE WITH LOCKED STICKY HEADER */}
+      {/* 3. INDUSTRIAL TABLE WITH LOCKED STICKY HEADERS */}
       {/* ======================================================== */}
-      <div className="bg-[#111111] border border-[#666666] shadow-xl overflow-hidden">
-        {/* Table Header Bar for Consistency */}
-        <div className="p-2.5 bg-[#1a1a1a] border-b border-[#666666] flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-[#111111] border border-[#334155] shadow-xl overflow-hidden">
+        {/* Table Subheader Bar */}
+        <div className="p-2.5 bg-[#171d29] border-b border-[#334155] flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-[#00FF00]" />
             <span className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-              INSTALLED QUANTITY MATRIX ({matrixRows.length} รายการ)
+              STOCK PART REPAIR MATRIX ({filteredRows.length} / {repairStockRows.length} รายการ)
             </span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-[#00FF00]"></span>
-              <span>หัวตารางล็อกคงที่ (Locked Sticky Header)</span>
+              <span>พร้อมเบิกใช้งาน (Ready Buffer)</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+              <span>กำลังเจียร (In-Process)</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span>รอส่งซ่อม (Awaiting Regrind)</span>
             </span>
           </div>
         </div>
+
         {/* Scrollable Container with Sticky Table Headers */}
         <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)] scrollbar-thin relative">
           <table 
@@ -795,580 +712,500 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
               {/* Row 1 Header: Main Divisions (Sticky top-0) */}
               <tr className="text-white select-none">
                 <th 
-                  colSpan={3} 
-                  className="sticky top-0 z-20 bg-[#444455] text-white font-black py-1.5 px-1.5 border-b border-r border-[#666666] text-left uppercase tracking-wider text-[11px] shadow-xs"
+                  colSpan={4} 
+                  className="sticky top-0 z-20 bg-[#283244] text-white font-black py-1.5 px-2 border-b border-r border-[#475569] text-left uppercase tracking-wider text-[11px] shadow-xs"
                 >
-                  1. PART IDENTIFICATION
+                  1. PART IDENTIFICATION & SPEC
                 </th>
                 <th 
-                  colSpan={8} 
-                  className="sticky top-0 z-20 bg-[#2a3a2a] text-[#00FF7F] font-black py-1.5 px-1.5 border-b border-r border-[#666666] text-center uppercase tracking-wider text-[11px] shadow-xs"
+                  colSpan={4} 
+                  className="sticky top-0 z-20 bg-[#1e2a38] text-cyan-300 font-black py-1.5 px-2 border-b border-r border-[#475569] text-center uppercase tracking-wider text-[11px] shadow-xs"
                 >
-                  2. STOCK QUANTITY BY LINE (EA)
+                  2. REPAIRED PART STATUS (สต็อกงานซ่อมแยก 3 สถานะ)
+                </th>
+                <th 
+                  colSpan={7} 
+                  className="sticky top-0 z-20 bg-[#1e3428] text-[#00FF7F] font-black py-1.5 px-2 border-b border-r border-[#475569] text-center uppercase tracking-wider text-[11px] shadow-xs"
+                >
+                  3. READY STOCK BY LINE ALLOCATION (EA)
                 </th>
                 <th 
                   colSpan={2} 
-                  className="sticky top-0 z-20 bg-[#2d3a4a] text-cyan-300 font-black py-1.5 px-1.5 border-b border-r border-[#666666] text-center uppercase tracking-wider text-[11px] shadow-xs"
+                  className="sticky top-0 z-20 bg-[#352a1e] text-amber-300 font-black py-1.5 px-2 border-b border-r border-[#475569] text-center uppercase tracking-wider text-[11px] shadow-xs"
                 >
-                  3. SAFETY STOCK & STATUS (IDEA 6)
+                  4. SAFETY BUFFER & STATUS
                 </th>
                 <th 
                   colSpan={2} 
-                  className="sticky top-0 z-20 bg-[#444455] text-[#FFCC00] font-black py-1.5 px-1.5 border-b border-[#666666] text-center uppercase tracking-wider text-[11px] shadow-xs w-32"
+                  className="sticky top-0 z-20 bg-[#283244] text-[#FFCC00] font-black py-1.5 px-2 border-b border-[#475569] text-center uppercase tracking-wider text-[11px] shadow-xs min-w-[170px]"
                 >
-                  4. REMARKS & ACTIONS
+                  5. REMARKS & ACTIONS
                 </th>
               </tr>
 
               {/* Sub Columns Header: Row 2 (Sticky top-27px) */}
               <tr className="text-white font-bold text-[10px] select-none">
-                {/* Col: No */}
-                <th className="sticky top-[27px] z-20 py-1 px-1 w-8 text-center border-b border-r border-[#666666] bg-[#555566]">
+                {/* Col 1: No */}
+                <th className="sticky top-[27px] z-20 py-1 px-1 w-8 text-center border-b border-r border-[#475569] bg-[#334155]">
                   No
                 </th>
 
-                {/* Col: Stage */}
-                <th className="sticky top-[27px] z-20 py-1 px-1 min-w-[140px] w-36 text-center border-b border-r border-[#666666] bg-[#555566]">
+                {/* Col 2: Stage */}
+                <th className="sticky top-[27px] z-20 py-1 px-1.5 min-w-[130px] w-36 text-center border-b border-r border-[#475569] bg-[#334155]">
                   Stage
                 </th>
 
-                {/* Col: Part Name */}
-                <th className="sticky top-[27px] z-20 py-1 px-1 min-w-[120px] text-left border-b border-r border-[#666666] bg-[#555566]">
-                  Part Name
+                {/* Col 3: รูปชิ้นงาน (Photo / Spec) */}
+                <th className="sticky top-[27px] z-20 py-1 px-1 w-16 text-center border-b border-r border-[#475569] bg-[#334155]">
+                  <div>รูปชิ้นงาน</div>
+                  <div className="text-[8px] text-slate-300 font-normal">Photo/Spec</div>
                 </th>
 
-                {/* Col: E1 */}
-                <th className="sticky top-[27px] z-20 py-0.5 px-0.5 text-center border-b border-r border-[#666666] bg-[#3a4a3a] text-[#00FF7F]">
-                  <div className="font-bold text-white text-[11px]">E1</div>
-                  <div className="text-[8px] text-slate-300 font-normal leading-tight">Ø7 Slit</div>
+                {/* Col 4: Part Name & DWG No. */}
+                <th className="sticky top-[27px] z-20 py-1 px-2 min-w-[160px] text-left border-b border-r border-[#475569] bg-[#334155]">
+                  Part Name & DWG No.
                 </th>
 
-                {/* Col: E2 */}
-                <th className="sticky top-[27px] z-20 py-0.5 px-0.5 text-center border-b border-r border-[#666666] bg-[#3a4a3a] text-[#00FF7F]">
-                  <div className="font-bold text-white text-[11px]">E2</div>
-                  <div className="text-[8px] text-slate-300 font-normal leading-tight">Ø5 Slit</div>
+                {/* Col 5: พร้อมเบิกใช้งาน (Ready EA) */}
+                <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#143224] text-emerald-300 min-w-[105px]">
+                  <div className="font-black text-[11px]">พร้อมเบิก</div>
+                  <div className="text-[8px] text-emerald-200 font-normal">Ready to Use (EA)</div>
                 </th>
 
-                {/* Col: E3-1 */}
-                <th className="sticky top-[27px] z-20 py-0.5 px-0.5 text-center border-b border-r border-[#666666] bg-[#3a4a3a] text-[#00FF7F]">
-                  <div className="font-bold text-white text-[11px]">E3-1</div>
-                  <div className="text-[8px] text-slate-300 font-normal leading-tight">Slit 3P</div>
+                {/* Col 6: กำลังเจียร (In-Process EA) */}
+                <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#2a1a38] text-purple-300 min-w-[95px]">
+                  <div className="font-black text-[11px]">กำลังเจียร</div>
+                  <div className="text-[8px] text-purple-200 font-normal">In-Process (EA)</div>
                 </th>
 
-                {/* Col: E3-2 */}
-                <th className="sticky top-[27px] z-20 py-0.5 px-0.5 text-center border-b border-r border-[#666666] bg-[#3a4a3a] text-[#00FF7F]">
-                  <div className="font-bold text-white text-[11px]">E3-2</div>
-                  <div className="text-[8px] text-slate-300 font-normal leading-tight">WL+ 4P</div>
+                {/* Col 7: รอส่งซ่อม (Awaiting EA) */}
+                <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#382a14] text-amber-300 min-w-[95px]">
+                  <div className="font-black text-[11px]">รอส่งซ่อม</div>
+                  <div className="text-[8px] text-amber-200 font-normal">Awaiting (EA)</div>
                 </th>
 
-                {/* Col: E3-3 */}
-                <th className="sticky top-[27px] z-20 py-0.5 px-0.5 text-center border-b border-r border-[#666666] bg-[#3a4a3a] text-[#00FF7F]">
-                  <div className="font-bold text-white text-[11px]">E3-3</div>
-                  <div className="text-[8px] text-slate-300 font-normal leading-tight">New Cor 4P</div>
+                {/* Col 8: รวมหมุนเวียน (Total Circulation EA) */}
+                <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#1e2a3a] text-cyan-300 min-w-[90px]">
+                  <div className="font-black text-[11px]">รวมหมุนเวียน</div>
+                  <div className="text-[8px] text-cyan-200 font-normal">Total Pool (EA)</div>
                 </th>
 
-                {/* Col: E4 */}
-                <th className="sticky top-[27px] z-20 py-0.5 px-0.5 text-center border-b border-r border-[#666666] bg-[#3a4a3a] text-[#00FF7F]">
-                  <div className="font-bold text-white text-[11px]">E4</div>
-                  <div className="text-[8px] text-slate-300 font-normal leading-tight">Ø5 Slit</div>
+                {/* Cols 9 - 15: Ready per line E1 - E5 */}
+                {LINE_COLUMNS.map(col => (
+                  <th key={col.id} className="sticky top-[27px] z-20 py-0.5 px-1 text-center border-b border-r border-[#475569] bg-[#203426] text-[#00FF7F] min-w-[48px]">
+                    <div className="font-bold text-white text-[10px]">{col.id}</div>
+                    <div className="text-[8px] text-slate-300 font-normal leading-tight">{col.subName}</div>
+                  </th>
+                ))}
+
+                {/* Col 16: Safety Stock Target */}
+                <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#3a2d1e] text-amber-300 min-w-[85px]">
+                  <div>เกณฑ์สำรอง</div>
+                  <div className="text-[8px] text-slate-300 font-normal">Safety Target</div>
                 </th>
 
-                {/* Col: E5 */}
-                <th className="sticky top-[27px] z-20 py-0.5 px-0.5 text-center border-b border-r border-[#666666] bg-[#3a4a3a] text-[#00FF7F]">
-                  <div className="font-bold text-white text-[11px]">E5</div>
-                  <div className="text-[8px] text-slate-300 font-normal leading-tight">Ø5 Slit</div>
+                {/* Col 17: Status */}
+                <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#3a2d1e] text-amber-300 min-w-[110px]">
+                  <div>สถานะความพร้อม</div>
+                  <div className="text-[8px] text-slate-300 font-normal">Buffer Status</div>
                 </th>
 
-                {/* Col: Total */}
-                <th className="sticky top-[27px] z-20 py-1 px-1 w-14 text-center bg-[#444455] text-[#FFCC00] font-bold border-b border-r border-[#666666]">
-                  Total
+                {/* Col 18: Notes */}
+                <th className="sticky top-[27px] z-20 py-1 px-2 text-left border-b border-r border-[#475569] bg-[#334155] min-w-[140px]">
+                  หมายเหตุงานซ่อม
                 </th>
 
-                {/* Col: Safety Stock Level (Idea 6) */}
-                <th className="sticky top-[27px] z-20 py-1 px-1 w-20 text-center bg-[#3a4a58] text-cyan-300 font-bold border-b border-r border-[#666666]">
-                  <div>Safety Stock</div>
-                  <div className="text-[8px] text-slate-300 font-normal">เกณฑ์สำรอง</div>
-                </th>
-
-                {/* Col: Stock Status (Idea 6) */}
-                <th className="sticky top-[27px] z-20 py-1 px-1 w-24 text-center bg-[#3a4a58] text-cyan-300 font-bold border-b border-r border-[#666666]">
-                  <div>Stock Status</div>
-                  <div className="text-[8px] text-slate-300 font-normal">สถานะสต็อก</div>
-                </th>
-
-                {/* Col: Notes */}
-                <th className="sticky top-[27px] z-20 py-1 px-1 min-w-[150px] text-left bg-[#444455] text-white font-bold border-b border-r border-[#666666]">
-                  Notes / Remarks
-                </th>
-
-                {/* Col: Actions */}
-                <th className="sticky top-[27px] z-20 py-1 px-1 w-16 text-center bg-[#444455] text-[#FFCC00] font-bold border-b border-[#666666]">
+                {/* Col 19: Actions */}
+                <th className="sticky top-[27px] z-20 py-1 px-1 text-center border-b border-[#475569] bg-[#334155] min-w-[80px]">
                   Actions
                 </th>
               </tr>
             </thead>
 
-            {/* Table Rows Body */}
+            {/* Table Body */}
             <tbody>
-              {/* TOP INLINE ADD ROW (Direct Entry at Top of Table - No Popup) */}
-              {isAddingInline && (
-                <tr className="bg-[#1e2e1e] border-b-2 border-[#00FF00] animate-fadeIn">
-                  <td className="py-1 px-2 text-center text-[#00FF00] font-bold border-r border-[#444444]">
-                    NEW
-                  </td>
-                  <td className="py-1 px-1 border-r border-[#444444]">
-                    <select
-                      value={newRowData.stage}
-                      onChange={e => setNewRowData({ ...newRowData, stage: e.target.value })}
-                      className="w-full bg-[#111111] text-[#00FF00] border border-[#00FF00] p-1 text-[11px] font-bold font-mono focus:outline-none"
-                    >
-                      {stageOptions.length > 0 ? (
-                        stageOptions.map(stg => (
-                          <option key={stg} value={stg} className="bg-[#111111] text-white">
-                            {stg}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="Stage 1: Piercing & Burring">Stage 1: Piercing & Burring</option>
-                      )}
-                    </select>
-                  </td>
-                  <td className="py-1 px-1 border-r border-[#444444]">
-                    <input
-                      type="text"
-                      placeholder="Part Name (e.g. Louver Punch)"
-                      value={newRowData.partName}
-                      onChange={e => setNewRowData({ ...newRowData, partName: e.target.value })}
-                      className="w-full bg-[#111111] text-white border border-[#00FF00] px-1.5 py-0.5 text-xs font-bold font-mono focus:outline-none"
-                    />
-                  </td>
-                  {LINE_COLUMNS.map(col => (
-                    <td key={col.id} className="py-1 px-1 border-r border-[#444444]">
-                      <input
-                        type="number"
-                        min="0"
-                        value={newRowData.quantities[col.id] || ''}
-                        onChange={e => {
-                          const val = parseInt(e.target.value) || 0;
-                          setNewRowData({
-                            ...newRowData,
-                            quantities: {
-                              ...newRowData.quantities,
-                              [col.id]: val
-                            }
-                          });
-                        }}
-                        className="w-full bg-[#111111] text-center text-[#00FF00] border border-[#666666] py-0.5 text-xs font-mono font-bold"
-                      />
-                    </td>
-                  ))}
-                  <td className="py-1 px-2 text-center text-[#FFCC00] font-bold border-r border-[#444444]">
-                    {(Object.values(newRowData.quantities) as number[]).reduce((a, b) => (Number(a) || 0) + (Number(b) || 0), 0)}
-                  </td>
-                  <td className="py-1 px-1 text-center bg-[#151d24] border-r border-[#444444]">
-                    <span className="text-[10px] text-cyan-300 font-mono">10 EA</span>
-                  </td>
-                  <td className="py-1 px-1 text-center bg-[#151d24] border-r border-[#444444]">
-                    <span className="text-[10px] text-slate-400">NEW</span>
-                  </td>
-                  <td className="py-1 px-2 border-r border-[#444444] bg-[#1a1a1a]">
-                    <span className="text-[10px] text-slate-500">-</span>
-                  </td>
-                  <td className="py-1 px-2 text-center border-[#444444] bg-[#182818]">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={handleSaveNewRowInline}
-                        className="px-2 py-0.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-bold text-[11px] rounded flex items-center gap-0.5 cursor-pointer shadow-sm"
-                        title="บันทึกรายการใหม่"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>บันทึก</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsAddingInline(false)}
-                        className="p-1 bg-[#222222] hover:bg-[#333333] text-rose-400 rounded border border-[#666666] cursor-pointer"
-                        title="ยกเลิก"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-
-              {/* ======================================================== */}
-              {filteredRows.length === 0 && !isAddingInline ? (
+              {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-slate-500 bg-[#161616] border-b border-[#666666]">
-                    ไม่พบรายการชิ้นส่วนที่ตรงกับคำค้นหา "{searchTerm}"
+                  <td colSpan={19} className="py-10 text-center text-slate-400 bg-[#161b24] border-b border-[#334155]">
+                    ไม่พบรายการอะไหล่ซ่อมที่ตรงกับเงื่อนไขการค้นหา
                   </td>
                 </tr>
               ) : (
                 filteredRows.map((row) => {
-                  const isOutOfStock = row.total === 0;
-                  const isBelowSafety = row.total <= row.safetyStockQty;
-                  let rowBgClass = "bg-[#1e1e1e] hover:bg-[#282828]";
-                  if (isOutOfStock) {
-                    rowBgClass = "bg-[#331118] hover:bg-[#3d1921] transition-all";
-                  } else if (isBelowSafety) {
-                    rowBgClass = "bg-[#2e2211] hover:bg-[#382b18] transition-all";
+                  let rowBgClass = "bg-[#141a24] hover:bg-[#1a2332]";
+                  if (row.isCriticalEmpty) {
+                    rowBgClass = "bg-[#291218] hover:bg-[#341620]";
+                  } else if (row.isBelowSafety) {
+                    rowBgClass = "bg-[#271d13] hover:bg-[#322518]";
                   }
+
+                  const editedRow = isEditing ? (editValues[row.partCode] || {}) : {};
 
                   return (
                     <tr 
                       key={row.partCode} 
-                      className={`${rowBgClass} border-b border-[#444444]`}
+                      className={`${rowBgClass} border-b border-[#242f44] transition-colors`}
                     >
                       {/* Col 1: No */}
-                      <td className="py-1 px-2 text-center text-slate-400 font-bold border-r border-[#444444]">
+                      <td className="py-1 px-1 text-center text-slate-400 font-bold border-r border-[#242f44]">
                         {row.no}
                       </td>
 
                       {/* Col 2: Stage */}
-                      <td className="py-1 px-2 text-center border-r border-[#444444]">
-                        <span className={`inline-block px-1.5 py-0.5 text-[10px] font-bold border bg-[#111111] uppercase ${getStageColor(row.stageName)}`}>
+                      <td className="py-1 px-1 text-center border-r border-[#242f44]">
+                        <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold border bg-[#0d1117] uppercase rounded-xs ${getStageColor(row.stageName)}`}>
                           {row.stageName}
                         </span>
                       </td>
 
-                      {/* Col 3: Part Name */}
-                      <td className="py-1 px-2 text-left border-r border-[#444444]">
-                        <div>
-                          <span className="font-bold text-white text-xs uppercase hover:text-[#00FF00] transition-colors block">
-                            {row.partName}
-                          </span>
-                          
-                          {isEditing ? (
-                            <div className="flex flex-col gap-1 mt-1.5 p-1 bg-[#111111] rounded border border-[#333333] max-w-[190px]">
-                              <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
-                                <span className="text-amber-400 font-bold">Safety:</span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={row.safetyStockQty}
-                                  onChange={(e) => {
-                                    const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                    setEditSafetyValues(prev => ({
-                                      ...prev,
-                                      [row.partCode]: val
-                                    }));
-                                    setHasUnsavedChanges(true);
-                                  }}
-                                  className="w-14 bg-[#1e1e1e] border border-[#555555] text-amber-300 text-center text-[10px] py-0.5 focus:border-amber-400 focus:outline-none font-bold"
-                                />
-                              </div>
-                              <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
-                                <span className="text-slate-300 font-bold">Min:</span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={row.minimumStock}
-                                  onChange={(e) => {
-                                    const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                    setEditMinValues(prev => ({
-                                      ...prev,
-                                      [row.partCode]: val
-                                    }));
-                                    setHasUnsavedChanges(true);
-                                  }}
-                                  className="w-14 bg-[#1e1e1e] border border-[#555555] text-slate-300 text-center text-[10px] py-0.5 focus:border-cyan-400 focus:outline-none font-bold"
-                                />
-                              </div>
-                              <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
-                                <span className="text-slate-300 font-bold">Max:</span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={row.maximumStock}
-                                  onChange={(e) => {
-                                    const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                                    setEditMaxValues(prev => ({
-                                      ...prev,
-                                      [row.partCode]: val
-                                    }));
-                                    setHasUnsavedChanges(true);
-                                  }}
-                                  className="w-14 bg-[#1e1e1e] border border-[#555555] text-slate-300 text-center text-[10px] py-0.5 focus:border-cyan-400 focus:outline-none font-bold"
-                                />
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5 mt-1 font-mono text-[10px]">
-                              <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
-                                row.total === 0 
-                                  ? 'bg-red-950 text-red-400 border border-red-800' 
-                                  : row.total <= row.safetyStockQty 
-                                    ? 'bg-amber-950/80 text-amber-400 border border-amber-800/80 animate-pulse' 
-                                    : 'bg-[#161b22] text-slate-400 border border-[#30363d]'
-                              }`}>
-                                Safety: {row.safetyStockQty}
-                              </span>
-                              <span className="text-slate-600">|</span>
-                              <span className="text-slate-400">Min: {row.minimumStock}</span>
-                              <span className="text-slate-600">|</span>
-                              <span className="text-slate-400">Max: {row.maximumStock}</span>
-                            </div>
-                          )}
+                      {/* Col 3: รูปชิ้นงาน (Photo / Spec) */}
+                      <td className="py-1 px-1 text-center border-r border-[#242f44]">
+                        {row.primaryPhoto ? (
+                          <div 
+                            onClick={() => setPreviewPhoto({ url: row.primaryPhoto.dataUrl, title: row.partName, partCode: row.partCode })}
+                            className="group relative inline-block cursor-pointer"
+                            title="คลิกเพื่อดูรูปชิ้นงานขยายใหญ่"
+                          >
+                            <img 
+                              src={row.primaryPhoto.dataUrl} 
+                              alt={row.partName} 
+                              className="w-8 h-8 object-cover rounded border border-emerald-500/70 shadow-xs group-hover:scale-110 transition-transform" 
+                            />
+                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 border border-black shadow-xs"></span>
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 rounded border border-dashed border-slate-700 mx-auto flex items-center justify-center text-slate-600 bg-[#0d121b]">
+                            <ImageIcon className="w-3.5 h-3.5" />
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Col 4: Part Name & Drawing No. */}
+                      <td className="py-1 px-2 text-left border-r border-[#242f44]">
+                        <div className="font-bold text-white text-xs hover:text-[#00FF00] transition-colors">
+                          {row.partName}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                          <span className="text-cyan-400">{row.drawingCode}</span>
+                          <span className="text-slate-600">|</span>
+                          <span className="text-slate-500">{row.partCode}</span>
                         </div>
                       </td>
 
-                      {/* Col 4 - 10: E1 to E5 Line Quantities */}
+                      {/* Col 5: พร้อมเบิกใช้งาน (Ready to Use EA) */}
+                      <td className="py-1 px-1.5 text-center border-r border-[#242f44] bg-[#0e1d17]">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={editedRow.readyToUseQty !== undefined ? editedRow.readyToUseQty : row.readyToUseQty}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                              setEditValues(prev => ({
+                                ...prev,
+                                [row.partCode]: {
+                                  ...(prev[row.partCode] || {}),
+                                  readyToUseQty: val
+                                }
+                              }));
+                              setHasUnsavedChanges(true);
+                            }}
+                            className="w-16 bg-[#16271f] border border-emerald-500 text-emerald-300 font-black text-center text-xs py-0.5 focus:outline-none rounded"
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleQuickAdjustReady(row, -1)}
+                              disabled={row.readyToUseQty <= 0}
+                              className="w-5 h-5 rounded bg-[#16271f] hover:bg-[#1f3a2c] text-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer text-xs font-bold"
+                              title="ลดสต็อกพร้อมเบิก 1 ชิ้น"
+                            >
+                              -
+                            </button>
+                            <span className={`min-w-[34px] font-black text-xs ${
+                              row.readyToUseQty === 0 
+                                ? 'text-rose-400 font-black' 
+                                : row.isBelowSafety 
+                                  ? 'text-amber-400 font-black' 
+                                  : 'text-emerald-300'
+                            }`}>
+                              {row.readyToUseQty}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickAdjustReady(row, 1)}
+                              className="w-5 h-5 rounded bg-[#16271f] hover:bg-[#1f3a2c] text-emerald-400 flex items-center justify-center transition-colors cursor-pointer text-xs font-bold"
+                              title="เพิ่มสต็อกพร้อมเบิก 1 ชิ้น"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Col 6: กำลังเจียร (In-Process EA) */}
+                      <td className="py-1 px-1.5 text-center border-r border-[#242f44] bg-[#1a1426]">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={editedRow.inProcessQty !== undefined ? editedRow.inProcessQty : row.inProcessQty}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                              setEditValues(prev => ({
+                                ...prev,
+                                [row.partCode]: {
+                                  ...(prev[row.partCode] || {}),
+                                  inProcessQty: val
+                                }
+                              }));
+                              setHasUnsavedChanges(true);
+                            }}
+                            className="w-16 bg-[#241a36] border border-purple-500 text-purple-200 font-bold text-center text-xs py-0.5 focus:outline-none rounded"
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center gap-1 font-bold">
+                            <span className={`text-xs ${row.inProcessQty > 0 ? 'text-purple-300 font-black' : 'text-slate-500'}`}>
+                              {row.inProcessQty}
+                            </span>
+                            {row.liveQueue.inProcess > 0 && (
+                              <span 
+                                className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping" 
+                                title={`ซิงค์ตรงจากคิวงานกำลังเจียร: ${row.liveQueue.inProcess} ชิ้น`}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Col 7: รอส่งซ่อม (Awaiting Regrind EA) */}
+                      <td className="py-1 px-1.5 text-center border-r border-[#242f44] bg-[#22190f]">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={editedRow.awaitingRepairQty !== undefined ? editedRow.awaitingRepairQty : row.awaitingRepairQty}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                              setEditValues(prev => ({
+                                ...prev,
+                                [row.partCode]: {
+                                  ...(prev[row.partCode] || {}),
+                                  awaitingRepairQty: val
+                                }
+                              }));
+                              setHasUnsavedChanges(true);
+                            }}
+                            className="w-16 bg-[#302213] border border-amber-500 text-amber-200 font-bold text-center text-xs py-0.5 focus:outline-none rounded"
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center gap-1 font-bold">
+                            <span className={`text-xs ${row.awaitingRepairQty > 0 ? 'text-amber-300 font-bold' : 'text-slate-500'}`}>
+                              {row.awaitingRepairQty}
+                            </span>
+                            {row.liveQueue.pending > 0 && (
+                              <span 
+                                className="text-[9px] px-1 rounded bg-amber-950 text-amber-300 border border-amber-800"
+                                title={`มีในคิวรอเจียร ${row.liveQueue.pending} ชิ้น`}
+                              >
+                                คิว {row.liveQueue.pending}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Col 8: รวมหมุนเวียน (Total Circulation EA) */}
+                      <td className="py-1 px-1.5 text-center border-r border-[#242f44] bg-[#121c29]">
+                        <span className="font-black text-cyan-300 text-xs">
+                          {row.totalCirculationQty}
+                        </span>
+                      </td>
+
+                      {/* Cols 9 - 15: Ready per line E1 - E5 */}
                       {LINE_COLUMNS.map(col => {
-                        const qty = row.quantities[col.id] || 0;
-                        const installVal = row.installQuantities[col.id] || 0;
-                        
-                        // Check Predictive Demand (Is this part about to expire on this line?)
-                        let isHighRisk = false;
-                        let usagePct = 0;
-                        if (monitoringData && monitoringData[col.id]) {
-                           const liveItems = monitoringData[col.id].items || [];
-                           const liveItem = liveItems.find((i: any) => i.partCode === row.partCode);
-                           if (liveItem) {
-                              usagePct = liveItem.usagePercent || 0;
-                              if (usagePct >= 90) {
-                                 isHighRisk = true;
-                              }
-                           }
-                        }
-
-                        // Calculate Alert Status
-                        let statusColor = 'text-slate-500 bg-[#1a1a1a] border-[#555555]'; // None
-                        let alertTitle = `ต้องการติดตั้ง: ${installVal} ชิ้น`;
-
-                        if (installVal > 0) {
-                          if (qty === 0) {
-                            statusColor = 'text-white bg-[#C40045] border-red-500 animate-pulse'; // Critical
-                            alertTitle = `วิกฤต! สต็อก 0 ชิ้น (ต้องการติดตั้ง: ${installVal} ชิ้น)`;
-                          } else if (qty < installVal) {
-                            statusColor = 'text-black bg-[#FFCC00] border-yellow-500'; // Warning
-                            alertTitle = `แจ้งเตือน: สต็อกไม่พอเปลี่ยนยกชุด (มี: ${qty} / ต้องการ: ${installVal})`;
-                          } else if (isHighRisk) {
-                            statusColor = 'text-white bg-[#FF6600] border-[#FF9900] animate-pulse'; // Predictive Demand Risk
-                            alertTitle = `แจ้งเตือนล่วงหน้า! อะไหล่บน Line ${col.id} ถูกใช้งานไปแล้ว ${usagePct.toFixed(0)}% กำลังจะต้องเปลี่ยนเร็วๆ นี้`;
-                          } else {
-                            statusColor = 'text-[#00FF00] bg-[#111111] border-[#00FF00]'; // Safe
-                            alertTitle = `ปลอดภัย: สต็อกมีเพียงพอ (มี: ${qty} / ต้องการ: ${installVal})`;
-                          }
-                        } else if (qty > 0) {
-                           statusColor = 'text-[#00FF7F] bg-[#111111] border-[#00FF7F]'; // Has stock but no install
-                        }
-
-                        // Determine Text Color for View Mode
-                        let viewTextColor = 'text-slate-500';
-                        if (installVal > 0) {
-                          if (qty === 0) viewTextColor = 'text-[#C40045]';
-                          else if (qty < installVal) viewTextColor = 'text-[#FFCC00]';
-                          else if (isHighRisk) viewTextColor = 'text-[#FF9900]';
-                          else viewTextColor = 'text-[#00FF00]';
-                        } else if (qty > 0) {
-                           viewTextColor = 'text-[#00FF7F]';
-                        }
-
-                        // Highlight background in View Mode if critical or warning
-                        let viewBg = '';
-                        if (!isEditing && installVal > 0) {
-                           if (qty === 0) viewBg = 'bg-[#400016] animate-pulse';
-                           else if (qty < installVal) viewBg = 'bg-[#332800]';
-                           else if (isHighRisk) viewBg = 'bg-[#4a1c00] animate-pulse';
-                        }
-
+                        const lineVal = row.lineAllocations[col.id] || 0;
                         return (
-                          <td 
-                            key={col.id} 
-                            className={`py-1 px-0.5 text-center border-r border-[#444444] font-mono transition-colors ${viewBg}`}
-                            title={!isEditing ? alertTitle : undefined}
-                          >
+                          <td key={col.id} className="py-1 px-1 text-center border-r border-[#242f44]">
                             {isEditing ? (
                               <input
                                 type="number"
-                                min={0}
-                                max={9999}
-                                value={qty === 0 ? '' : qty}
-                                placeholder="-"
+                                min="0"
+                                value={editedRow.lineAllocations?.[col.id] ?? lineVal}
                                 onChange={(e) => {
-                                  const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10) || 0;
-                                  handleCellChange(row.partCode, col.id, val);
+                                  const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                  setEditValues(prev => ({
+                                    ...prev,
+                                    [row.partCode]: {
+                                      ...(prev[row.partCode] || {}),
+                                      lineAllocations: {
+                                        ...(prev[row.partCode]?.lineAllocations || row.lineAllocations),
+                                        [col.id]: val
+                                      }
+                                    }
+                                  }));
+                                  setHasUnsavedChanges(true);
                                 }}
-                                className={`w-full py-0.5 text-center text-xs font-bold border focus:outline-none ${statusColor}`}
-                                title={alertTitle}
+                                className="w-11 bg-[#101924] border border-slate-600 text-center text-[10px] text-white py-0.5 rounded focus:border-[#00FF00]"
                               />
                             ) : (
-                              <span 
-                                className={`font-bold text-xs ${viewTextColor} ${qty > 0 || installVal > 0 ? 'font-black' : ''}`}
-                              >
-                                {qty > 0 ? qty : '-'}
+                              <span className={`text-xs ${lineVal > 0 ? 'text-slate-200 font-semibold' : 'text-slate-600'}`}>
+                                {lineVal > 0 ? lineVal : '-'}
                               </span>
                             )}
                           </td>
                         );
                       })}
 
-                      {/* Col 11: Row Total */}
-                      <td className="py-1 px-2 text-center bg-[#181818] border-r border-[#444444]">
-                        <span className={`text-xs font-black font-mono ${row.total > 0 ? 'text-[#FFCC00]' : 'text-slate-500'}`}>
-                          {row.total > 0 ? row.total : 0}
-                        </span>
-                      </td>
-
-                      {/* Col: Safety Stock Target (Idea 6) */}
-                      <td className="py-1 px-1 text-center bg-[#151d24] border-r border-[#444444]">
+                      {/* Col 16: Safety Stock Target */}
+                      <td className="py-1 px-1.5 text-center border-r border-[#242f44] bg-[#1d1710]">
                         {isEditing ? (
                           <input
                             type="number"
-                            min={0}
-                            value={row.safetyStockQty}
+                            min="0"
+                            value={editedRow.safetyStockTarget !== undefined ? editedRow.safetyStockTarget : row.safetyStockTarget}
                             onChange={(e) => {
-                              const val = parseInt(e.target.value, 10) || 0;
-                              setEditSafetyValues(prev => ({ ...prev, [row.partCode]: val }));
+                              const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                              setEditValues(prev => ({
+                                ...prev,
+                                [row.partCode]: {
+                                  ...(prev[row.partCode] || {}),
+                                  safetyStockTarget: val
+                                }
+                              }));
                               setHasUnsavedChanges(true);
                             }}
-                            className="w-14 py-0.5 text-center text-xs font-bold border border-cyan-500 bg-[#111111] text-cyan-300 focus:outline-none"
-                            title="กำหนดระดับ Safety Stock (ชิ้น)"
+                            className="w-14 bg-[#2b2116] border border-amber-500 text-amber-300 font-bold text-center text-xs py-0.5 focus:outline-none rounded"
                           />
                         ) : (
-                          <span className="text-xs font-mono text-cyan-300 font-bold">
-                            {row.safetyStockQty} EA
+                          <span className="text-amber-300 font-mono text-xs font-bold">
+                            {row.safetyStockTarget} EA
                           </span>
                         )}
                       </td>
 
-                      {/* Col: Stock Health Status Badge (Idea 6) */}
-                      <td className="py-1 px-1 text-center bg-[#151d24] border-r border-[#444444]">
-                        {(() => {
-                          const totalInstalled = (Object.values(row.installQuantities) as number[]).reduce((a, b) => (Number(a) || 0) + (Number(b) || 0), 0);
-                          if (totalInstalled === 0 && row.total === 0) {
-                            return <span className="text-[10px] text-slate-500 font-bold">STANDBY</span>;
-                          }
-                          if (row.total === 0 && totalInstalled > 0) {
-                            return (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-[#C40045] text-white animate-pulse" title={`สต็อกหมดเกลี้ยง! มีการติดตั้งใช้งาน ${totalInstalled} ชิ้น เสี่ยงไลน์หยุดผลิต`}>
-                                <AlertTriangle className="w-3 h-3" />
-                                OUT
-                              </span>
-                            );
-                          }
-                          if (row.total < row.safetyStockQty) {
-                            return (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-[#FFCC00] text-black" title={`ต่ำกว่า Safety Stock (${row.total} / ${row.safetyStockQty} EA)`}>
-                                <AlertTriangle className="w-3 h-3" />
-                                LOW
-                              </span>
-                            );
-                          }
-                          return (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#00FF00]/20 text-[#00FF00] border border-[#00FF00]/40" title="สต็อกเพียงพอตามเกณฑ์ความปลอดภัย">
-                              <CheckCircle2 className="w-3 h-3" />
-                              OK
-                            </span>
-                          );
-                        })()}
+                      {/* Col 17: Status Badge */}
+                      <td className="py-1 px-1.5 text-center border-r border-[#242f44]">
+                        {row.isCriticalEmpty ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700 animate-pulse">
+                            🔴 หมดสต็อกพร้อมเบิก
+                          </span>
+                        ) : row.isBelowSafety ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700">
+                            🟡 ต่ำกว่าเกณฑ์สำรอง
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
+                            🟢 พร้อมเบิกปกติ
+                          </span>
+                        )}
                       </td>
 
-                      {/* Col 12: Notes / Remarks */}
-                      <td className="py-1 px-2 text-left bg-[#1a1a1a] border-r border-[#444444]">
+                      {/* Col 18: Notes */}
+                      <td className="py-1 px-2 text-left border-r border-[#242f44]">
                         {isEditing ? (
                           <input
                             type="text"
-                            value={row.stockNote}
+                            value={editedRow.notes !== undefined ? editedRow.notes : row.notes}
+                            placeholder="ระบุหมายเหตุงานซ่อม..."
                             onChange={(e) => {
-                              setEditNoteValues(prev => ({
+                              const val = e.target.value;
+                              setEditValues(prev => ({
                                 ...prev,
-                                [row.partCode]: e.target.value
+                                [row.partCode]: {
+                                  ...(prev[row.partCode] || {}),
+                                  notes: val
+                                }
                               }));
+                              setHasUnsavedChanges(true);
                             }}
-                            className="w-full px-1.5 py-0.5 bg-[#111111] border border-[#555555] text-slate-200 text-xs focus:border-cyan-500 focus:outline-none"
-                            placeholder="ระบุหมายเหตุ..."
-                            list="note-options"
+                            className="w-full bg-[#101622] border border-slate-600 px-1.5 py-0.5 text-xs text-slate-200 rounded focus:border-[#00FF00]"
                           />
                         ) : (
-                          <span className="text-[10px] text-slate-300 line-clamp-1" title={row.stockNote}>
-                            {row.stockNote || '-'}
+                          <span className="text-[11px] text-slate-400 truncate block max-w-[160px]" title={row.notes}>
+                            {row.notes || '-'}
                           </span>
                         )}
                       </td>
 
-                      {/* Col 13: Actions (Edit & Delete) */}
-                      <td className="py-1 px-2 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                      {/* Col 19: Actions */}
+                      <td className="py-1 px-1 text-center">
+                        <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
-                            onClick={() => handleOpenEditModalForRow(row)}
-                            className="p-1 bg-[#111111] hover:bg-[#333333] text-[#00FF00] border border-[#555555] hover:border-[#00FF00] transition-colors cursor-pointer"
-                            title="แก้ไขข้อมูลพาร์ท (Edit Part Details)"
+                            onClick={() => {
+                              if (onNavigateToMaster) {
+                                onNavigateToMaster();
+                              }
+                            }}
+                            className="p-1 rounded bg-[#162132] hover:bg-[#203048] text-cyan-300 hover:text-white border border-[#2d3e58] cursor-pointer transition-colors"
+                            title="เปิดดูรายละเอียดใน Part Master"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          
-                          <button
-                            type="button"
-                            onClick={() => setDeleteTargetPart({
-                              partCode: row.partCode,
-                              partName: row.partName,
-                              stage: row.stageName,
-                              total: row.total
-                            })}
-                            className="p-1 bg-[#111111] hover:bg-[#2b000a] text-slate-400 hover:text-[#C40045] border border-[#555555] hover:border-[#C40045] transition-colors cursor-pointer"
-                            title="ลบพาร์ทนี้ (Delete Part)"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <ExternalLink className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
-
                     </tr>
                   );
                 })
               )}
             </tbody>
-
-            {/* Table Footer: Line Summary Totals (Sticky bottom) */}
-            <tfoot>
-              <tr className="bg-[#333344] text-white font-bold border-t-2 border-[#666666] text-xs select-none">
-                <td colSpan={3} className="py-1.5 px-2 text-right font-black uppercase tracking-wider text-slate-200 border-r border-[#555555]">
-                  TOTAL ACTIVE TOOLING PER LINE (EA):
-                </td>
-                {LINE_COLUMNS.map(col => (
-                  <td key={col.id} className="py-1.5 px-2 text-center border-r border-[#555555] font-mono font-black text-[#00FF00] text-xs">
-                    {formatShots(lineSubTotals[col.id] || 0)}
-                  </td>
-                ))}
-                <td className="py-1.5 px-2 text-center bg-[#282838] font-mono font-black text-[#FFCC00] text-xs border-r border-[#555555]">
-                  {formatShots(grandTotalActiveTooling)}
-                </td>
-                <td className="py-1.5 px-2 text-center bg-[#282838] text-[10px] text-slate-400">
-                  {filteredRows.length} พาร์ท
-                </td>
-              </tr>
-            </tfoot>
-
           </table>
         </div>
       </div>
 
       {/* ======================================================== */}
-
       {/* 4. MODALS */}
       {/* ======================================================== */}
-      
-      <DeleteConfirmationModal
-        isOpen={!!deleteTargetPart}
-        onClose={() => setDeleteTargetPart(null)}
-        onConfirm={handleConfirmDelete}
-        title="ยืนยันการลบชิ้นส่วน (Delete Part)"
-        itemName={deleteTargetPart ? `${deleteTargetPart.partName} (${deleteTargetPart.partCode})` : "" }
-        itemDetails={deleteTargetPart ? `Stage: ${deleteTargetPart.stage} | Total Installed: ${deleteTargetPart.total} EA` : "" }
-        warningText="การลบพาร์ทจากหน้านี้ จะเป็นการลบออกจากฐานข้อมูล Part Master ทั้งหมดอย่างถาวร"
-      />
+      {/* Photo Preview Modal */}
+      {previewPhoto && (
+        <div 
+          onClick={() => setPreviewPhoto(null)} 
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn"
+        >
+          <div 
+            onClick={e => e.stopPropagation()} 
+            className="bg-[#111622] border border-cyan-500/50 rounded-lg max-w-lg w-full overflow-hidden shadow-2xl p-4 space-y-3"
+          >
+            <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+              <div>
+                <h3 className="font-bold text-sm text-white font-mono">{previewPhoto.title}</h3>
+                <span className="text-xs text-cyan-400 font-mono">{previewPhoto.partCode}</span>
+              </div>
+              <button 
+                onClick={() => setPreviewPhoto(null)}
+                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="bg-black/60 rounded-md p-2 flex items-center justify-center max-h-[380px] overflow-hidden">
+              <img 
+                src={previewPhoto.url} 
+                alt={previewPhoto.title} 
+                className="max-h-[360px] w-auto object-contain rounded" 
+              />
+            </div>
+            <div className="flex justify-end pt-1">
+              <button 
+                onClick={() => setPreviewPhoto(null)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-mono font-bold rounded cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Stage Grouping Management Modal */}
-      <StageManagementModal
-        isOpen={isStageManagerOpen}
-        onClose={() => setIsStageManagerOpen(false)}
-        onSave={loadData}
-      />
+      {/* Stage Management Modal */}
+      {isStageManagerOpen && (
+        <StageManagementModal
+          isOpen={isStageManagerOpen}
+          onClose={() => setIsStageManagerOpen(false)}
+        />
+      )}
     </div>
   );
 };
-
