@@ -229,13 +229,14 @@ export interface DecisionSupportResult {
   };
 }
 
-export type CostPeriodFilter = 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
+export type CostPeriodFilter = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ALL' | 'CUSTOM';
 
 export interface CostDashboardFilter {
   periodType: CostPeriodFilter;
   year: number;
   month?: number; // 1-12
   quarter?: number; // 1-4
+  selectedDate?: string; // YYYY-MM-DD for DAILY / WEEKLY
   startDate?: string;
   endDate?: string;
   lineId: string; // 'ALL' or ProductionLineId

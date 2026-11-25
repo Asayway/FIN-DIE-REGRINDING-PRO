@@ -37,6 +37,7 @@ import {
   LINE_INFO_MAP 
 } from '../types';
 import { storageService } from '../services/storageService';
+import { regrindService } from '../services/regrindService';
 import { costSavingService } from '../services/costSavingService';
 import { formatShots } from '../services/calculationService';
 import { exportRegrindingHistoryExcel } from '../utils/excelExport';
@@ -134,15 +135,41 @@ export const RegrindingEntryView: React.FC = () => {
   };
 
   const selectedStandard: RegrindMasterStandard | undefined = standards.find(s => s.partCode === selectedPartCode);
+  const canonicalMaster = useMemo(() => {
+    if (!selectedStandard) return undefined;
+    return regrindService.findMasterByPartName(selectedStandard.partCode) || regrindService.findMasterByPartName(selectedStandard.partName);
+  }, [selectedStandard]);
 
-  // Live Calculations
+  // Live Calculations (Synchronized with Canonical Standard Re-Grinding Matrix)
   const calculatedNextCycle = regrindCountBefore + 1;
-  const maxCycles = selectedStandard?.maxRegrindCount || 4;
-  const remainingCycles = Math.max(0, maxCycles - calculatedNextCycle);
-  const minAllowedLength = selectedStandard?.minAllowedLengthMm || (selectedStandard ? selectedStandard.nominalLengthMm - selectedStandard.totalGrindingAllowanceMm : 48.0);
-  const isLengthOutOfSpec = currentLength < minAllowedLength;
+  const isRegrindBlocked = Boolean(
+    (selectedStandard && (!selectedStandard.regrindAllowed || selectedStandard.disposeAfterOneUse)) ||
+    (canonicalMaster && (!canonicalMaster.regrindAllowed || canonicalMaster.disposeAfterOneUse))
+  );
+  const nominalLength = canonicalMaster?.nominalLengthMm ?? selectedStandard?.nominalLengthMm ?? 50.0;
+  const minAllowedLength =
+    canonicalMaster?.minAllowedLengthMm ??
+    selectedStandard?.minAllowedLengthMm ??
+    (selectedStandard ? Number((selectedStandard.nominalLengthMm - selectedStandard.totalGrindingAllowanceMm).toFixed(3)) : 48.0);
+  const maxCycles = canonicalMaster?.maxRegrindCount ?? selectedStandard?.maxRegrindCount ?? 4;
+  const stdMinRate = canonicalMaster?.grindMinMm ?? selectedStandard?.grindingAmountPerTimeMm ?? 0;
+  const stdMaxRate = canonicalMaster?.grindMaxMm ?? stdMinRate;
+  const isLengthOutOfSpec = Number(currentLength.toFixed(3)) < Number(minAllowedLength.toFixed(3)) - 1e-4;
+  const cycleRemaining = Math.max(0, maxCycles - calculatedNextCycle);
+  const stepForDim = Math.max(0.01, actualGrindingRemovedMm > 0 ? actualGrindingRemovedMm : (stdMinRate || 0.1));
+  const dimRemaining = isLengthOutOfSpec ? 0 : Math.floor((currentLength - minAllowedLength) / stepForDim + 1e-6);
+  const remainingCycles = (isLengthOutOfSpec || isRegrindBlocked) ? 0 : Math.max(0, Math.min(cycleRemaining, dimRemaining));
   const isMaxCyclesReached = calculatedNextCycle >= maxCycles;
-  const isRegrindBlocked = selectedStandard && (!selectedStandard.regrindAllowed || selectedStandard.disposeAfterOneUse);
+  const isRemovalOutOfRange =
+    !isRegrindBlocked &&
+    stdMinRate > 0 &&
+    actualGrindingRemovedMm > 0 &&
+    (actualGrindingRemovedMm < stdMinRate - 1e-4 || actualGrindingRemovedMm > stdMaxRate + 1e-4);
+  const stdRateDisplay = isRegrindBlocked
+    ? 'Dispose / Non-Regrind'
+    : Math.abs(stdMinRate - stdMaxRate) > 1e-4
+    ? `${stdMinRate.toFixed(2)}–${stdMaxRate.toFixed(2)} mm / time`
+    : `${stdMinRate.toFixed(2)} mm / time`;
 
   // Status computation for display
   let previewStatus: RegrindPartStatus = 'WAITING REGRIND';
@@ -616,7 +643,7 @@ export const RegrindingEntryView: React.FC = () => {
                       required
                     />
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Nominal Std: {selectedStandard?.nominalLengthMm.toFixed(2)} mm
+                      Nominal Std: {nominalLength.toFixed(2)} mm
                     </p>
                   </div>
 
@@ -631,11 +658,15 @@ export const RegrindingEntryView: React.FC = () => {
                       step="0.001"
                       value={actualGrindingRemovedMm}
                       onChange={e => handleActualRemovedChange(parseFloat(e.target.value) || 0)}
-                      className="w-full bg-slate-950 border border-indigo-500/80 rounded-lg px-3 py-2 text-sm font-mono text-indigo-300 font-bold focus:border-indigo-400 focus:outline-none"
+                      className={`w-full bg-slate-950 border rounded-lg px-3 py-2 text-sm font-mono font-bold focus:outline-none ${
+                        isRemovalOutOfRange
+                          ? 'border-amber-500 text-amber-300 focus:border-amber-400'
+                          : 'border-indigo-500/80 text-indigo-300 focus:border-indigo-400'
+                      }`}
                       required
                     />
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      Standard: {selectedStandard?.grindingAmountPerTimeMm.toFixed(3)} mm / time
+                    <p className={`text-[11px] mt-1 ${isRemovalOutOfRange ? 'text-amber-400 font-bold' : 'text-slate-400'}`}>
+                      Standard: {stdRateDisplay}{isRemovalOutOfRange ? ' (อยู่นอกช่วง Standard)' : ''}
                     </p>
                   </div>
 
@@ -1157,11 +1188,15 @@ export const RegrindingEntryView: React.FC = () => {
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
                   <span className="text-slate-400">Standard Grinding Rate:</span>
-                  <span className="font-mono text-slate-300">{selectedStandard?.grindingAmountPerTimeMm} mm / time</span>
+                  <span className={`font-mono ${isRemovalOutOfRange ? 'text-amber-300 font-bold' : 'text-slate-300'}`}>
+                    {stdRateDisplay}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
                   <span className="text-slate-400">Max Grinding Allowance:</span>
-                  <span className="font-mono text-slate-300">{selectedStandard?.totalGrindingAllowanceMm} mm</span>
+                  <span className="font-mono text-slate-300">
+                    {(canonicalMaster?.totalGrindingAllowanceMm ?? selectedStandard?.totalGrindingAllowanceMm ?? 0).toFixed(2)} mm
+                  </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
                   <span className="text-slate-400">Calculated Post Length:</span>

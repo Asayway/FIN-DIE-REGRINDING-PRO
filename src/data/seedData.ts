@@ -441,12 +441,13 @@ export const INITIAL_LINE_CONFIGS: LineActiveConfiguration[] = [
 // -------------------------------------------------------------
 export const INITIAL_PART_LIFE_STANDARDS: PartLifeStandard[] = [];
 
-// 3.1 First: Add Canonical 70 Part Life Standards (Direct 1:1 match with Drawing No)
+// 3.1 First: Add Canonical Part Life Standards (Direct 1:1 match with Drawing No)
 MOLD_DIE_MASTER_ITEMS_2025.forEach((item) => {
-  const isDisposable = item.regrindStandard.perGrindMm.toLowerCase().includes('dispose') || item.regrindStandard.note.toLowerCase().includes('dispose');
   const perGrind = item.regrindStandard.perGrindMm;
-  const totalGrindNum = parseFloat(item.regrindStandard.totalGrindMm) || 0;
-  const cyclesNum = parseInt(item.regrindStandard.regrindCycles) || (isDisposable ? 0 : 15);
+  const isDisposable = perGrind.toLowerCase().includes('dispose') || item.regrindStandard.note.toLowerCase().includes('dispose');
+  const isNonRegrind = isDisposable || perGrind.trim() === '-' || String(item.regrindStandard.totalGrindMm).trim() === '-';
+  const totalGrindNum = isNonRegrind ? 0 : (parseFloat(item.regrindStandard.totalGrindMm) || 0);
+  const cyclesNum = isNonRegrind ? 0 : (parseInt(item.regrindStandard.regrindCycles) || 10);
   const avgLifeM = Number(item.shotLifeCycle.e1_pcm || item.shotLifeCycle.e2_gold || item.shotLifeCycle.e3_1_pcm || 5.0);
 
   INITIAL_PART_LIFE_STANDARDS.push({
@@ -482,7 +483,7 @@ MOLD_DIE_MASTER_ITEMS_2025.forEach((item) => {
       oneTimeRegrindMm: isDisposable ? 'Dispose of after 1 use' : perGrind,
       totalRegrindMm: totalGrindNum,
       maxRegrindCount: cyclesNum,
-      disposeAfterUse: isDisposable
+      disposeAfterUse: isNonRegrind
     },
     specialNotes: item.regrindStandard.note,
     newSpecMm: item.newSpecMm,
@@ -498,10 +499,11 @@ MOLD_DIE_MASTER_ITEMS_2025.forEach((item) => {
 MOLD_DIE_MASTER_ITEMS_2025.forEach((item) => {
   const activeLines = getActiveLinesForPart(item);
   activeLines.forEach((lineId) => {
-    const isDisposable = item.regrindStandard.perGrindMm.toLowerCase().includes('dispose') || item.regrindStandard.note.toLowerCase().includes('dispose');
     const perGrind = item.regrindStandard.perGrindMm;
-    const totalGrindNum = parseFloat(item.regrindStandard.totalGrindMm) || 0;
-    const cyclesNum = parseInt(item.regrindStandard.regrindCycles) || (isDisposable ? 0 : 10);
+    const isDisposable = perGrind.toLowerCase().includes('dispose') || item.regrindStandard.note.toLowerCase().includes('dispose');
+    const isNonRegrind = isDisposable || perGrind.trim() === '-' || String(item.regrindStandard.totalGrindMm).trim() === '-';
+    const totalGrindNum = isNonRegrind ? 0 : (parseFloat(item.regrindStandard.totalGrindMm) || 0);
+    const cyclesNum = isNonRegrind ? 0 : (parseInt(item.regrindStandard.regrindCycles) || 10);
     const avgLifeM = Number(item.shotLifeCycle.e1_pcm || item.shotLifeCycle.e2_gold || 5.0);
 
     const linePartCode = `${lineId}-${item.drawingNo}`;
@@ -550,7 +552,7 @@ MOLD_DIE_MASTER_ITEMS_2025.forEach((item) => {
         oneTimeRegrindMm: isDisposable ? 'Dispose' : perGrind,
         totalRegrindMm: totalGrindNum,
         maxRegrindCount: cyclesNum,
-        disposeAfterUse: isDisposable
+        disposeAfterUse: isNonRegrind
       },
       specialNotes: item.regrindStandard.note,
       newSpecMm: item.newSpecMm,
@@ -571,11 +573,17 @@ MOLD_DIE_MASTER_ITEMS_2025.forEach((item) => {
   const activeLines = getActiveLinesForPart(item);
   activeLines.forEach((lineId) => {
     const linePartCode = `${lineId}-${item.drawingNo}`;
-    const isDisposable = item.regrindStandard.perGrindMm.toLowerCase().includes('dispose') || item.regrindStandard.note.toLowerCase().includes('dispose');
-    const perGrindNum = parseFloat(item.regrindStandard.perGrindMm) || 0.10;
-    const totalGrindNum = parseFloat(item.regrindStandard.totalGrindMm) || (isDisposable ? 0 : 1.50);
-    const cyclesNum = parseInt(item.regrindStandard.regrindCycles) || (isDisposable ? 0 : 15);
-    const nominalLength = 45.00;
+    const perGrindRaw = item.regrindStandard.perGrindMm;
+    const isDisposable = perGrindRaw.toLowerCase().includes('dispose') || item.regrindStandard.note.toLowerCase().includes('dispose');
+    const isNonRegrind = isDisposable || perGrindRaw.trim() === '-' || String(item.regrindStandard.totalGrindMm).trim() === '-';
+    const stepMatches = (perGrindRaw.match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(n => Number.isFinite(n) && n > 0);
+    const minStep = stepMatches.length > 0 ? Math.min(...stepMatches) : 0.10;
+    const maxStep = stepMatches.length > 0 ? Math.max(...stepMatches) : 0.10;
+    const perGrindNum = isNonRegrind ? 0 : minStep;
+    const totalGrindNum = isNonRegrind ? 0 : (parseFloat(item.regrindStandard.totalGrindMm) || 0);
+    const cyclesNum = isNonRegrind ? 0 : (parseInt(item.regrindStandard.regrindCycles) || 10);
+    const nominalLength = item.newSpecMm ?? 45.00;
+    const minAllowedLength = item.scrapLimitMm ?? Number((nominalLength - totalGrindNum).toFixed(2));
 
     INITIAL_REGRIND_MASTER_STANDARDS.push({
       id: `RGD-STD-${linePartCode}`,
@@ -584,14 +592,14 @@ MOLD_DIE_MASTER_ITEMS_2025.forEach((item) => {
       stagePunchDie: item.stage,
       nominalLengthMm: nominalLength,
       grindingAmountPerTimeMm: perGrindNum,
-      grindMinMm: isDisposable ? 0 : 0.08,
-      grindMaxMm: isDisposable ? 0 : 0.20,
+      grindMinMm: isNonRegrind ? 0 : minStep,
+      grindMaxMm: isNonRegrind ? 0 : maxStep,
       totalGrindingAllowanceMm: totalGrindNum,
-      minAllowedLengthMm: Number((nominalLength - totalGrindNum).toFixed(2)),
+      minAllowedLengthMm: minAllowedLength,
       maxRegrindCount: cyclesNum,
-      regrindAllowed: !isDisposable,
+      regrindAllowed: !isNonRegrind,
       disposeAfterOneUse: isDisposable,
-      inspectionRequirements: isDisposable ? 'Visual inspection for defects. Dispose after run.' : 'Visual wear check, burr inspection, surface roughness Ra <= 0.20 µm.',
+      inspectionRequirements: isNonRegrind ? 'Visual inspection for defects. Dispose after run.' : 'Visual wear check, burr inspection, surface roughness Ra <= 0.20 µm.',
       notes: item.regrindStandard.note
     });
   });

@@ -3,6 +3,7 @@ import { Search, ChevronDown, Check, X, Layers, Wrench, Scissors, Info } from 'l
 import { ProductionLineId, RegrindMasterStandard, LINE_INFO_MAP } from '../../types';
 import { storageService } from '../../services/storageService';
 import { regrindService } from '../../services/regrindService';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 export interface FilteredLinePartItem {
   partCode: string;
@@ -13,14 +14,25 @@ export interface FilteredLinePartItem {
   partTypeLabel: string;
   nominalLengthMm: number;
   grindingAmountPerTimeMm: number;
+  grindMinMm?: number;
+  grindMaxMm?: number;
+  totalGrindingAllowanceMm?: number;
   minAllowedLengthMm: number;
   maxRegrindCount: number;
+  regrindCyclesLabel?: string;
   regrindAllowed: boolean;
   disposeAfterOneUse: boolean;
   isStandardRegrindTool: boolean;
 }
 
 const LINE_PREFIX_LIST = ['E3-1', 'E3-2', 'E3-3', 'E1', 'E2', 'E4', 'E5'];
+
+const extractNumericTokens = (raw?: string | number | null): number[] => {
+  if (raw === undefined || raw === null) return [];
+  const matches = String(raw).match(/\d+(?:\.\d+)?/g);
+  if (!matches) return [];
+  return matches.map(Number).filter(n => Number.isFinite(n) && n > 0);
+};
 
 export function detectTubeSize(partCode: string, partName: string, explicitTube?: string): 'Ø7' | 'Ø9.52' | 'Ø5' | 'ALL' {
   if (explicitTube === 'Ø7' || explicitTube === 'Ø9.52' || explicitTube === 'Ø5') {
@@ -33,20 +45,29 @@ export function detectTubeSize(partCode: string, partName: string, explicitTube?
   return 'ALL';
 }
 
-export function getPartTypeLabel(partName: string, partCode: string): string {
+export function getPartTypeLabel(partName: string, partCode: string, isEn?: boolean): string {
+  let enMode = isEn;
+  if (enMode === undefined) {
+    try {
+      const saved = localStorage.getItem('app_language')?.toUpperCase();
+      enMode = saved === 'EN' || saved === 'DUAL';
+    } catch {
+      enMode = false;
+    }
+  }
   const combined = `${partName} ${partCode}`.toUpperCase();
-  if (combined.includes('BURRING')) return 'พั้นช์ขึ้นรูป (Burring)';
-  if (combined.includes('PIERCING') || combined.includes('PIERCE')) return 'พั้นช์เจาะ (Piercing)';
-  if (combined.includes('FLARE')) return 'พั้นช์บาน (Flare)';
-  if (combined.includes('DRAW')) return 'พั้นช์ดึง (Draw)';
-  if (combined.includes('IRON')) return 'พั้นช์รีด (Ironing)';
-  if (combined.includes('REFLARE')) return 'พั้นช์บานซ้ำ (Reflare)';
-  if (combined.includes('FIN CUT') || combined.includes('BLADE') || combined.includes('TRIM')) return 'ใบมีดตัด (Fin Cut)';
-  if (combined.includes('NOTCH')) return 'พั้นช์บากคม (Notch Punch)';
-  if (combined.includes('FEED FINGER')) return 'ขาป้อนฟิน (Feed Finger)';
-  if (combined.includes('PIN')) return 'สลักพิน (Guide Pin)';
-  if (/^S[1-6]/.test(partName) || /^S[1-6]/.test(partCode)) return 'พั้นช์สเตชั่นแม่พิมพ์';
-  return 'อะไหล่ทูลลิ่ง Fin Die';
+  if (combined.includes('BURRING')) return enMode ? 'Burring Punch' : 'พั้นช์ขึ้นรูป (Burring)';
+  if (combined.includes('PIERCING') || combined.includes('PIERCE')) return enMode ? 'Piercing Punch' : 'พั้นช์เจาะ (Piercing)';
+  if (combined.includes('FLARE')) return enMode ? 'Flare Punch' : 'พั้นช์บาน (Flare)';
+  if (combined.includes('DRAW')) return enMode ? 'Draw Punch' : 'พั้นช์ดึง (Draw)';
+  if (combined.includes('IRON')) return enMode ? 'Ironing Punch' : 'พั้นช์รีด (Ironing)';
+  if (combined.includes('REFLARE')) return enMode ? 'Reflare Punch' : 'พั้นช์บานซ้ำ (Reflare)';
+  if (combined.includes('FIN CUT') || combined.includes('BLADE') || combined.includes('TRIM')) return enMode ? 'Fin Cut Blade' : 'ใบมีดตัด (Fin Cut)';
+  if (combined.includes('NOTCH')) return enMode ? 'Notch Punch' : 'พั้นช์บากคม (Notch Punch)';
+  if (combined.includes('FEED FINGER')) return enMode ? 'Feed Finger' : 'ขาป้อนฟิน (Feed Finger)';
+  if (combined.includes('PIN')) return enMode ? 'Guide Pin' : 'สลักพิน (Guide Pin)';
+  if (/^S[1-6]/.test(partName) || /^S[1-6]/.test(partCode)) return enMode ? 'Die Station Punch' : 'พั้นช์สเตชั่นแม่พิมพ์';
+  return enMode ? 'Fin Die Tooling Part' : 'อะไหล่ทูลลิ่ง Fin Die';
 }
 
 export function getSupportedTubesForLine(lineId: ProductionLineId): string[] {
@@ -89,34 +110,80 @@ export function getFilteredPartsForLine(
     if (nameMap.has(key)) return;
 
     // Cross-link to PartLifeStandard and RegrindMasterStandard
-    const lifeStd = lifeStandards.find(ls => 
+    const lifeStd = lifeStandards.find(ls =>
       ls.configKey?.partCode === pm.partCode ||
-      ls.partCode === pm.partCode || 
+      ls.partCode === pm.partCode ||
       ls.id?.includes(pm.partCode) ||
       ls.partName?.toUpperCase() === pm.partName?.toUpperCase()
     );
-    const regrindStd = regrindStds.find(rs => 
-      rs.partCode === pm.partCode || 
+    const regrindStd = regrindStds.find(rs =>
+      rs.partCode === pm.partCode ||
       rs.partCode === `${lineId}-${pm.partCode}` ||
       rs.partName?.toUpperCase() === pm.partName?.toUpperCase()
     );
 
     const isDie = pm.category === 'DIE' || pm.partName.toUpperCase().includes('DIE');
     const isBlade = pm.category === 'BLADE' || pm.partName.toUpperCase().includes('BLADE');
-    const isDisposable = 
+
+    const perGrindRaw = String(pm.regrindStandard?.perGrindMm ?? '').trim();
+    const totalGrindRaw = String(pm.regrindStandard?.totalGrindMm ?? '').trim();
+    const cyclesRaw = String(pm.regrindStandard?.regrindCycles ?? '').trim();
+    const noteRaw = String(pm.regrindStandard?.note ?? '').toLowerCase();
+
+    const isOneUseDispose =
       pm.maintenanceType === 'DISPOSE' ||
-      pm.regrindStandard?.perGrindMm?.toLowerCase().includes('dispose') ||
-      pm.regrindStandard?.note?.toLowerCase().includes('dispose') ||
+      perGrindRaw.toLowerCase().includes('dispose') ||
+      noteRaw.includes('dispose') ||
       regrindStd?.disposeAfterOneUse === true;
 
-    // Parse regrind numbers from Part Master 100%
-    const perGrindNum = parseFloat(pm.regrindStandard?.perGrindMm || '') || (regrindStd?.grindingAmountPerTimeMm ?? (isDie ? 0.20 : 0.25));
-    const totalGrindNum = parseFloat(pm.regrindStandard?.totalGrindMm || '') || (regrindStd?.totalGrindingAllowanceMm ?? (isDisposable ? 0 : isDie ? 3.0 : 4.0));
-    const maxCyclesNum = parseInt(pm.regrindStandard?.regrindCycles || '') || (regrindStd?.maxRegrindCount ?? (isDisposable ? 0 : 5));
+    const isDashNonRegrind =
+      perGrindRaw === '-' ||
+      totalGrindRaw === '-' ||
+      (cyclesRaw === '-' && !isOneUseDispose);
 
-    // Nominal length: Priority from PartMaster newSpecMm, then lifeStd, then regrindStd, then category default
-    const nominalLength = Number(pm.newSpecMm) || Number(lifeStd?.newSpecMm) || Number(regrindStd?.nominalLengthMm) || (isDie ? 45.00 : isBlade ? 120.00 : 70.00);
-    const minAllowedLength = Number(pm.scrapLimitMm) || Number(lifeStd?.scrapLimitMm) || Number(regrindStd?.minAllowedLengthMm) || Number((nominalLength - totalGrindNum).toFixed(2));
+    const isNonRegrindable = isOneUseDispose || isDashNonRegrind || (regrindStd?.regrindAllowed === false);
+
+    // Parse step numbers (supports ranges like "0.10 -0.15")
+    const stepTokens = extractNumericTokens(perGrindRaw);
+    const fallbackStep = regrindStd?.grindingAmountPerTimeMm ?? (isDie ? 0.20 : 0.10);
+    const grindMin = isNonRegrindable ? 0 : (stepTokens.length > 0 ? Math.min(...stepTokens) : fallbackStep);
+    const grindMax = isNonRegrindable ? 0 : (stepTokens.length > 0 ? Math.max(...stepTokens) : grindMin);
+
+    // Parse total grind allowance (strictly 0 when non-regrindable)
+    const parsedTotalGrind = isNonRegrindable ? 0 : parseFloat(totalGrindRaw);
+    const totalGrindNum = isNonRegrindable
+      ? 0
+      : (Number.isFinite(parsedTotalGrind) && parsedTotalGrind > 0
+          ? parsedTotalGrind
+          : (regrindStd?.totalGrindingAllowanceMm ?? (isDie ? 1.50 : 1.50)));
+
+    // Nominal & Scrap Limit length strictly derived from PartMaster (L_0 - Total = L_min)
+    const pmNewSpec = typeof pm.newSpecMm === 'number' && pm.newSpecMm >= 0 ? pm.newSpecMm : undefined;
+    const pmScrapLimit = typeof pm.scrapLimitMm === 'number' && pm.scrapLimitMm >= 0 ? pm.scrapLimitMm : undefined;
+    const nominalLength = pmNewSpec !== undefined
+      ? pmNewSpec
+      : (lifeStd?.newSpecMm ?? regrindStd?.nominalLengthMm ?? (isDashNonRegrind ? 0 : isDie ? 45.00 : isBlade ? 120.00 : 70.00));
+
+    const minAllowedLength = pmScrapLimit !== undefined
+      ? pmScrapLimit
+      : (lifeStd?.scrapLimitMm ?? regrindStd?.minAllowedLengthMm ?? Math.max(0, Number((nominalLength - totalGrindNum).toFixed(3))));
+
+    const effectiveTotalGrind = isNonRegrindable
+      ? 0
+      : (nominalLength > minAllowedLength
+          ? Number((nominalLength - minAllowedLength).toFixed(3))
+          : totalGrindNum);
+
+    // Parse maxCycles using upper bound of range (e.g., "7-9 time" -> 9, "14-15 time" -> 15)
+    const cycleTokens = extractNumericTokens(cyclesRaw);
+    const derivedMaxCycles = (!isNonRegrindable && grindMin > 0 && effectiveTotalGrind > 0)
+      ? Math.floor(effectiveTotalGrind / grindMin + 1e-6)
+      : 0;
+    const maxCyclesNum = isNonRegrindable
+      ? 0
+      : (cycleTokens.length > 0
+          ? Math.max(...cycleTokens)
+          : (regrindStd?.maxRegrindCount || derivedMaxCycles || 5));
 
     nameMap.set(key, {
       partCode: pm.partCode,
@@ -126,11 +193,15 @@ export function getFilteredPartsForLine(
       category: pm.category || 'PUNCH',
       partTypeLabel: getPartTypeLabel(pm.partName, pm.partCode),
       nominalLengthMm: nominalLength,
-      grindingAmountPerTimeMm: isDisposable ? 0 : perGrindNum,
+      grindingAmountPerTimeMm: grindMin,
+      grindMinMm: grindMin,
+      grindMaxMm: grindMax,
+      totalGrindingAllowanceMm: effectiveTotalGrind,
       minAllowedLengthMm: minAllowedLength,
-      maxRegrindCount: isDisposable ? 0 : maxCyclesNum,
-      regrindAllowed: !isDisposable,
-      disposeAfterOneUse: isDisposable,
+      maxRegrindCount: maxCyclesNum,
+      regrindCyclesLabel: cyclesRaw || (maxCyclesNum > 0 ? `${maxCyclesNum} time` : '-'),
+      regrindAllowed: !isNonRegrindable,
+      disposeAfterOneUse: isOneUseDispose,
       isStandardRegrindTool: true
     });
   });
@@ -144,7 +215,7 @@ export function getFilteredPartsForLine(
 }
 
 interface LineFilteredPartComboboxProps {
-  lineId: ProductionLineId;
+  lineId: ProductionLineId | '';
   selectedPartCode: string;
   selectedPartName?: string;
   onSelectPart: (item: FilteredLinePartItem) => void;
@@ -152,6 +223,8 @@ interface LineFilteredPartComboboxProps {
   label?: string;
   required?: boolean;
   accentColor?: 'cyan' | 'rose' | 'emerald';
+  allowEmptySelection?: boolean;
+  fieldState?: 'unfilled' | 'filled';
 }
 
 export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> = ({
@@ -160,10 +233,15 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
   selectedPartName,
   onSelectPart,
   standards,
-  label = 'รายการอะไหล่ / พั้นช์',
+  label,
   required = true,
-  accentColor = 'cyan'
+  accentColor = 'cyan',
+  allowEmptySelection = false,
+  fieldState
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
+  const resolvedLabel = label || (isEn ? 'Tooling Part / Punch' : 'รายการอะไหล่ / พั้นช์');
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<'ALL' | 'STANDARD_FORMING' | 'CUTTERS' | 'STATION'>('ALL');
@@ -171,26 +249,26 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const lineInfo = LINE_INFO_MAP[lineId];
-  const supportedTubes = getSupportedTubesForLine(lineId);
-
-  // Strictly filtered parts for selected lineId
+  // Strictly filtered parts for selected lineId (empty if no line chosen yet)
   const lineParts = useMemo(() => {
+    if (!lineId) return [];
     return getFilteredPartsForLine(lineId, standards);
   }, [lineId, standards]);
 
   // Currently selected part object
   const currentSelectedPart = useMemo(() => {
+    if (!selectedPartCode && !selectedPartName) return undefined;
     return (
       lineParts.find(p => p.partCode === selectedPartCode) ||
       (selectedPartName ? lineParts.find(p => p.partName.toLowerCase() === selectedPartName.toLowerCase()) : undefined)
     );
   }, [lineParts, selectedPartCode, selectedPartName]);
 
-  // Auto-adjust selected part when lineId changes if current part is incompatible
+  // Auto-adjust selected part when lineId changes if a part was already picked and is incompatible
   useEffect(() => {
     setActiveCategoryFilter('ALL');
-    if (lineParts.length === 0) return;
+    if (!lineId || lineParts.length === 0) return;
+    if (allowEmptySelection && !selectedPartCode && !selectedPartName) return;
 
     const stillValid = lineParts.some(
       p => p.partCode === selectedPartCode || (selectedPartName && p.partName === selectedPartName)
@@ -209,7 +287,7 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
 
       onSelectPart(equivalent || lineParts[0]);
     }
-  }, [lineId, lineParts]);
+  }, [lineId, lineParts, allowEmptySelection, selectedPartCode, selectedPartName]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -248,12 +326,16 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
     });
   }, [lineParts, searchQuery, activeCategoryFilter]);
 
-  const borderFocusClass =
-    accentColor === 'rose'
-      ? 'focus-within:border-rose-500 border-rose-500/40'
-      : accentColor === 'emerald'
-      ? 'focus-within:border-emerald-500 border-emerald-500/40'
-      : 'focus-within:border-cyan-400 border-slate-700';
+  const resolvedFieldState: 'unfilled' | 'filled' | undefined =
+    fieldState ?? (required ? (currentSelectedPart ? 'filled' : 'unfilled') : undefined);
+
+  const triggerSurfaceClass = isOpen
+    ? 'bg-slate-950 border-cyan-400 ring-2 ring-cyan-500/20'
+    : resolvedFieldState === 'filled'
+    ? 'bg-emerald-400/18 border-emerald-400/60 hover:border-emerald-300/80 shadow-[inset_0_0_12px_rgba(52,211,153,0.08)]'
+    : resolvedFieldState === 'unfilled'
+    ? 'bg-slate-500/25 border-slate-400/50 hover:border-slate-300/75'
+    : 'bg-slate-950 border-slate-700 focus-within:border-cyan-400';
 
   return (
     <div ref={containerRef} className="relative select-none">
@@ -261,7 +343,7 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5">
           <label className="text-xs font-bold text-slate-200">
-            {label} {required && <span className="text-rose-400">*</span>}
+            {resolvedLabel} {required && <span className="text-rose-400">*</span>}
           </label>
           <button
             type="button"
@@ -270,14 +352,18 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
               setShowSharedInfo(prev => !prev);
             }}
             className="text-slate-400 hover:text-cyan-300 p-0.5 rounded cursor-pointer transition-colors"
-            title="คลิกดูคำอธิบายรายการร่วม / ทูลลิ่งมาตรฐาน"
+            title={isEn ? 'Shared / Standard tooling info' : 'คลิกดูคำอธิบายรายการร่วม / ทูลลิ่งมาตรฐาน'}
           >
             <Info className="w-3.5 h-3.5" />
           </button>
         </div>
 
         <span className="text-[11px] font-mono text-slate-400">
-          LINE {lineId} ({lineParts.length} รายการ)
+          {lineId
+            ? `LINE ${lineId} (${lineParts.length} ${isEn ? 'parts' : 'รายการ'})`
+            : isEn
+            ? 'Select Line first'
+            : 'รอเลือกไลน์ก่อน'}
         </span>
       </div>
 
@@ -285,7 +371,7 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
       {showSharedInfo && (
         <div className="mb-2 p-2.5 rounded-xl bg-slate-900/95 border border-cyan-500/30 text-slate-300 text-[11px] shadow-xl animate-fadeIn space-y-1">
           <div className="flex items-center justify-between font-bold text-cyan-300 text-xs">
-            <span>ℹ️ รายการร่วม (Shared Tooling)</span>
+            <span>{isEn ? 'ℹ️ Shared Tooling' : 'ℹ️ รายการร่วม (Shared Tooling)'}</span>
             <button
               type="button"
               onClick={() => setShowSharedInfo(false)}
@@ -295,7 +381,9 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
             </button>
           </div>
           <p className="text-slate-300 leading-relaxed">
-            คือพั้นช์/ใบมีดมาตรฐานที่<strong>ใช้ร่วมกันได้ในทุกไลน์ที่ขนาดท่อเดียวกัน</strong> (เช่น ท่อ Ø7 ใช้ได้ทั้ง Line E1, E2, E3-1, E3-2) สามารถเบิกใช้และแชร์โควตาลับคมร่วมกันได้
+            {isEn
+              ? <>Standard punches/blades <strong>shared across lines with matching tube size</strong> (e.g., Ø7 across Line E1, E2, E3-1, E3-2) with shared stock & regrind quota.</>
+              : <>คือพั้นช์/ใบมีดมาตรฐานที่<strong>ใช้ร่วมกันได้ในทุกไลน์ที่ขนาดท่อเดียวกัน</strong> (เช่น ท่อ Ø7 ใช้ได้ทั้ง Line E1, E2, E3-1, E3-2) สามารถเบิกใช้และแชร์โควตาลับคมร่วมกันได้</>}
           </p>
         </div>
       )}
@@ -306,12 +394,14 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
           setIsOpen(true);
           setTimeout(() => inputRef.current?.focus(), 10);
         }}
-        className={`w-full bg-slate-950 border-2 ${
-          isOpen ? 'border-cyan-400 ring-2 ring-cyan-500/20' : borderFocusClass
-        } rounded-xl px-3.5 py-2.5 text-sm flex items-center justify-between gap-2 cursor-pointer transition-all shadow-inner`}
+        className={`w-full border-2 ${triggerSurfaceClass} rounded-xl px-3.5 py-2.5 text-sm flex items-center justify-between gap-2 cursor-pointer transition-all`}
       >
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <Search className="w-4 h-4 text-cyan-400 shrink-0" />
+          <Search
+            className={`w-4 h-4 shrink-0 ${
+              resolvedFieldState === 'filled' ? 'text-emerald-300' : 'text-slate-300'
+            }`}
+          />
           {isOpen ? (
             <input
               ref={inputRef}
@@ -319,7 +409,15 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               onClick={e => e.stopPropagation()}
-              placeholder={`พิมพ์ค้นหาชื่อพาร์ท หรือ รหัสอะไหล่...`}
+              placeholder={
+                !lineId
+                  ? isEn
+                    ? 'Select Production Line above first...'
+                    : 'กรุณาเลือกสายการผลิต (ไลน์) ด้านบนก่อน...'
+                  : isEn
+                  ? 'Search part name or part code...'
+                  : 'พิมพ์ค้นหาชื่อพาร์ท หรือ รหัสอะไหล่...'
+              }
               className="w-full bg-transparent text-white font-bold focus:outline-none placeholder-slate-400 text-sm"
             />
           ) : currentSelectedPart ? (
@@ -327,12 +425,22 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
               <span className="font-black text-white truncate text-sm sm:text-base tracking-tight">
                 {currentSelectedPart.partName}
               </span>
-              <span className="px-2 py-0.5 rounded-md bg-cyan-500/25 text-cyan-300 font-mono text-xs font-black shrink-0 border border-cyan-500/30">
-                LINE {lineId}
-              </span>
+              {lineId && (
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-200 font-mono text-xs font-black shrink-0 border border-emerald-400/40">
+                  LINE {lineId}
+                </span>
+              )}
             </div>
           ) : (
-            <span className="text-slate-300 text-sm font-semibold">คลิกเลือก หรือ พิมพ์ค้นหาอะไหล่...</span>
+            <span className="text-slate-200/80 text-sm font-semibold truncate">
+              {!lineId
+                ? isEn
+                  ? 'Select Line above first to list parts...'
+                  : 'เลือกไลน์ด้านบนก่อน เพื่อแสดงรายการชิ้นงาน...'
+                : isEn
+                ? '-- Click to select or search tooling part --'
+                : '-- คลิกเลือกชื่อรายการชิ้นงาน / อะไหล่ --'}
+            </span>
           )}
         </div>
 
@@ -365,13 +473,13 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
                 e.stopPropagation();
                 setActiveCategoryFilter('ALL');
               }}
-              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors ${
+              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors whitespace-nowrap ${
                 activeCategoryFilter === 'ALL'
                   ? 'bg-cyan-400 text-slate-950'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              ทั้งหมด ({lineParts.length})
+              {isEn ? `All (${lineParts.length})` : `ทั้งหมด (${lineParts.length})`}
             </button>
             <button
               type="button"
@@ -379,14 +487,14 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
                 e.stopPropagation();
                 setActiveCategoryFilter('STANDARD_FORMING');
               }}
-              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors flex items-center gap-1 ${
+              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors flex items-center gap-1 whitespace-nowrap ${
                 activeCategoryFilter === 'STANDARD_FORMING'
                   ? 'bg-cyan-400 text-slate-950'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
               <Layers className="w-3 h-3" />
-              <span>พั้นช์ขึ้นรูป</span>
+              <span>{isEn ? 'Forming Punch' : 'พั้นช์ขึ้นรูป'}</span>
             </button>
             <button
               type="button"
@@ -394,14 +502,14 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
                 e.stopPropagation();
                 setActiveCategoryFilter('CUTTERS');
               }}
-              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors flex items-center gap-1 ${
+              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors flex items-center gap-1 whitespace-nowrap ${
                 activeCategoryFilter === 'CUTTERS'
                   ? 'bg-cyan-400 text-slate-950'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
               <Scissors className="w-3 h-3" />
-              <span>ใบมีดตัด</span>
+              <span>{isEn ? 'Cutters / Blades' : 'ใบมีดตัด'}</span>
             </button>
             <button
               type="button"
@@ -409,22 +517,28 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
                 e.stopPropagation();
                 setActiveCategoryFilter('STATION');
               }}
-              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors flex items-center gap-1 ${
+              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors flex items-center gap-1 whitespace-nowrap ${
                 activeCategoryFilter === 'STATION'
                   ? 'bg-cyan-400 text-slate-950'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
               <Wrench className="w-3 h-3" />
-              <span>สเตชั่นแม่พิมพ์</span>
+              <span>{isEn ? 'Die Station' : 'สเตชั่นแม่พิมพ์'}</span>
             </button>
           </div>
 
           {/* Options List */}
           <div className="max-h-60 overflow-y-auto divide-y divide-white/5 custom-scrollbar">
-            {filteredOptions.length === 0 ? (
+            {!lineId ? (
+              <div className="p-3.5 text-center text-xs text-amber-300 font-semibold">
+                {isEn
+                  ? 'Please select a Production Line (E1–E5) above first.'
+                  : 'กรุณาเลือกสายการผลิต (ไลน์ E1–E5) ด้านบนก่อนครับ'}
+              </div>
+            ) : filteredOptions.length === 0 ? (
               <div className="p-3 text-center text-xs text-slate-400">
-                ไม่พบรายการที่ตรงกับคำค้นหา
+                {isEn ? 'No matching parts found' : 'ไม่พบรายการที่ตรงกับคำค้นหา'}
               </div>
             ) : (
               filteredOptions.map(item => {
@@ -444,7 +558,7 @@ export const LineFilteredPartCombobox: React.FC<LineFilteredPartComboboxProps> =
                     }}
                     className={`w-full px-3.5 py-2.5 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-cyan-500/20 text-white border-l-4 border-cyan-400'
+                        ? 'bg-emerald-500/20 text-white ring-1 ring-inset ring-emerald-400/50'
                         : 'hover:bg-white/[0.08] text-slate-200'
                     }`}
                   >

@@ -10,7 +10,8 @@ import {
   DollarSign,
   ShieldCheck,
   Box,
-  Cpu
+  Cpu,
+  BookOpen
 } from 'lucide-react';
 import { UserRole, AppTheme } from '../../types';
 import { useTranslation, useLanguage, LanguageCode } from '../../i18n';
@@ -88,6 +89,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'cost-rate-master',
           label: isTh ? 'อัตราเครื่องจักร & ค่าแรง' : 'Machine & Labor Rates',
           icon: Cpu
+        }
+      ]
+    },
+    {
+      title: isTh ? 'คู่มือ & ป้องกันลงพลาด' : 'USER GUIDE & SOP',
+      items: [
+        {
+          id: 'user-guide',
+          label: isTh ? 'สอนใช้งาน & ป้องกันลงผิดพลาด' : 'User Guide & Entry SOP',
+          icon: BookOpen,
+          badge: isTh ? 'GUIDE' : 'SOP'
         }
       ]
     }

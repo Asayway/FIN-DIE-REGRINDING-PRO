@@ -15,6 +15,7 @@ import QRCode from 'qrcode';
 import JsBarcode from 'jsbarcode';
 import { toPng, toBlob } from 'html-to-image';
 import { UnifiedPartMasterRow } from '../../views/PartMasterView';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface PartQrLabelModalProps {
   isOpen: boolean;
@@ -41,13 +42,15 @@ const RealQrCode: React.FC<{ payload: string; size?: number }> = ({ payload, siz
       .catch(err => console.error('QR code generation error:', err));
   }, [payload, size]);
 
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   if (!dataUrl) {
     return (
       <div 
         style={{ width: size, height: size }} 
         className="bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 font-mono"
       >
-        กำลังสร้าง QR...
+        {isEn ? 'Generating QR...' : 'กำลังสร้าง QR...'}
       </div>
     );
   }
@@ -105,6 +108,8 @@ export const PartQrLabelModal: React.FC<PartQrLabelModalProps> = ({
   onClose,
   partRow
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -236,7 +241,9 @@ export const PartQrLabelModal: React.FC<PartQrLabelModalProps> = ({
                 </span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                ฉลากบาร์โค้ดติดชิ้นส่วนแม่พิมพ์ สแกนใช้งานจริงได้ 100% และดาวน์โหลด/คัดลอกไฟล์รูปภาพได้
+                {isEn
+                  ? '100% scannable tooling sticker label with PNG download & clipboard copy support.'
+                  : 'ฉลากบาร์โค้ดติดชิ้นส่วนแม่พิมพ์ สแกนใช้งานจริงได้ 100% และดาวน์โหลด/คัดลอกไฟล์รูปภาพได้'}
               </p>
             </div>
           </div>
@@ -275,39 +282,39 @@ export const PartQrLabelModal: React.FC<PartQrLabelModalProps> = ({
                 type="button"
                 onClick={handleDownloadPng}
                 disabled={isDownloading}
-                className="px-3 py-1 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-600 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
-                title="ดาวน์โหลดไฟล์ภาพ PNG ความละเอียดสูง สำหรับพิมพ์สติ๊กเกอร์ติดกล่อง"
+                className="px-3 py-1 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-600 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs whitespace-nowrap"
+                title={isEn ? 'Download high-res PNG image for sticker printing' : 'ดาวน์โหลดไฟล์ภาพ PNG ความละเอียดสูง สำหรับพิมพ์สติ๊กเกอร์ติดกล่อง'}
               >
                 <Download className="w-3.5 h-3.5 text-sky-400" />
-                <span>{isDownloading ? 'กำลังดาวน์โหลด...' : 'ดาวน์โหลดภาพ PNG'}</span>
+                <span>{isDownloading ? (isEn ? 'Downloading...' : 'กำลังดาวน์โหลด...') : (isEn ? 'Download PNG' : 'ดาวน์โหลดภาพ PNG')}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleCopyImage}
-                className="px-3 py-1 bg-purple-950 hover:bg-purple-900 text-purple-300 border border-purple-600 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
-                title="คัดลอกรูปภาพป้ายสติ๊กเกอร์เข้า Clipboard เพื่อกด Ctrl+V วางในโปรแกรมพิมพ์สติ๊กเกอร์"
+                className="px-3 py-1 bg-purple-950 hover:bg-purple-900 text-purple-300 border border-purple-600 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-xs whitespace-nowrap"
+                title={isEn ? 'Copy sticker image to clipboard (Ctrl+V into label printer app)' : 'คัดลอกรูปภาพป้ายสติ๊กเกอร์เข้า Clipboard เพื่อกด Ctrl+V วางในโปรแกรมพิมพ์สติ๊กเกอร์'}
               >
                 {copiedImage ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <ImageIcon className="w-3.5 h-3.5 text-purple-400" />}
-                <span>{copiedImage ? 'คัดลอกภาพแล้ว!' : 'คัดลอกรูปภาพ'}</span>
+                <span>{copiedImage ? (isEn ? 'Image Copied!' : 'คัดลอกภาพแล้ว!') : (isEn ? 'Copy Image' : 'คัดลอกรูปภาพ')}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleCopyCode}
-                className="px-2.5 py-1 bg-[#282828] hover:bg-[#333333] text-slate-200 border border-[#555555] text-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-2.5 py-1 bg-[#282828] hover:bg-[#333333] text-slate-200 border border-[#555555] text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               >
                 {copiedCode ? <Check className="w-3.5 h-3.5 text-[#00FF00]" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-                <span>{copiedCode ? 'คัดลอกรหัสแล้ว' : 'Copy Code'}</span>
+                <span>{copiedCode ? (isEn ? 'Code Copied' : 'คัดลอกรหัสแล้ว') : 'Copy Code'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handlePrint}
-                className="px-3.5 py-1 bg-[#00FF00] hover:bg-[#00dd00] text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                className="px-3.5 py-1 bg-[#00FF00] hover:bg-[#00dd00] text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>พิมพ์สติ๊กเกอร์ (Print Label)</span>
+                <span>{isEn ? 'Print Label' : 'พิมพ์สติ๊กเกอร์ (Print Label)'}</span>
               </button>
             </div>
           </div>
@@ -362,27 +369,27 @@ export const PartQrLabelModal: React.FC<PartQrLabelModalProps> = ({
                 <div className="col-span-8 flex flex-col justify-between h-full space-y-2">
                   <div className="grid grid-cols-2 gap-2 text-xs border border-slate-300 p-2 bg-slate-50">
                     <div>
-                      <div className="text-[9px] text-slate-600 font-bold uppercase">New Spec (มาตรฐานใหม่):</div>
+                      <div className="text-[9px] text-slate-600 font-bold uppercase">{isEn ? 'New Spec (L₀):' : 'New Spec (มาตรฐานใหม่):'}</div>
                       <div className="text-sm font-black text-black">
                         {partRow.newSpecMm ? `${partRow.newSpecMm.toFixed(2)} mm` : '-'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[9px] text-slate-600 font-bold uppercase">Scrap Limit (ขีดจำกัดทิ้ง):</div>
+                      <div className="text-[9px] text-slate-600 font-bold uppercase">{isEn ? 'Scrap Limit (L_min):' : 'Scrap Limit (ขีดจำกัดทิ้ง):'}</div>
                       <div className="text-sm font-black text-red-700">
                         {partRow.scrapLimitMm ? `${partRow.scrapLimitMm.toFixed(2)} mm` : '-'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[9px] text-slate-600 font-bold uppercase">1-Time Grind (เจียรครั้งละ):</div>
+                      <div className="text-[9px] text-slate-600 font-bold uppercase">{isEn ? '1-Time Grind (Δl):' : '1-Time Grind (เจียรครั้งละ):'}</div>
                       <div className="text-xs font-bold text-black">
                         {partRow.regrindStandard?.perGrindMm || '-'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[9px] text-slate-600 font-bold uppercase">Max Regrind (รอบสูงสุด):</div>
+                      <div className="text-[9px] text-slate-600 font-bold uppercase">{isEn ? 'Max Regrind Cycles:' : 'Max Regrind (รอบสูงสุด):'}</div>
                       <div className="text-xs font-bold text-black">
-                        {partRow.regrindStandard?.regrindCycles ?? '-'} รอบ
+                        {partRow.regrindStandard?.regrindCycles ?? '-'} {isEn ? 'cycles' : 'รอบ'}
                       </div>
                     </div>
                   </div>
@@ -462,7 +469,7 @@ export const PartQrLabelModal: React.FC<PartQrLabelModalProps> = ({
                 <div className="flex justify-between">
                   <span>Maintenance Strategy:</span>
                   <span className={isDisposable ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
-                    {isDisposable ? 'One-time use (ทิ้ง)' : 'Regrind & Sharpen'}
+                    {isDisposable ? (isEn ? 'One-time use (Dispose)' : 'One-time use (ทิ้ง)') : 'Regrind & Sharpen'}
                   </span>
                 </div>
               </div>
@@ -474,8 +481,10 @@ export const PartQrLabelModal: React.FC<PartQrLabelModalProps> = ({
               </div>
               <div className="text-slate-300 text-[11px] leading-relaxed italic">
                 {partRow.regrindStandard?.note && partRow.regrindStandard.note !== '-' 
-                  ? partRow.regrindStandard.note 
-                  : 'มาตรฐานการเจียรตามแบบ Drawing มาตรฐานประจำโรงงาน'}
+                  ? (isEn
+                      ? (partRow.regrindStandard.note.replace(/\s*\([^)]*[\u0E00-\u0E7F][^)]*\)/g, '').trim() || 'Grinding standard per factory engineering drawing.')
+                      : partRow.regrindStandard.note)
+                  : (isEn ? 'Grinding standard per factory engineering drawing.' : 'มาตรฐานการเจียรตามแบบ Drawing มาตรฐานประจำโรงงาน')}
               </div>
             </div>
           </div>
@@ -491,7 +500,7 @@ export const PartQrLabelModal: React.FC<PartQrLabelModalProps> = ({
             onClick={onClose}
             className="px-4 py-1.5 bg-[#333333] hover:bg-[#444444] text-white font-bold cursor-pointer"
           >
-            ปิดหน้าต่าง
+            {isEn ? 'Close' : 'ปิดหน้าต่าง'}
           </button>
         </div>
 

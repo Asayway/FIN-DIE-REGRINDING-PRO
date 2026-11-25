@@ -37,7 +37,7 @@ export const UnifiedToolingMasterView: React.FC<UnifiedToolingMasterViewProps> =
           <button
             id="tab-specs"
             onClick={() => setActiveTab('specs')}
-            className={`liquid-pill rounded-xl px-3 sm:px-4 py-1.5 font-bold text-xs cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all ${
+            className={`liquid-pill rounded-xl px-3 sm:px-4 py-1.5 font-bold text-xs cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap ${
               activeTab === 'specs'
                 ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-[0_0_12px_rgba(6,182,212,0.4)] border-none'
                 : 'bg-white/[0.04] text-slate-300 hover:text-white hover:bg-white/[0.08] border border-white/10'
@@ -45,14 +45,14 @@ export const UnifiedToolingMasterView: React.FC<UnifiedToolingMasterViewProps> =
           >
             <Factory className="w-3.5 h-3.5" />
             <span>
-              {language === 'TH' ? '1. สเปคแม่พิมพ์ไลน์' : '1. LINE SPEC'}
+              {language === 'TH' ? '1. สเปคแม่พิมพ์ไลน์' : '1. LINE DIE SPEC'}
             </span>
           </button>
 
           <button
             id="tab-master"
             onClick={() => setActiveTab('master')}
-            className={`liquid-pill rounded-xl px-3 sm:px-4 py-1.5 font-bold text-xs cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all ${
+            className={`liquid-pill rounded-xl px-3 sm:px-4 py-1.5 font-bold text-xs cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap ${
               activeTab === 'master'
                 ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-[0_0_12px_rgba(6,182,212,0.4)] border-none'
                 : 'bg-white/[0.04] text-slate-300 hover:text-white hover:bg-white/[0.08] border border-white/10'
@@ -67,7 +67,7 @@ export const UnifiedToolingMasterView: React.FC<UnifiedToolingMasterViewProps> =
           <button
             id="tab-matrix"
             onClick={() => setActiveTab('matrix')}
-            className={`liquid-pill rounded-xl px-3 sm:px-4 py-1.5 font-bold text-xs cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all ${
+            className={`liquid-pill rounded-xl px-3 sm:px-4 py-1.5 font-bold text-xs cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap ${
               activeTab === 'matrix'
                 ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-[0_0_12px_rgba(6,182,212,0.4)] border-none'
                 : 'bg-white/[0.04] text-slate-300 hover:text-white hover:bg-white/[0.08] border border-white/10'
@@ -82,7 +82,7 @@ export const UnifiedToolingMasterView: React.FC<UnifiedToolingMasterViewProps> =
           <button
             id="tab-stock"
             onClick={() => setActiveTab('stock')}
-            className={`liquid-pill rounded-xl px-3 sm:px-4 py-1.5 font-bold text-xs cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all ${
+            className={`liquid-pill rounded-xl px-3 sm:px-4 py-1.5 font-bold text-xs cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap ${
               activeTab === 'stock'
                 ? 'bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 font-black shadow-[0_0_12px_rgba(16,185,129,0.4)] border-none'
                 : 'bg-white/[0.04] text-slate-300 hover:text-white hover:bg-white/[0.08] border border-white/10'
@@ -90,7 +90,7 @@ export const UnifiedToolingMasterView: React.FC<UnifiedToolingMasterViewProps> =
           >
             <Box className="w-3.5 h-3.5" />
             <span>
-              {language === 'TH' ? '4. สต็อกอะไหล่หมุนเวียนงานซ่อม' : '4. STOCK PART REPAIR'}
+              {language === 'TH' ? '4. สต็อกอะไหล่หมุนเวียนงานซ่อม' : '4. REPAIR SPARE STOCK'}
             </span>
           </button>
         </div>

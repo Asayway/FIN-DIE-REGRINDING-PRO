@@ -817,7 +817,9 @@ export class CostSavingCalculationService {
     const step1MachineDepreciationCost = Number((depreciationPerHour * mHours).toFixed(2));
     const step1ElectricityCost = Number((electricityPerHour * mHours).toFixed(2));
     const step1MaintenanceCost = Number((maintPerHour * mHours).toFixed(2));
-    const step1TotalMachineAndPower = Number((totalMachineRatePerHour * mHours).toFixed(2));
+    const step1TotalMachineAndPower = Number(
+      (step1MachineDepreciationCost + step1ElectricityCost + step1MaintenanceCost).toFixed(2)
+    );
 
     // --- STEP 2: Employee Labor, Overtime & Skill Allowance ---
     const baseWage = Math.max(0, input.baseLaborRatePerHour || 0);
@@ -879,7 +881,7 @@ export class CostSavingCalculationService {
 
     const unitNewPrice = Math.max(0, input.newPurchasePricePerPiece || 0);
     const step5TotalNewToolEquivalentCost = Number((qty * unitNewPrice).toFixed(2));
-    const step5NetCostSaving = Number(Math.max(0, step5TotalNewToolEquivalentCost - step5GrandTotalJobCost).toFixed(2));
+    const step5NetCostSaving = Number((step5TotalNewToolEquivalentCost - step5GrandTotalJobCost).toFixed(2));
     const step5SavingPercentage = step5TotalNewToolEquivalentCost > 0
       ? Number(((step5NetCostSaving / step5TotalNewToolEquivalentCost) * 100).toFixed(2))
       : 0;

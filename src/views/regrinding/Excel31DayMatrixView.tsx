@@ -199,7 +199,9 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
     csvContent += `FIN DIE REGRINDING MATRIX REPORT - ${currentMonthInfo.nameEn.toUpperCase()} ${matrix.year} (${daysInMonth} DAYS)\n\n`;
 
     // 1. Repair section
-    csvContent += `HE Grinding Repair ปี ${matrix.year} (งานเจียรสำเร็จ ${currentMonthInfo.nameTh})\n`;
+    csvContent += isTh
+      ? `HE Grinding Repair ปี ${matrix.year} (งานเจียรสำเร็จ ${currentMonthInfo.nameTh})\n`
+      : `HE Grinding Repair Year ${matrix.year} (${currentMonthInfo.nameEn})\n`;
     csvContent += `No,Part Code,Item Name,${daysArray.join(',')},Total\n`;
     filteredRepairRows.forEach((row, idx) => {
       const dailyVals = daysArray.map(d => row.dailyCounts[d] || 0);
@@ -211,7 +213,9 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
     csvContent += `Total,,,${repairDailySums.join(',')},${filteredRepairRows.reduce((s, r) => s + r.total, 0)}\n\n`;
 
     // 2. Defect section
-    csvContent += `ซ่อมไม่ได้ (ทิ้ง) / HE Grinding Defect ปี ${matrix.year} (${currentMonthInfo.nameTh})\n`;
+    csvContent += isTh
+      ? `ซ่อมไม่ได้ (ทิ้ง) / HE Grinding Defect ปี ${matrix.year} (${currentMonthInfo.nameTh})\n`
+      : `Scrap & Defect / HE Grinding Defect Year ${matrix.year} (${currentMonthInfo.nameEn})\n`;
     csvContent += `No,Part Code,Item Name,${daysArray.join(',')},Total\n`;
     filteredDefectRows.forEach((row, idx) => {
       const dailyVals = daysArray.map(d => row.dailyCounts[d] || 0);
@@ -291,7 +295,7 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
               value={matrix.year}
               onChange={e => handleYearChange(parseInt(e.target.value) || 2026)}
               className="bg-transparent text-cyan-300 font-bold text-[11px] px-1 focus:outline-none cursor-pointer border-r border-slate-700/60 mr-0.5"
-              title="เลือกปี ค.ศ."
+              title={isTh ? 'เลือกปี ค.ศ.' : 'Select Year'}
             >
               {AVAILABLE_YEARS.map(yr => (
                 <option key={yr} value={yr} className="bg-slate-900 text-white">
@@ -304,7 +308,7 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
               type="button"
               onClick={handlePrevMonth}
               className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
-              title="เดือนก่อนหน้า"
+              title={isTh ? 'เดือนก่อนหน้า' : 'Previous Month'}
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
@@ -423,7 +427,7 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
                           ? 'bg-violet-950/75 text-violet-300 border-violet-500/30 hover:bg-violet-900/80'
                           : 'border-slate-800 hover:bg-slate-800 text-slate-300'
                       }`}
-                      title={isSun ? 'วันอาทิตย์ (วันหยุด)' : isSat ? 'วันเสาร์ (วันหยุด)' : undefined}
+                      title={isSun ? (isTh ? 'วันอาทิตย์ (วันหยุด)' : 'Sunday (Holiday)') : isSat ? (isTh ? 'วันเสาร์ (วันหยุด)' : 'Saturday (Holiday)') : undefined}
                     >
                       <div className="leading-none">{day}</div>
                       <div className={`text-[8.5px] mt-0.5 leading-none ${isSun ? 'text-rose-400' : isSat ? 'text-violet-400' : 'text-slate-500'}`}>
@@ -533,7 +537,11 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
                           });
                         }}
                         className={`p-1 text-center font-mono cursor-pointer transition-all relative ${statusBgClass} ${overdueBorderClass}`}
-                        title={`คลิกเปิดใบงาน / วางแผนเจียร: ${row.partName} วันที่ ${day} ${currentMonthInfo.nameTh}`}
+                        title={
+                          isTh
+                            ? `คลิกเปิดใบงาน / วางแผนเจียร: ${row.partName} วันที่ ${day} ${currentMonthInfo.nameTh}`
+                            : `Click to open/plan regrind job: ${row.partName} on ${day} ${currentMonthInfo.nameEn}`
+                        }
                       >
                         {count > 0 ? (
                           <span className="font-extrabold text-[11px] block">
@@ -554,7 +562,7 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
                             </div>
                             <div className="space-y-1">
                               <p className="text-slate-300">
-                                <strong className="text-slate-400">จำนวน:</strong> {count || matchingTicket?.quantity || 1} ชิ้น
+                                <strong className="text-slate-400">{isTh ? 'จำนวน:' : 'Qty:'}</strong> {count || matchingTicket?.quantity || 1} {isTh ? 'ชิ้น' : 'pcs'}
                               </p>
                               {matchingTicket && (
                                 <>
@@ -562,22 +570,22 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
                                     <strong>Ticket:</strong> {matchingTicket.jobCode}
                                   </p>
                                   <p className="flex items-center gap-1">
-                                    <strong>สถานะ:</strong> <span className="font-bold">{statusBadgeLabel || matchingTicket.status}</span>
+                                    <strong>{isTh ? 'สถานะ:' : 'Status:'}</strong> <span className="font-bold">{statusBadgeLabel || matchingTicket.status}</span>
                                   </p>
                                   <p className="text-slate-400 text-[10px]">
-                                    <strong>เป้าหมาย:</strong> {matchingTicket.targetCompletionDate ? new Date(matchingTicket.targetCompletionDate).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '17:00'}
+                                    <strong>{isTh ? 'เป้าหมาย:' : 'Target:'}</strong> {matchingTicket.targetCompletionDate ? new Date(matchingTicket.targetCompletionDate).toLocaleTimeString(isTh ? 'th-TH' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : '17:00'}
                                   </p>
                                   {isOverdue && (
                                     <p className="text-orange-400 font-bold flex items-center gap-1 animate-pulse">
                                       <AlertTriangle className="w-3 h-3" />
-                                      Overdue / Delayed [ย้ายวันอัตโนมัติ]
+                                      {isTh ? 'Overdue / Delayed [ย้ายวันอัตโนมัติ]' : 'Overdue / Delayed [Auto-Rolled Over]'}
                                     </p>
                                   )}
                                 </>
                               )}
                               {!matchingTicket && (
                                 <p className="text-emerald-400 font-semibold">
-                                  บันทึกงานสำเร็จในตาราง {count} ชิ้น
+                                  {isTh ? `บันทึกงานสำเร็จในตาราง ${count} ชิ้น` : `Logged ${count} pc(s) in matrix`}
                                 </p>
                               )}
                             </div>
@@ -596,7 +604,7 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
             <tfoot className="bg-[#0B1220] font-bold border-t-2 border-slate-700 sticky bottom-0 z-10 shadow">
               <tr>
                 <td colSpan={3} className="p-2 text-right border-r border-slate-700 text-slate-300">
-                  Total (ชิ้น / วัน):
+                  {isTh ? 'Total (ชิ้น / วัน):' : 'Total (pcs / day):'}
                 </td>
                 {daysArray.map(day => {
                   const dailyTotal = getDailyRepairTotal(day);
@@ -672,7 +680,7 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
                           ? 'bg-violet-950/75 text-violet-300 border-violet-500/30 hover:bg-violet-900/80'
                           : 'border-slate-800 hover:bg-slate-800 text-slate-300'
                       }`}
-                      title={isSun ? 'วันอาทิตย์ (วันหยุด)' : isSat ? 'วันเสาร์ (วันหยุด)' : undefined}
+                      title={isSun ? (isTh ? 'วันอาทิตย์ (วันหยุด)' : 'Sunday (Holiday)') : isSat ? (isTh ? 'วันเสาร์ (วันหยุด)' : 'Saturday (Holiday)') : undefined}
                     >
                       <div className="leading-none">{day}</div>
                       <div className={`text-[8.5px] mt-0.5 leading-none ${isSun ? 'text-rose-400' : isSat ? 'text-violet-400' : 'text-slate-500'}`}>
@@ -749,7 +757,11 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
                           });
                         }}
                         className={`p-1 text-center font-mono border-r border-slate-800/60 cursor-pointer transition-all ${cellBgClass}`}
-                        title={`คลิกเพื่อจัดการงานทิ้ง: ${row.partName} วันที่ ${day} ${currentMonthInfo.nameTh}`}
+                        title={
+                          isTh
+                            ? `คลิกเพื่อจัดการงานทิ้ง: ${row.partName} วันที่ ${day} ${currentMonthInfo.nameTh}`
+                            : `Click to manage scrap/defect: ${row.partName} on ${day} ${currentMonthInfo.nameEn}`
+                        }
                       >
                         {matchingTicket || (count !== undefined && count > 0) ? (
                           <span className="font-extrabold text-[11px] block">
@@ -771,7 +783,7 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
             <tfoot className="bg-[#0B1220] font-bold border-t-2 border-slate-700 sticky bottom-0 z-10 shadow">
               <tr>
                 <td colSpan={3} className="p-2 text-right border-r border-slate-700 text-slate-300">
-                  Total Defect (ทิ้ง):
+                  {isTh ? 'Total Defect (ทิ้ง):' : 'Total Defect (Scrap):'}
                 </td>
                 {daysArray.map(day => {
                   const dailyTotal = getDailyDefectTotal(day);
@@ -899,20 +911,26 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
           >
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <span className="text-xs font-bold text-white">
-                แก้ไขจำนวนชิ้นรายวัน
+                {isTh ? 'แก้ไขจำนวนชิ้นรายวัน' : 'Edit Daily Quantity'}
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700">
-                วันที่ {editingCell.day} {currentMonthInfo.shortTh} {matrix.year}
+                {isTh
+                  ? `วันที่ ${editingCell.day} ${currentMonthInfo.shortTh} ${matrix.year}`
+                  : `${editingCell.day} ${currentMonthInfo.shortEn} ${matrix.year}`}
               </span>
             </div>
 
             <p className="text-xs text-slate-300 font-medium">
-              {editingCell.partName} ({editingCell.category === 'REPAIR' ? 'งานเจียรสำเร็จ' : 'ทิ้ง/หมดสเปค'})
+              {editingCell.partName} (
+              {editingCell.category === 'REPAIR'
+                ? (isTh ? 'งานเจียรสำเร็จ' : 'Regrind Repair')
+                : (isTh ? 'ทิ้ง/หมดสเปค' : 'Defect / Scrap')}
+              )
             </p>
 
             <div>
               <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                จำนวน (ชิ้น):
+                {isTh ? 'จำนวน (ชิ้น):' : 'Quantity (pcs):'}
               </label>
               <input
                 type="number"
@@ -931,17 +949,17 @@ export const Excel31DayMatrixView: React.FC<Excel31DayMatrixViewProps> = ({
               <button
                 type="button"
                 onClick={() => setEditingCell(null)}
-                className="flex-1 py-1.5 text-xs font-semibold rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 transition-colors"
+                className="flex-1 py-1.5 text-xs font-semibold rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 transition-colors cursor-pointer"
               >
-                ยกเลิก
+                {isTh ? 'ยกเลิก' : 'Cancel'}
               </button>
               <button
                 type="button"
                 onClick={handleSaveEdit}
-                className="flex-1 py-1.5 text-xs font-bold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow transition-colors flex items-center justify-center gap-1 font-bold"
+                className="flex-1 py-1.5 text-xs font-bold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow transition-colors flex items-center justify-center gap-1 cursor-pointer"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>บันทึก</span>
+                <span>{isTh ? 'บันทึก' : 'Save'}</span>
               </button>
             </div>
           </div>

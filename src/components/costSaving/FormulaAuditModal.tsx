@@ -10,6 +10,7 @@ import {
   Info
 } from 'lucide-react';
 import { CostSavingCalculationService } from '../../services/costSavingCalculationService';
+import { useLanguage } from '../../i18n';
 
 interface FormulaAuditModalProps {
   isOpen: boolean;
@@ -20,6 +21,9 @@ export const FormulaAuditModal: React.FC<FormulaAuditModalProps> = ({
   isOpen,
   onClose
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
+
   const testResults = useMemo(() => {
     return CostSavingCalculationService.runVerificationTestCases();
   }, [isOpen]);
@@ -42,7 +46,11 @@ export const FormulaAuditModal: React.FC<FormulaAuditModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-white tracking-wide flex items-center gap-2">
-                <span>ระบบตรวจสอบสูตรคำนวณและกรณีทดสอบ (Formula Verification & Test Cases)</span>
+                <span>
+                  {isEn
+                    ? 'Formula Verification & Test Cases'
+                    : 'ระบบตรวจสอบสูตรคำนวณและกรณีทดสอบ (Formula Verification & Test Cases)'}
+                </span>
                 {allPassed ? (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-[#00FF7F]/20 text-[#00FF7F] border border-[#00FF7F]/40">
                     100% PASSED
@@ -54,7 +62,9 @@ export const FormulaAuditModal: React.FC<FormulaAuditModalProps> = ({
                 )}
               </h3>
               <p className="text-xs text-slate-400">
-                ตรวจสอบความถูกต้องของสูตร Gross/Net Saving, Cost per Shot, และ Fair Normalized Comparison ก่อนใช้งานจริง
+                {isEn
+                  ? 'Verify accuracy of Gross/Net Saving, Cost per Shot, and Fair Normalized Comparison formulas.'
+                  : 'ตรวจสอบความถูกต้องของสูตร Gross/Net Saving, Cost per Shot, และ Fair Normalized Comparison ก่อนใช้งานจริง'}
               </p>
             </div>
           </div>
@@ -74,32 +84,52 @@ export const FormulaAuditModal: React.FC<FormulaAuditModalProps> = ({
           <div className="p-4 bg-slate-950/80 border border-white/10 rounded-2xl space-y-2 text-xs">
             <h4 className="font-bold text-cyan-400 flex items-center gap-2 uppercase tracking-wider text-[11px]">
               <Calculator className="w-4 h-4" />
-              <span>หลักเกณฑ์สูตรมาตรฐานวิศวกรรม (Engineering Calculation Standards)</span>
+              <span>
+                {isEn
+                  ? 'Engineering Calculation Standards'
+                  : 'หลักเกณฑ์สูตรมาตรฐานวิศวกรรม (Engineering Calculation Standards)'}
+              </span>
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-300 font-mono text-[11px]">
               <div className="p-2.5 bg-black/40 rounded-xl border border-white/5">
-                <span className="text-slate-400 block text-[10px]">1. รวมต้นทุนซ่อม (Total Repair Cost)</span>
+                <span className="text-slate-400 block text-[10px]">
+                  {isEn ? '1. Total Repair Cost' : '1. รวมต้นทุนซ่อม (Total Repair Cost)'}
+                </span>
                 <code className="text-cyan-300">Repair + Transport + Labor + Other</code>
               </div>
               <div className="p-2.5 bg-black/40 rounded-xl border border-white/5">
-                <span className="text-slate-400 block text-[10px]">2. ประหยัดขั้นต้น (Gross Saving)</span>
+                <span className="text-slate-400 block text-[10px]">
+                  {isEn ? '2. Gross Saving' : '2. ประหยัดขั้นต้น (Gross Saving)'}
+                </span>
                 <code className="text-cyan-300">New Purchase Equivalent - Total Repair Cost</code>
               </div>
               <div className="p-2.5 bg-black/40 rounded-xl border border-white/5">
-                <span className="text-slate-400 block text-[10px]">3. ประหยัดสุทธิ (Net Saving)</span>
+                <span className="text-slate-400 block text-[10px]">
+                  {isEn ? '3. Net Saving' : '3. ประหยัดสุทธิ (Net Saving)'}
+                </span>
                 <code className="text-[#00FF7F]">Gross Saving - Downtime Cost - Quality Loss</code>
               </div>
               <div className="p-2.5 bg-black/40 rounded-xl border border-white/5">
-                <span className="text-slate-400 block text-[10px]">4. เปอร์เซ็นต์ประหยัด (Saving %)</span>
+                <span className="text-slate-400 block text-[10px]">
+                  {isEn ? '4. Saving %' : '4. เปอร์เซ็นต์ประหยัด (Saving %)'}
+                </span>
                 <code className="text-[#00FF7F]">(Net Saving / New Equivalent Cost) × 100</code>
               </div>
               <div className="p-2.5 bg-black/40 rounded-xl border border-white/5">
-                <span className="text-slate-400 block text-[10px]">5. ต้นทุนต่อช็อต (Cost per Shot)</span>
-                <code className="text-amber-300">Cost / Actual Life (หรือ Expected หากไม่มีผลจริง)</code>
+                <span className="text-slate-400 block text-[10px]">
+                  {isEn ? '5. Cost per Shot' : '5. ต้นทุนต่อช็อต (Cost per Shot)'}
+                </span>
+                <code className="text-amber-300">
+                  {isEn ? 'Cost / Actual Life (or Expected Life if no actual)' : 'Cost / Actual Life (หรือ Expected หากไม่มีผลจริง)'}
+                </code>
               </div>
               <div className="p-2.5 bg-black/40 rounded-xl border border-white/5">
-                <span className="text-slate-400 block text-[10px]">6. การเทียบเคียงเป็นธรรม (Fair Comparison)</span>
-                <code className="text-purple-300">Normalized Target Shots Basis (เป้าหมายเดียวกัน)</code>
+                <span className="text-slate-400 block text-[10px]">
+                  {isEn ? '6. Fair Comparison Basis' : '6. การเทียบเคียงเป็นธรรม (Fair Comparison)'}
+                </span>
+                <code className="text-purple-300">
+                  {isEn ? 'Normalized Target Shots Basis' : 'Normalized Target Shots Basis (เป้าหมายเดียวกัน)'}
+                </code>
               </div>
             </div>
           </div>
@@ -107,7 +137,11 @@ export const FormulaAuditModal: React.FC<FormulaAuditModalProps> = ({
           {/* Test Case Execution Cards */}
           <div className="space-y-4">
             <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
-              <span>ผลการรันกรณีทดสอบทางคณิตศาสตร์ ({testResults.length} Cases)</span>
+              <span>
+                {isEn
+                  ? `Mathematical Test Case Results (${testResults.length} Cases)`
+                  : `ผลการรันกรณีทดสอบทางคณิตศาสตร์ (${testResults.length} Cases)`}
+              </span>
               <span className="text-emerald-400 flex items-center gap-1 font-mono">
                 <ShieldCheck className="w-4 h-4" />
                 <span>Verification Engine Active</span>
@@ -176,14 +210,18 @@ export const FormulaAuditModal: React.FC<FormulaAuditModalProps> = ({
         <div className="px-6 py-4 bg-slate-950 border-t border-white/10 flex items-center justify-between">
           <span className="text-xs text-slate-400 flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-[#00FF7F]" />
-            <span>สูตรคำนวณทั้งหมดได้รับการรับรองความเที่ยงตรงทางคณิตศาสตร์ตามข้อกำหนด</span>
+            <span>
+              {isEn
+                ? 'All engineering cost formulas are mathematically verified.'
+                : 'สูตรคำนวณทั้งหมดได้รับการรับรองความเที่ยงตรงทางคณิตศาสตร์ตามข้อกำหนด'}
+            </span>
           </span>
           <button
             type="button"
             onClick={onClose}
             className="px-5 py-2 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs cursor-pointer transition-all"
           >
-            ปิดหน้าต่าง (Close)
+            {isEn ? 'Close' : 'ปิดหน้าต่าง (Close)'}
           </button>
         </div>
       </div>

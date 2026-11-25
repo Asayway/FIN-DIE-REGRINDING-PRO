@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface ToolingPicThumbnailProps {
   picCategory?: string;
@@ -15,6 +16,8 @@ export const ToolingPicThumbnail: React.FC<ToolingPicThumbnailProps> = ({
   showZoomOnClick = true,
   className = ''
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [isZoomOpen, setIsZoomOpen] = useState(false);
 
   const getDimensions = () => {
@@ -164,7 +167,7 @@ export const ToolingPicThumbnail: React.FC<ToolingPicThumbnailProps> = ({
       <div
         onClick={() => showZoomOnClick && setIsZoomOpen(true)}
         className={`relative inline-flex items-center justify-center rounded-lg p-1 bg-slate-800/80 border border-slate-700/80 hover:border-cyan-400/80 hover:bg-slate-700/90 transition-all flex-shrink-0 group ${getDimensions()} ${showZoomOnClick ? 'cursor-pointer hover:scale-105' : ''} ${className}`}
-        title={`คลิกเพื่อดูรูปภาพ CAD/Pic ขนาดใหญ่: ${partName}`}
+        title={isEn ? `Click to zoom CAD/Pic: ${partName}` : `คลิกเพื่อดูรูปภาพ CAD/Pic ขนาดใหญ่: ${partName}`}
       >
         {renderToolingVector(false)}
 
@@ -223,16 +226,18 @@ export const ToolingPicThumbnail: React.FC<ToolingPicThumbnailProps> = ({
 
             <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 text-xs space-y-1.5 border border-slate-200 dark:border-slate-700/60">
               <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-400">ชื่อชิ้นส่วน (Part Name):</span>
+                <span className="text-slate-500 dark:text-slate-400">{isEn ? 'Part Name:' : 'ชื่อชิ้นส่วน (Part Name):'}</span>
                 <span className="font-semibold text-slate-900 dark:text-slate-100">{partName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-400">มาตรฐานผิวก่อน-หลังเจียร:</span>
+                <span className="text-slate-500 dark:text-slate-400">{isEn ? 'Surface & Hardness Std:' : 'มาตรฐานผิวก่อน-หลังเจียร:'}</span>
                 <span className="font-mono text-cyan-600 dark:text-cyan-300">Ra ≤ 0.12 µm / HRC 62-64</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500 dark:text-slate-400">ฟังก์ชันการทำงาน:</span>
-                <span className="text-slate-700 dark:text-slate-300">เทียบภาพเพื่อป้องกันการหยิบสลับชิ้นทูลลิ่งในไลน์</span>
+                <span className="text-slate-500 dark:text-slate-400">{isEn ? 'Purpose:' : 'ฟังก์ชันการทำงาน:'}</span>
+                <span className="text-slate-700 dark:text-slate-300">
+                  {isEn ? 'Visual reference to prevent part mix-up on the press line' : 'เทียบภาพเพื่อป้องกันการหยิบสลับชิ้นทูลลิ่งในไลน์'}
+                </span>
               </div>
             </div>
 
@@ -240,7 +245,7 @@ export const ToolingPicThumbnail: React.FC<ToolingPicThumbnailProps> = ({
               onClick={() => setIsZoomOpen(false)}
               className="w-full py-2 bg-slate-900 hover:bg-slate-800 dark:bg-cyan-600 dark:hover:bg-cyan-500 text-white text-xs font-semibold rounded-xl shadow transition-colors"
             >
-              ปิดหน้าต่าง (Close Preview)
+              {isEn ? 'Close Preview' : 'ปิดหน้าต่าง (Close Preview)'}
             </button>
           </div>
         </div>

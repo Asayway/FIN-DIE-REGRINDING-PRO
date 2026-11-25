@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { RegrindWorkTicket } from '../../types/regrind';
+import { regrindService } from '../../services/regrindService';
 import { ToolingPicThumbnail } from '../../components/regrind/ToolingPicThumbnail';
 import { Ruler, ShieldCheck, AlertTriangle, CheckCircle2, X, Layers, Sparkles } from 'lucide-react';
 
@@ -35,9 +36,9 @@ export const RegrindCompleteModal: React.FC<RegrindCompleteModalProps> = ({
   onConfirm,
   currentUserName = 'Kittisak Wongsuwan'
 }) => {
-  const [remainingLength, setRemainingLength] = useState<number>(ticket.lengthAfterGrindMm || 68.00);
-  const [grindDepth, setGrindDepth] = useState<number>(ticket.grindDepthMm || 0.25);
-  const [shimThickness, setShimThickness] = useState<number>(ticket.shimAddedMm || 0.25);
+  const [remainingLength, setRemainingLength] = useState<number>(ticket.lengthAfterGrindMm ?? 68.00);
+  const [grindDepth, setGrindDepth] = useState<number>(ticket.grindDepthMm ?? 0.25);
+  const [shimThickness, setShimThickness] = useState<number>(ticket.shimAddedMm ?? 0.25);
   const [toolMaterial, setToolMaterial] = useState<string>(ticket.toolMaterial || 'SKD11');
   const [isCustomMaterial, setIsCustomMaterial] = useState<boolean>(false);
   const [customMaterialText, setCustomMaterialText] = useState<string>('');
@@ -48,10 +49,10 @@ export const RegrindCompleteModal: React.FC<RegrindCompleteModalProps> = ({
 
   useEffect(() => {
     if (ticket) {
-      const prev = ticket.previousLengthMm || ticket.nominalLengthMm || 70.00;
-      const depth = ticket.grindDepthMm || 0.25;
+      const prev = ticket.previousLengthMm ?? ticket.nominalLengthMm ?? 70.00;
+      const depth = ticket.grindDepthMm ?? 0.25;
       setGrindDepth(depth);
-      setRemainingLength(Number((prev - depth).toFixed(2)));
+      setRemainingLength(Number((prev - depth).toFixed(3)));
       setShimThickness(depth);
       setTechnicianName(ticket.assignedTechnician || currentUserName);
       
@@ -69,25 +70,34 @@ export const RegrindCompleteModal: React.FC<RegrindCompleteModalProps> = ({
 
   if (!isOpen) return null;
 
-  const minLimit = ticket.minAllowedLengthMm || 65.00;
-  const isOutOfSpec = remainingLength < minLimit;
-  const nextRegrindCycle = (ticket.regrindCountBefore || 0) + 1;
-  const isExceedMaxCycles = nextRegrindCycle > (ticket.maxRegrindAllowed || 4);
+  const standardAudit = regrindService.auditTicketAgainstStandard({
+    ...ticket,
+    grindDepthMm: grindDepth,
+    lengthAfterGrindMm: remainingLength
+  });
+  const matchedMaster = standardAudit.matchedMaster;
+  const minLimit = ticket.minAllowedLengthMm ?? matchedMaster?.minAllowedLengthMm ?? 65.00;
+  const maxCycles = ticket.maxRegrindAllowed ?? matchedMaster?.maxRegrindCount ?? 4;
+  const isOutOfSpec = Number(remainingLength.toFixed(3)) < Number(minLimit.toFixed(3)) - 1e-4;
+  const nextRegrindCycle = (ticket.regrindCountBefore ?? 0) + 1;
+  const isExceedMaxCycles = nextRegrindCycle > maxCycles;
+  const stdMinRate = matchedMaster?.grindMinMm ?? matchedMaster?.grindingAmountPerTimeMm ?? 0;
+  const stdMaxRate = matchedMaster?.grindMaxMm ?? stdMinRate;
 
   // Auto calculate when grind depth changes
   const handleGrindDepthChange = (val: number) => {
     const clampedVal = Math.max(0, val);
     setGrindDepth(clampedVal);
-    const prev = ticket.previousLengthMm || ticket.nominalLengthMm || 70.00;
-    const nextRem = Number(Math.max(0, prev - clampedVal).toFixed(2));
+    const prev = ticket.previousLengthMm ?? ticket.nominalLengthMm ?? 70.00;
+    const nextRem = Number(Math.max(0, prev - clampedVal).toFixed(3));
     setRemainingLength(nextRem);
     setShimThickness(clampedVal); // By standard, shim matches ground amount
   };
 
   const handleRemainingLengthChange = (val: number) => {
     setRemainingLength(val);
-    const prev = ticket.previousLengthMm || ticket.nominalLengthMm || 70.00;
-    const depth = Number(Math.max(0, prev - val).toFixed(2));
+    const prev = ticket.previousLengthMm ?? ticket.nominalLengthMm ?? 70.00;
+    const depth = Number(Math.max(0, prev - val).toFixed(3));
     setGrindDepth(depth);
     setShimThickness(depth);
   };
@@ -176,6 +186,19 @@ export const RegrindCompleteModal: React.FC<RegrindCompleteModalProps> = ({
           </div>
         )}
 
+        {/* Standard Re-Grinding Cross-Reference Check */}
+        {standardAudit.hasSpecMismatch && (
+          <div className="p-2.5 rounded-xl bg-amber-950/60 border border-amber-500/60 text-amber-200 text-[11.5px] space-y-1">
+            <div className="font-bold flex items-center gap-1.5 text-amber-300">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>ตรวจสอบเทียบ Standard Re-Grinding ({standardAudit.standardSpecSummary})</span>
+            </div>
+            {standardAudit.mismatches.map((m, idx) => (
+              <div key={idx} className="text-[11px] text-amber-200/90 pl-5">• {m}</div>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
           {/* 1. Dimension & Grinding Stats */}
           <div className="bg-[#131E35] rounded-xl p-3 sm:p-3.5 border border-slate-700/80 space-y-3">
@@ -185,7 +208,7 @@ export const RegrindCompleteModal: React.FC<RegrindCompleteModalProps> = ({
                 <span>บันทึกขนาด & มิติความยาว (Grinding Dimensions)</span>
               </span>
               <span className="text-[11px] font-normal text-slate-400">
-                รอบเจียร: <strong className="text-cyan-300 font-mono">{nextRegrindCycle}/{ticket.maxRegrindAllowed}</strong>
+                รอบเจียร: <strong className="text-cyan-300 font-mono">{nextRegrindCycle}/{maxCycles}</strong>
               </span>
             </div>
 
@@ -194,7 +217,7 @@ export const RegrindCompleteModal: React.FC<RegrindCompleteModalProps> = ({
               <div className="bg-[#0B1220] p-2 rounded-lg border border-slate-700/60 text-center">
                 <span className="text-[10px] text-slate-400 block">ความยาวเดิม (Nominal)</span>
                 <span className="text-xs font-mono font-bold text-slate-200">
-                  {ticket.nominalLengthMm?.toFixed(2)} mm
+                  {(ticket.nominalLengthMm ?? matchedMaster?.nominalLengthMm ?? 0).toFixed(2)} mm
                 </span>
               </div>
               <div className="bg-[#0B1220] p-2 rounded-lg border border-slate-700/60 text-center">
@@ -206,7 +229,7 @@ export const RegrindCompleteModal: React.FC<RegrindCompleteModalProps> = ({
               <div className="bg-[#0B1220] p-2 rounded-lg border border-slate-700/60 text-center">
                 <span className="text-[10px] text-slate-400 block">ความยาวก่อนเจียร</span>
                 <span className="text-xs font-mono font-bold text-amber-300">
-                  {ticket.previousLengthMm?.toFixed(2)} mm
+                  {(ticket.previousLengthMm ?? ticket.nominalLengthMm ?? 0).toFixed(2)} mm
                 </span>
               </div>
             </div>
@@ -214,9 +237,16 @@ export const RegrindCompleteModal: React.FC<RegrindCompleteModalProps> = ({
             {/* Input Controls */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  ระยะที่เจียรออก (Grind Depth) *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-slate-300">
+                    ระยะที่เจียรออก (Grind Depth) *
+                  </label>
+                  {stdMinRate > 0 && (
+                    <span className="text-[10px] font-mono text-cyan-300">
+                      Std: {Math.abs(stdMinRate - stdMaxRate) > 1e-4 ? `${stdMinRate.toFixed(2)}–${stdMaxRate.toFixed(2)}` : stdMinRate.toFixed(2)} mm
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <input
                     type="number"

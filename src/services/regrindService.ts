@@ -32,6 +32,16 @@ class RegrindService {
     this.ensureInitialized();
   }
 
+  private isEnglishMode(): boolean {
+    try {
+      if (typeof window === 'undefined') return false;
+      const lang = window.localStorage.getItem('app_language');
+      return lang === 'EN' || lang === 'DUAL';
+    } catch {
+      return false;
+    }
+  }
+
   public subscribe(listener: RegrindListener): () => void {
     this.listeners.add(listener);
     return () => {
@@ -72,6 +82,13 @@ class RegrindService {
   }
 
   // --- Tooling Masters ---
+  private extractNumericTokens(raw?: string | number | null): number[] {
+    if (raw === undefined || raw === null) return [];
+    const matches = String(raw).match(/\d+(?:\.\d+)?/g);
+    if (!matches) return [];
+    return matches.map(Number).filter(n => Number.isFinite(n) && n > 0);
+  }
+
   public getToolingMasters(): ToolingPartMasterItem[] {
     try {
       const partMasters = storageService.getPartMasters();
@@ -84,21 +101,64 @@ class RegrindService {
         const std = regrindStds.find(s => s.partCode === pm.partCode || s.partCode.endsWith(`-${pm.partCode}`) || s.partName.toUpperCase() === pm.partName.toUpperCase());
         const lifeStd = lifeStds.find(l => l.configKey?.partCode === pm.partCode || l.partCode === pm.partCode || l.id?.includes(pm.partCode) || l.partName.toUpperCase() === pm.partName.toUpperCase());
         const stock = spareStocks.find(s => s.partCode === pm.partCode || s.partCode.endsWith(`-${pm.partCode}`));
-        
+
         const isDie = pm.category === 'DIE' || pm.partName.toUpperCase().includes('DIE');
         const isBlade = pm.category === 'BLADE' || pm.partName.toUpperCase().includes('BLADE');
-        const isDisposable = 
+
+        const perGrindRaw = String(pm.regrindStandard?.perGrindMm ?? '').trim();
+        const totalGrindRaw = String(pm.regrindStandard?.totalGrindMm ?? '').trim();
+        const cyclesRaw = String(pm.regrindStandard?.regrindCycles ?? '').trim();
+        const noteRaw = String(pm.regrindStandard?.note ?? '').toLowerCase();
+
+        const isDisposable =
           pm.maintenanceType === 'DISPOSE' ||
-          pm.regrindStandard?.perGrindMm?.toLowerCase().includes('dispose') ||
-          pm.regrindStandard?.note?.toLowerCase().includes('dispose') ||
+          perGrindRaw.toLowerCase().includes('dispose') ||
+          noteRaw.includes('dispose') ||
           std?.disposeAfterOneUse === true;
 
-        const perGrindNum = parseFloat(pm.regrindStandard?.perGrindMm || '') || (std?.grindingAmountPerTimeMm ?? (isDie ? 0.20 : 0.25));
-        const totalGrindNum = parseFloat(pm.regrindStandard?.totalGrindMm || '') || (std?.totalGrindingAllowanceMm ?? (isDisposable ? 0 : isDie ? 3.0 : 4.0));
-        const maxCyclesNum = parseInt(pm.regrindStandard?.regrindCycles || '') || (std?.maxRegrindCount ?? (isDisposable ? 0 : 5));
+        const isDashNonRegrind =
+          perGrindRaw === '-' ||
+          totalGrindRaw === '-' ||
+          (cyclesRaw === '-' && !isDisposable);
 
-        const nominalLength = Number(pm.newSpecMm) || Number(lifeStd?.newSpecMm) || Number(std?.nominalLengthMm) || (isDie ? 45.00 : isBlade ? 120.00 : 70.00);
-        const minAllowedLength = Number(pm.scrapLimitMm) || Number(lifeStd?.scrapLimitMm) || Number(std?.minAllowedLengthMm) || Number((nominalLength - totalGrindNum).toFixed(2));
+        const isNonRegrindable = isDisposable || isDashNonRegrind || (std?.regrindAllowed === false);
+
+        const stepTokens = this.extractNumericTokens(perGrindRaw);
+        const fallbackStep = std?.grindingAmountPerTimeMm ?? (isDie ? 0.20 : 0.10);
+        const grindMin = isNonRegrindable ? 0 : (stepTokens.length > 0 ? Math.min(...stepTokens) : fallbackStep);
+        const grindMax = isNonRegrindable ? 0 : (stepTokens.length > 0 ? Math.max(...stepTokens) : grindMin);
+
+        const parsedTotalGrind = isNonRegrindable ? 0 : parseFloat(totalGrindRaw);
+        const totalGrindNum = isNonRegrindable
+          ? 0
+          : (Number.isFinite(parsedTotalGrind) && parsedTotalGrind > 0
+              ? parsedTotalGrind
+              : (std?.totalGrindingAllowanceMm ?? 1.50));
+
+        const pmNewSpec = typeof pm.newSpecMm === 'number' && pm.newSpecMm >= 0 ? pm.newSpecMm : undefined;
+        const pmScrapLimit = typeof pm.scrapLimitMm === 'number' && pm.scrapLimitMm >= 0 ? pm.scrapLimitMm : undefined;
+        const nominalLength = pmNewSpec !== undefined
+          ? pmNewSpec
+          : (lifeStd?.newSpecMm ?? std?.nominalLengthMm ?? (isDashNonRegrind ? 0 : isDie ? 45.00 : isBlade ? 120.00 : 70.00));
+        const minAllowedLength = pmScrapLimit !== undefined
+          ? pmScrapLimit
+          : (lifeStd?.scrapLimitMm ?? std?.minAllowedLengthMm ?? Math.max(0, Number((nominalLength - totalGrindNum).toFixed(3))));
+
+        const effectiveTotalGrind = isNonRegrindable
+          ? 0
+          : (nominalLength > minAllowedLength
+              ? Number((nominalLength - minAllowedLength).toFixed(3))
+              : totalGrindNum);
+
+        const cycleTokens = this.extractNumericTokens(cyclesRaw);
+        const derivedMaxCycles = (!isNonRegrindable && grindMin > 0 && effectiveTotalGrind > 0)
+          ? Math.floor(effectiveTotalGrind / grindMin + 1e-6)
+          : 0;
+        const maxCyclesNum = isNonRegrindable
+          ? 0
+          : (cycleTokens.length > 0
+              ? Math.max(...cycleTokens)
+              : (std?.maxRegrindCount ?? (derivedMaxCycles || 5)));
 
         return {
           id: pm.partCode,
@@ -108,15 +168,18 @@ class RegrindService {
           tubeSize: pm.tubeSizeCompat === 'Ø5' ? 'Ø5' : pm.tubeSizeCompat === 'Ø7' ? 'Ø7' : 'COMMON',
           nominalLengthMm: nominalLength,
           minAllowedLengthMm: minAllowedLength,
-          grindingAmountPerTimeMm: isDisposable ? 0 : perGrindNum,
-          totalGrindingAllowanceMm: isDisposable ? 0 : totalGrindNum,
-          maxRegrindCount: isDisposable ? 0 : maxCyclesNum,
-          regrindAllowed: !isDisposable,
+          grindingAmountPerTimeMm: grindMin,
+          grindMinMm: grindMin,
+          grindMaxMm: grindMax,
+          totalGrindingAllowanceMm: effectiveTotalGrind,
+          maxRegrindCount: maxCyclesNum,
+          regrindCyclesLabel: cyclesRaw || (maxCyclesNum > 0 ? `${maxCyclesNum} time` : '-'),
+          regrindAllowed: !isNonRegrindable,
           disposeAfterOneUse: isDisposable,
           drawingNo: pm.drawingNumber || pm.partCode || '-',
           picCategory: pm.category.toLowerCase(),
-          currentSpareStock: stock?.onHandQuantity || stock?.currentStockQty || 0,
-          minSpareStock: stock?.minimumStock || stock?.safetyStockQty || 0,
+          currentSpareStock: stock?.onHandQuantity ?? stock?.currentStockQty ?? 0,
+          minSpareStock: stock?.minimumStock ?? stock?.safetyStockQty ?? 0,
           unitPriceThb: pm.unitCostThb || (isDie ? 18000 : 12000),
           supplierName: 'Internal / Various',
           descriptionTh: pm.description || pm.partNameTh || ''
@@ -134,8 +197,151 @@ class RegrindService {
   }
 
   public findMasterByPartName(partName: string): ToolingPartMasterItem | undefined {
+    const query = (partName || '').trim().toLowerCase();
+    if (!query) return undefined;
     const masters = this.getToolingMasters();
-    return masters.find(m => m.partName.toLowerCase() === partName.toLowerCase() || m.partCode.toLowerCase() === partName.toLowerCase());
+    return masters.find(
+      m =>
+        m.partName.trim().toLowerCase() === query ||
+        m.partCode.trim().toLowerCase() === query ||
+        query.endsWith(`-${m.partCode.trim().toLowerCase()}`)
+    );
+  }
+
+  public auditTicketAgainstStandard(ticket: Partial<RegrindWorkTicket>): {
+    matchedMaster?: ToolingPartMasterItem;
+    hasSpecMismatch: boolean;
+    mismatches: string[];
+    isNonRegrindable: boolean;
+    isRemovalOutOfRange: boolean;
+    isUnderMinLimit: boolean;
+    standardSpecSummary: string;
+  } {
+    const master =
+      this.findMasterByPartName(ticket.partCode || '') ||
+      this.findMasterByPartName(ticket.partName || '');
+
+    if (!master) {
+      return {
+        matchedMaster: undefined,
+        hasSpecMismatch: false,
+        mismatches: [],
+        isNonRegrindable: false,
+        isRemovalOutOfRange: false,
+        isUnderMinLimit: false,
+        standardSpecSummary: '-'
+      };
+    }
+
+    const isEn = this.isEnglishMode();
+    const mismatches: string[] = [];
+    const isNonRegrindable = !master.regrindAllowed || master.disposeAfterOneUse;
+
+    if (isNonRegrindable) {
+      mismatches.push(
+        master.disposeAfterOneUse
+          ? (isEn ? 'Standard specifies single-use only (Dispose after 1 use)' : 'Standard ระบุใช้งานครั้งเดียวแล้วทิ้ง (Dispose after 1 use)')
+          : (isEn ? 'Standard specifies non-regrindable part (-)' : 'Standard ระบุเป็นชิ้นส่วนไม่เจียรซ้ำ (-)')
+      );
+    }
+
+    if (
+      typeof ticket.nominalLengthMm === 'number' &&
+      master.nominalLengthMm > 0 &&
+      Math.abs(ticket.nominalLengthMm - master.nominalLengthMm) > 0.02
+    ) {
+      mismatches.push(
+        isEn
+          ? `Ticket New Length (L₀) ${ticket.nominalLengthMm.toFixed(2)} ≠ Standard ${master.nominalLengthMm.toFixed(2)} mm`
+          : `ความยาวใหม่ (L₀) ในใบงาน ${ticket.nominalLengthMm.toFixed(2)} ≠ Standard ${master.nominalLengthMm.toFixed(2)} mm`
+      );
+    }
+
+    if (
+      typeof ticket.minAllowedLengthMm === 'number' &&
+      master.minAllowedLengthMm > 0 &&
+      Math.abs(ticket.minAllowedLengthMm - master.minAllowedLengthMm) > 0.02
+    ) {
+      mismatches.push(
+        isEn
+          ? `Ticket Scrap Limit (L_min) ${ticket.minAllowedLengthMm.toFixed(2)} ≠ Standard ${master.minAllowedLengthMm.toFixed(2)} mm`
+          : `Scrap Limit (L_min) ในใบงาน ${ticket.minAllowedLengthMm.toFixed(2)} ≠ Standard ${master.minAllowedLengthMm.toFixed(2)} mm`
+      );
+    }
+
+    if (
+      !isNonRegrindable &&
+      typeof ticket.maxRegrindAllowed === 'number' &&
+      master.maxRegrindCount > 0 &&
+      ticket.maxRegrindAllowed !== master.maxRegrindCount
+    ) {
+      mismatches.push(
+        isEn
+          ? `Ticket Max Cycles ${ticket.maxRegrindAllowed} ≠ Standard ${master.maxRegrindCount} cycles`
+          : `รอบสูงสุดในใบงาน ${ticket.maxRegrindAllowed} ≠ Standard ${master.maxRegrindCount} รอบ`
+      );
+    }
+
+    const minRate = master.grindMinMm ?? master.grindingAmountPerTimeMm;
+    const maxRate = master.grindMaxMm ?? master.grindingAmountPerTimeMm;
+    const depth = ticket.grindDepthMm;
+    const isRemovalOutOfRange =
+      !isNonRegrindable &&
+      typeof depth === 'number' &&
+      depth > 0 &&
+      minRate > 0 &&
+      (depth < minRate - 1e-4 || depth > maxRate + 1e-4);
+
+    if (isRemovalOutOfRange && typeof depth === 'number') {
+      const rangeStr =
+        Math.abs(minRate - maxRate) > 1e-4
+          ? `${minRate.toFixed(2)}–${maxRate.toFixed(2)}`
+          : `${minRate.toFixed(2)}`;
+      mismatches.push(
+        isEn
+          ? `Removal depth ${depth.toFixed(2)} mm is outside Standard range (${rangeStr} mm/cycle)`
+          : `ระยะเจียรออก ${depth.toFixed(2)} mm อยู่นอกช่วง Standard (${rangeStr} mm/ครั้ง)`
+      );
+    }
+
+    const effMinLimit = master.minAllowedLengthMm > 0 ? master.minAllowedLengthMm : (ticket.minAllowedLengthMm ?? 0);
+    const afterLen = ticket.lengthAfterGrindMm;
+    const isUnderMinLimit =
+      typeof afterLen === 'number' &&
+      effMinLimit > 0 &&
+      Number(afterLen.toFixed(3)) < Number(effMinLimit.toFixed(3)) - 1e-4;
+
+    if (isUnderMinLimit && typeof afterLen === 'number') {
+      mismatches.push(
+        isEn
+          ? `After-grind length ${afterLen.toFixed(2)} mm < Scrap Limit ${effMinLimit.toFixed(2)} mm`
+          : `ความยาวหลังเจียร ${afterLen.toFixed(2)} mm < Scrap Limit ${effMinLimit.toFixed(2)} mm`
+      );
+    }
+
+    const stepStr = isNonRegrindable
+      ? (master.disposeAfterOneUse ? 'Dispose' : '-')
+      : Math.abs(minRate - maxRate) > 1e-4
+      ? `${minRate.toFixed(2)}–${maxRate.toFixed(2)} ${isEn ? 'mm/cycle' : 'mm/ครั้ง'}`
+      : `${minRate.toFixed(2)} ${isEn ? 'mm/cycle' : 'mm/ครั้ง'}`;
+
+    const standardSpecSummary = isNonRegrindable
+      ? (isEn
+          ? `L₀ ${master.nominalLengthMm.toFixed(2)} mm • Non-Regrindable (${stepStr})`
+          : `L₀ ${master.nominalLengthMm.toFixed(2)} mm • ไม่เจียรซ้ำ (${stepStr})`)
+      : (isEn
+          ? `L₀ ${master.nominalLengthMm.toFixed(2)} → L_min ${master.minAllowedLengthMm.toFixed(2)} mm • ΔL ${stepStr} • Max ${master.maxRegrindCount} cycles`
+          : `L₀ ${master.nominalLengthMm.toFixed(2)} → L_min ${master.minAllowedLengthMm.toFixed(2)} mm • ΔL ${stepStr} • Max ${master.maxRegrindCount} รอบ`);
+
+    return {
+      matchedMaster: master,
+      hasSpecMismatch: mismatches.length > 0,
+      mismatches,
+      isNonRegrindable,
+      isRemovalOutOfRange,
+      isUnderMinLimit,
+      standardSpecSummary
+    };
   }
 
   // --- Queue Tickets & Sequencing Model ---
@@ -260,10 +466,11 @@ class RegrindService {
       reason?: string;
     }
   ): { success: boolean; message: string; shiftedJobsCount: number } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const targetIdx = tickets.findIndex(t => t.id === ticketId);
     if (targetIdx === -1) {
-      return { success: false, message: 'ไม่พบใบงานที่ต้องการแทรกคิวด่วน', shiftedJobsCount: 0 };
+      return { success: false, message: isEn ? 'Ticket not found for emergency preemption.' : 'ไม่พบใบงานที่ต้องการแทรกคิวด่วน', shiftedJobsCount: 0 };
     }
 
     const emergencyTicket = tickets[targetIdx];
@@ -297,7 +504,7 @@ class RegrindService {
       emergencyTicket.status = 'PENDING';
     }
     if (options?.reason) {
-      emergencyTicket.remarks = `[🚨 คิวด่วนแทรก #1: ${options.reason}] ${emergencyTicket.remarks || ''}`.trim();
+      emergencyTicket.remarks = `${isEn ? `[🚨 Urgent #1: ${options.reason}]` : `[🚨 คิวด่วนแทรก #1: ${options.reason}]`} ${emergencyTicket.remarks || ''}`.trim();
     }
     emergencyTicket.updatedAt = now.toISOString();
 
@@ -340,22 +547,27 @@ class RegrindService {
     return {
       success: true,
       shiftedJobsCount,
-      message: `🚨 ดันใบงาน ${emergencyTicket.jobCode} (${emergencyTicket.partName}) ขึ้นเป็นคิวด่วนอันดับ #1 สำเร็จ! เลื่อนลำดับคิวถัดไปลง ${shiftedJobsCount} งาน (+${shiftHours} ชม.) โดยรักษาลำดับเดิมครบถ้วน`
+      message: isEn
+        ? `🚨 Promoted ${emergencyTicket.jobCode} (${emergencyTicket.partName}) to Urgent #1! Shifted ${shiftedJobsCount} subsequent job(s) (+${shiftHours}h) while preserving queue order.`
+        : `🚨 ดันใบงาน ${emergencyTicket.jobCode} (${emergencyTicket.partName}) ขึ้นเป็นคิวด่วนอันดับ #1 สำเร็จ! เลื่อนลำดับคิวถัดไปลง ${shiftedJobsCount} งาน (+${shiftHours} ชม.) โดยรักษาลำดับเดิมครบถ้วน`
     };
   }
 
   // Resume a Paused Job back to In-Process
   public resumePausedTicket(ticketId: string): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const idx = tickets.findIndex(t => t.id === ticketId);
-    if (idx === -1) return { success: false, message: 'ไม่พบใบงาน' };
+    if (idx === -1) return { success: false, message: isEn ? 'Work ticket not found' : 'ไม่พบใบงาน' };
 
     tickets[idx].status = 'IN_PROCESS';
     tickets[idx].updatedAt = new Date().toISOString();
     this.saveQueueTickets(tickets);
     return {
       success: true,
-      message: `▶️ กลับมาดำเนินการเจียรใบงาน ${tickets[idx].jobCode} (${tickets[idx].partName}) ต่อเรียบร้อยแล้ว`
+      message: isEn
+        ? `▶️ Resumed regrinding for ${tickets[idx].jobCode} (${tickets[idx].partName})`
+        : `▶️ กลับมาดำเนินการเจียรใบงาน ${tickets[idx].jobCode} (${tickets[idx].partName}) ต่อเรียบร้อยแล้ว`
     };
   }
 
@@ -427,15 +639,28 @@ class RegrindService {
         serialNumber: ticket.qrCode || `QR-${ticket.lineId}-${ticket.partCode}`,
         partInstanceOrLot: ticket.qrCode || `LOT-${ticket.lineId}-01`,
         quantity: ticket.quantity || 1,
-        previousLength: ticket.previousLengthMm !== undefined ? ticket.previousLengthMm : (ticket.nominalLengthMm || 70.0),
-        currentLength: ticket.lengthAfterGrindMm !== undefined ? ticket.lengthAfterGrindMm : (ticket.previousLengthMm !== undefined ? ticket.previousLengthMm : 69.80),
-        actualGrindingRemovedMm: ticket.grindDepthMm !== undefined ? ticket.grindDepthMm : 0.20,
-        mmRemovedThisCycle: ticket.grindDepthMm !== undefined ? ticket.grindDepthMm : 0.20,
-        regrindCountBefore: ticket.regrindCountBefore || 0,
-        regrindCountAfter: ticket.regrindCountAfter || 1,
-        regrindCycleCount: ticket.regrindCountAfter || 1,
-        remainingRegrindCount: Math.max(0, (ticket.maxRegrindAllowed || 4) - (ticket.regrindCountAfter || 1)),
-        maxAllowedCycles: ticket.maxRegrindAllowed || 4,
+        previousLength: ticket.previousLengthMm ?? (ticket.nominalLengthMm ?? 70.0),
+        currentLength: ticket.lengthAfterGrindMm ?? (ticket.previousLengthMm ?? 69.80),
+        actualGrindingRemovedMm: ticket.grindDepthMm ?? 0.20,
+        mmRemovedThisCycle: ticket.grindDepthMm ?? 0.20,
+        regrindCountBefore: ticket.regrindCountBefore ?? 0,
+        regrindCountAfter: ticket.regrindCountAfter ?? 1,
+        regrindCycleCount: ticket.regrindCountAfter ?? 1,
+        remainingRegrindCount: (() => {
+          const maxCyc = ticket.maxRegrindAllowed ?? 4;
+          const cycAfter = ticket.regrindCountAfter ?? 1;
+          const cycRem = Math.max(0, maxCyc - cycAfter);
+          const curLen = ticket.lengthAfterGrindMm ?? ticket.previousLengthMm;
+          const minLen = ticket.minAllowedLengthMm;
+          const step = ticket.grindDepthMm ?? 0.1;
+          if (typeof curLen === 'number' && typeof minLen === 'number' && step > 0) {
+            if (Number(curLen.toFixed(3)) < Number(minLen.toFixed(3)) - 1e-4) return 0;
+            const dimRem = Math.floor((curLen - minLen) / step + 1e-6);
+            return Math.max(0, Math.min(cycRem, dimRem));
+          }
+          return cycRem;
+        })(),
+        maxAllowedCycles: ticket.maxRegrindAllowed ?? 4,
         performedBy: ticket.assignedTechnician || 'Thanakorn Phonpayung',
         technicianName: ticket.assignedTechnician || 'Thanakorn Phonpayung',
         regrindDate: ticket.scheduledDate || new Date().toISOString().slice(0, 10),
@@ -454,7 +679,7 @@ class RegrindService {
         hardnessHrc: ticket.hardnessHrc || 62.0,
         inspectionResult: inspectionRes,
         inspectionStatus: inspectionStat,
-        note: ticket.remarks || ticket.defectNotes || `ใบงาน ${ticket.jobCode}`,
+        note: ticket.remarks || ticket.defectNotes || (this.isEnglishMode() ? `Job ${ticket.jobCode}` : `ใบงาน ${ticket.jobCode}`),
         remarks: ticket.remarks || ticket.defectNotes,
         status: mappedStatus
       };
@@ -479,9 +704,10 @@ class RegrindService {
     ticketId: string,
     updates: Partial<RegrindWorkTicket> & { preemptActiveJob?: boolean; shiftHours?: number }
   ): { success: boolean; message: string; ticket?: RegrindWorkTicket } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const idx = tickets.findIndex(t => t.id === ticketId);
-    if (idx === -1) return { success: false, message: 'ไม่พบใบงานที่ต้องการแก้ไข' };
+    if (idx === -1) return { success: false, message: isEn ? 'Ticket not found for update' : 'ไม่พบใบงานที่ต้องการแก้ไข' };
 
     const wasEmergency = Boolean(tickets[idx].isEmergency || tickets[idx].urgency === 'EMERGENCY');
     const willBeEmergency = Boolean(updates.isEmergency || updates.urgency === 'EMERGENCY');
@@ -504,7 +730,7 @@ class RegrindService {
       const emgRes = this.markTicketAsEmergency(ticketId, {
         preemptActiveJob: updates.preemptActiveJob ?? true,
         shiftHours: updates.shiftHours ?? 2,
-        reason: updates.defectNotes || updates.remarks || 'ปรับเป็นคิวด่วนแทรก #1'
+        reason: updates.defectNotes || updates.remarks || (isEn ? 'Promoted to Urgent #1' : 'ปรับเป็นคิวด่วนแทรก #1')
       });
       return {
         success: true,
@@ -515,16 +741,19 @@ class RegrindService {
 
     return {
       success: true,
-      message: `✅ อัปเดตรายละเอียดคิวงาน ${updatedTicket.jobCode} (${updatedTicket.partName} • LINE ${updatedTicket.lineId}) เรียบร้อยแล้ว`,
+      message: isEn
+        ? `✅ Updated queue ticket ${updatedTicket.jobCode} (${updatedTicket.partName} • LINE ${updatedTicket.lineId})`
+        : `✅ อัปเดตรายละเอียดคิวงาน ${updatedTicket.jobCode} (${updatedTicket.partName} • LINE ${updatedTicket.lineId}) เรียบร้อยแล้ว`,
       ticket: updatedTicket
     };
   }
 
   // Delete a Queue Ticket
   public deleteQueueTicket(ticketId: string): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const target = tickets.find(t => t.id === ticketId);
-    if (!target) return { success: false, message: 'ไม่พบใบงานที่ต้องการลบ' };
+    if (!target) return { success: false, message: isEn ? 'Ticket not found for deletion' : 'ไม่พบใบงานที่ต้องการลบ' };
 
     const remaining = tickets.filter(t => t.id !== ticketId);
     const active = remaining
@@ -538,12 +767,15 @@ class RegrindService {
 
     return {
       success: true,
-      message: `🗑️ ลบคิวงาน ${target.jobCode} (${target.partName}) ออกจากตารางคิวเรียบร้อยแล้ว`
+      message: isEn
+        ? `🗑️ Removed ticket ${target.jobCode} (${target.partName}) from the queue`
+        : `🗑️ ลบคิวงาน ${target.jobCode} (${target.partName}) ออกจากตารางคิวเรียบร้อยแล้ว`
     };
   }
 
   // Reorder a ticket in the queue (Up / Down / Specific Order) while preserving relative order of others
   public reorderQueueTicket(ticketId: string, newQueueOrder: number): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const activeJobs = tickets
       .filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED')
@@ -551,11 +783,11 @@ class RegrindService {
     const inactiveJobs = tickets.filter(t => t.status === 'READY' || t.status === 'SCRAP');
 
     const currentIndex = activeJobs.findIndex(t => t.id === ticketId);
-    if (currentIndex === -1) return { success: false, message: 'ไม่พบใบงานในคิว' };
+    if (currentIndex === -1) return { success: false, message: isEn ? 'Ticket not found in active queue' : 'ไม่พบใบงานในคิว' };
 
     const boundedTargetIndex = Math.max(0, Math.min(activeJobs.length - 1, newQueueOrder - 1));
     if (currentIndex === boundedTargetIndex) {
-      return { success: true, message: 'ลำดับคิวคงเดิม' };
+      return { success: true, message: isEn ? 'Queue sequence unchanged' : 'ลำดับคิวคงเดิม' };
     }
 
     const [movedJob] = activeJobs.splice(currentIndex, 1);
@@ -574,7 +806,9 @@ class RegrindService {
     this.saveQueueTickets([...activeJobs, ...inactiveJobs]);
     return {
       success: true,
-      message: `ปรับลำดับคิว ${movedJob.jobCode} (${movedJob.partName}) ไปยังคิวที่ #${boundedTargetIndex + 1} เรียบร้อยแล้ว`
+      message: isEn
+        ? `Moved ${movedJob.jobCode} (${movedJob.partName}) to Queue #${boundedTargetIndex + 1}`
+        : `ปรับลำดับคิว ${movedJob.jobCode} (${movedJob.partName}) ไปยังคิวที่ #${boundedTargetIndex + 1} เรียบร้อยแล้ว`
     };
   }
 
@@ -584,9 +818,10 @@ class RegrindService {
     targetDateStr: string,
     targetIndexInDate?: number
   ): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const targetTicket = tickets.find(t => t.id === ticketId);
-    if (!targetTicket) return { success: false, message: 'ไม่พบใบงาน' };
+    if (!targetTicket) return { success: false, message: isEn ? 'Work ticket not found' : 'ไม่พบใบงาน' };
 
     const oldDate = targetTicket.scheduledDate;
     if (oldDate && oldDate !== targetDateStr) {
@@ -639,8 +874,12 @@ class RegrindService {
     return {
       success: true,
       message: oldDate === targetDateStr
-        ? `จัดลำดับคิว ${targetTicket.jobCode} ในวันที่ ${targetDateStr} เป็นลำดับที่ #${insertPos + 1} เรียบร้อยแล้ว`
-        : `ย้ายกำหนดการ ${targetTicket.jobCode} (${targetTicket.partName}) ไปยังวันที่ ${targetDateStr} (ลำดับคิวรวม #${targetTicket.queueOrder}) เรียบร้อยแล้ว`
+        ? (isEn
+            ? `Reordered ${targetTicket.jobCode} on ${targetDateStr} to slot #${insertPos + 1}`
+            : `จัดลำดับคิว ${targetTicket.jobCode} ในวันที่ ${targetDateStr} เป็นลำดับที่ #${insertPos + 1} เรียบร้อยแล้ว`)
+        : (isEn
+            ? `Moved ${targetTicket.jobCode} (${targetTicket.partName}) to ${targetDateStr} (Global Queue #${targetTicket.queueOrder})`
+            : `ย้ายกำหนดการ ${targetTicket.jobCode} (${targetTicket.partName}) ไปยังวันที่ ${targetDateStr} (ลำดับคิวรวม #${targetTicket.queueOrder}) เรียบร้อยแล้ว`)
     };
   }
 
@@ -715,7 +954,13 @@ class RegrindService {
       tickets[idx].lineId
     );
 
-    return { success: true, message: `⚡ เริ่มดำเนินการเจียรลับคม ${tickets[idx].partName} (${tickets[idx].jobCode}) เรียบร้อยแล้ว (สถานะ: กำลังเจียร)` };
+    const isEn = this.isEnglishMode();
+    return {
+      success: true,
+      message: isEn
+        ? `⚡ Started regrinding ${tickets[idx].partName} (${tickets[idx].jobCode}) [Status: IN_PROCESS]`
+        : `⚡ เริ่มดำเนินการเจียรลับคม ${tickets[idx].partName} (${tickets[idx].jobCode}) เรียบร้อยแล้ว (สถานะ: กำลังเจียร)`
+    };
   }
 
   // 2. Complete Grinding (In-Process -> Ready to Use / Auto-Scrap on Dimension Fail)
@@ -733,18 +978,22 @@ class RegrindService {
       remarks?: string;
     }
   ): { success: boolean; status: RegrindQueueStatus; message: string; prNumber?: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const idx = tickets.findIndex(t => t.id === ticketId);
     if (idx === -1) return { success: false, status: 'PENDING', message: 'Ticket not found' };
 
     const ticket = tickets[idx];
-    const minLimit = ticket.minAllowedLengthMm || 65.00;
-    const maxCycles = ticket.maxRegrindAllowed || 4;
-    const nextRegrindCount = (ticket.regrindCountBefore || 0) + 1;
+    const master = this.findMasterByPartName(ticket.partCode) || this.findMasterByPartName(ticket.partName);
+    const minLimit = ticket.minAllowedLengthMm ?? master?.minAllowedLengthMm ?? 65.00;
+    const maxCycles = ticket.maxRegrindAllowed ?? master?.maxRegrindCount ?? 4;
+    const nextRegrindCount = (ticket.regrindCountBefore ?? 0) + 1;
+    const remLenRounded = Number(payload.remainingLengthMm.toFixed(3));
+    const minLimitRounded = Number(minLimit.toFixed(3));
 
-    ticket.grindDepthMm = payload.grindDepthMm;
-    ticket.lengthAfterGrindMm = payload.remainingLengthMm;
-    ticket.shimAddedMm = payload.shimAddedMm;
+    ticket.grindDepthMm = Number(payload.grindDepthMm.toFixed(3));
+    ticket.lengthAfterGrindMm = remLenRounded;
+    ticket.shimAddedMm = Number(payload.shimAddedMm.toFixed(3));
     if (payload.toolMaterial) ticket.toolMaterial = payload.toolMaterial;
     if (payload.surfaceRoughnessRa !== undefined) ticket.surfaceRoughnessRa = payload.surfaceRoughnessRa;
     if (payload.hardnessHrc !== undefined) ticket.hardnessHrc = payload.hardnessHrc;
@@ -755,8 +1004,8 @@ class RegrindService {
     ticket.regrindCountAfter = nextRegrindCount;
     if (payload.remarks) ticket.remarks = payload.remarks;
 
-    // Check Dimension & Max Limit (World-Class Standard)
-    const isUnderDimensionLimit = payload.remainingLengthMm < minLimit;
+    // Check Dimension & Max Limit (Float-safe World-Class Standard)
+    const isUnderDimensionLimit = remLenRounded < minLimitRounded - 1e-4;
     const isExceededMaxCycles = nextRegrindCount > maxCycles;
 
     if (isUnderDimensionLimit || isExceededMaxCycles) {
@@ -764,8 +1013,12 @@ class RegrindService {
       ticket.status = 'SCRAP';
       ticket.isScrapped = true;
       ticket.scrapReason = isUnderDimensionLimit
-        ? `ความยาวหลังเจียร (${payload.remainingLengthMm.toFixed(2)} mm) ต่ำกว่าสเปคขั้นต่ำ (${minLimit.toFixed(2)} mm)`
-        : `จำนวนรอบเจียร (${nextRegrindCount}) เกินขีดจำกัดสูงสุด (${maxCycles} ครั้ง)`;
+        ? (isEn
+            ? `After-grind length (${payload.remainingLengthMm.toFixed(2)} mm) below Scrap Limit (${minLimit.toFixed(2)} mm)`
+            : `ความยาวหลังเจียร (${payload.remainingLengthMm.toFixed(2)} mm) ต่ำกว่าสเปคขั้นต่ำ (${minLimit.toFixed(2)} mm)`)
+        : (isEn
+            ? `Regrind cycles (${nextRegrindCount}) exceeded max limit (${maxCycles} cycles)`
+            : `จำนวนรอบเจียร (${nextRegrindCount}) เกินขีดจำกัดสูงสุด (${maxCycles} ครั้ง)`);
       
       // Generate Purchasing Requisition
       const prItem = this.createPurchasingRequisition({
@@ -797,7 +1050,9 @@ class RegrindService {
       return {
         success: true,
         status: 'SCRAP',
-        message: `⚠️ ชิ้นส่วนต่ำกว่ามาตรฐาน (${payload.remainingLengthMm.toFixed(2)}mm < ${minLimit.toFixed(2)}mm) ระบบได้เปลี่ยนเป็น "ทิ้ง (Scrap)" และส่งใบแจ้งจัดซื้อ ${prItem.prNumber} อัตโนมัติ`,
+        message: isEn
+          ? `⚠️ Part below spec limit (${payload.remainingLengthMm.toFixed(2)}mm < ${minLimit.toFixed(2)}mm). Marked SCRAP and auto-issued PR ${prItem.prNumber}.`
+          : `⚠️ ชิ้นส่วนต่ำกว่ามาตรฐาน (${payload.remainingLengthMm.toFixed(2)}mm < ${minLimit.toFixed(2)}mm) ระบบได้เปลี่ยนเป็น "ทิ้ง (Scrap)" และส่งใบแจ้งจัดซื้อ ${prItem.prNumber} อัตโนมัติ`,
         prNumber: prItem.prNumber
       };
     } else {
@@ -826,12 +1081,14 @@ class RegrindService {
       return {
         success: true,
         status: 'READY',
-        message: `✅ เจียรลับคม ${ticket.partName} สำเร็จ (ความยาว ${payload.remainingLengthMm.toFixed(2)} mm) เพิ่มเข้าสต๊อกพร้อมใช้เรียบร้อยแล้ว`
+        message: isEn
+          ? `✅ Regrinding completed for ${ticket.partName} (${payload.remainingLengthMm.toFixed(2)} mm) and added to Ready Spare Stock.`
+          : `✅ เจียรลับคม ${ticket.partName} สำเร็จ (ความยาว ${payload.remainingLengthMm.toFixed(2)} mm) เพิ่มเข้าสต๊อกพร้อมใช้เรียบร้อยแล้ว`
       };
     }
   }
 
-  // 3. Reschedule / Snooze Ticket (เลื่อนกำหนดส่งงานพร้อมระบุเหตุผล)
+  // 3. Reschedule / Snooze Ticket
   public rescheduleTicket(
     ticketId: string,
     payload: {
@@ -840,6 +1097,7 @@ class RegrindService {
       technicianName: string;
     }
   ): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const idx = tickets.findIndex(t => t.id === ticketId);
     if (idx === -1) return { success: false, message: 'Ticket not found' };
@@ -847,7 +1105,7 @@ class RegrindService {
     const ticket = tickets[idx];
     const prevDate = ticket.targetCompletionDate || 'Not set';
     ticket.targetCompletionDate = payload.newTargetDate;
-    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เลื่อนกำหนดส่งเป็น ${payload.newTargetDate} (เหตุผล: ${payload.reason})`;
+    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}${isEn ? `Rescheduled to ${payload.newTargetDate} (Reason: ${payload.reason})` : `เลื่อนกำหนดส่งเป็น ${payload.newTargetDate} (เหตุผล: ${payload.reason})`}`;
     ticket.updatedAt = new Date().toISOString();
 
     this.saveQueueTickets(tickets);
@@ -861,11 +1119,13 @@ class RegrindService {
 
     return {
       success: true,
-      message: `เลื่อนกำหนดส่งงาน ${ticket.jobCode} เป็น ${payload.newTargetDate} เรียบร้อยแล้ว`
+      message: isEn
+        ? `Rescheduled ticket ${ticket.jobCode} to ${payload.newTargetDate}`
+        : `เลื่อนกำหนดส่งงาน ${ticket.jobCode} เป็น ${payload.newTargetDate} เรียบร้อยแล้ว`
     };
   }
 
-  // 3.1 Quick Status: Mark Job Completed with QC PASS User Confirmation (ยืนยันจบงาน)
+  // 3.1 Quick Status: Mark Job Completed with QC PASS User Confirmation
   public confirmJobCompletionWithQcPass(
     ticketId: string,
     technicianName?: string,
@@ -876,22 +1136,23 @@ class RegrindService {
       specialInstructions?: string;
     }
   ): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     try {
       const tickets = this.getQueueTickets();
       const idx = tickets.findIndex(t => t.id === ticketId);
-      if (idx === -1) return { success: false, message: 'ไม่พบใบงานในระบบ' };
+      if (idx === -1) return { success: false, message: isEn ? 'Ticket not found in system' : 'ไม่พบใบงานในระบบ' };
 
       const ticket = tickets[idx];
       if (ticket.status === 'COMPLETED') {
-        return { success: false, message: 'ใบงานนี้ได้รับการปิดงานและบันทึกผล QC PASS เรียบร้อยแล้ว' };
+        return { success: false, message: isEn ? 'This ticket is already closed with QC PASS recorded.' : 'ใบงานนี้ได้รับการปิดงานและบันทึกผล QC PASS เรียบร้อยแล้ว' };
       }
 
       if (ticket.status === 'SCRAP' || ticket.isScrapped) {
-        return { success: false, message: 'ชิ้นส่วนนี้ถูกคัดทิ้ง (Scrap) แล้ว ไม่ต้องผ่านขั้นตอนตรวจรับ QC' };
+        return { success: false, message: isEn ? 'Scrapped tooling does not require QC approval.' : 'ชิ้นส่วนนี้ถูกคัดทิ้ง (Scrap) แล้ว ไม่ต้องผ่านขั้นตอนตรวจรับ QC' };
       }
 
       if (!ticket.jobCode || !ticket.partName) {
-        return { success: false, message: 'ข้อมูลสำคัญไม่ครบถ้วน (Job ID หรือ Part No. หายไป)' };
+        return { success: false, message: isEn ? 'Missing required ticket fields (Job ID or Part Name).' : 'ข้อมูลสำคัญไม่ครบถ้วน (Job ID หรือ Part No. หายไป)' };
       }
 
       const nowIso = new Date().toISOString();
@@ -905,9 +1166,9 @@ class RegrindService {
       if (technicianName) ticket.assignedTechnician = technicianName;
       ticket.verifiedBy = verifierName || ticket.verifiedBy || 'QC Inspector (User Confirmation)';
       
-      const commentTxt = options?.comments || options?.specialInstructions || 'คุณภาพดี ลับคมเรียบร้อยได้สเปคมาตรฐาน';
+      const commentTxt = options?.comments || options?.specialInstructions || (isEn ? 'Good surface finish, sharpened within standard tolerance' : 'คุณภาพดี ลับคมเรียบร้อยได้สเปคมาตรฐาน');
       ticket.defectNotes = commentTxt;
-      ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}ยืนยันจบงานสำเร็จ (${verdict}) - ${commentTxt}`;
+      ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}${isEn ? `Completed (${verdict})` : `ยืนยันจบงานสำเร็จ (${verdict})`} - ${commentTxt}`;
 
       this.saveQueueTickets(tickets);
       this.syncTicketToMasterLogs(ticket);
@@ -928,34 +1189,38 @@ class RegrindService {
 
       return {
         success: true,
-        message: `✅ ยืนยันจบงานสำเร็จ: ${ticket.jobCode} (${ticket.partName}) สถานะ: COMPLETED / QC ${verdict} เรียบร้อยแล้ว`
+        message: isEn
+          ? `✅ Job completion confirmed: ${ticket.jobCode} (${ticket.partName}) marked COMPLETED / QC ${verdict}.`
+          : `✅ ยืนยันจบงานสำเร็จ: ${ticket.jobCode} (${ticket.partName}) สถานะ: COMPLETED / QC ${verdict} เรียบร้อยแล้ว`
       };
     } catch (err) {
       console.error('confirmJobCompletionWithQcPass error:', err);
-      return { success: false, message: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง' };
+      return { success: false, message: isEn ? 'Error saving completion record. Please try again.' : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง' };
     }
   }
 
   // Support Reopen / Correct Record
-  public reopenTicket(ticketId: string, reason: string = 'แก้ไขข้อมูลย้อนหลัง'): { success: boolean; message: string } {
+  public reopenTicket(ticketId: string, reason?: string): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
+    const effectiveReason = reason || (isEn ? 'Retroactive record adjustment' : 'แก้ไขข้อมูลย้อนหลัง');
     try {
       const tickets = this.getQueueTickets();
       const idx = tickets.findIndex(t => t.id === ticketId);
-      if (idx === -1) return { success: false, message: 'ไม่พบใบงานในระบบ' };
+      if (idx === -1) return { success: false, message: isEn ? 'Ticket not found in system' : 'ไม่พบใบงานในระบบ' };
 
       const ticket = tickets[idx];
       ticket.status = 'IN_PROCESS';
       ticket.isScrapped = false;
       ticket.updatedAt = new Date().toISOString();
-      ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เปิดงานซ่อมใหม่ (Reopened: ${reason})`;
+      ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}${isEn ? `Reopened (${effectiveReason})` : `เปิดงานซ่อมใหม่ (Reopened: ${effectiveReason})`}`;
 
       this.saveQueueTickets(tickets);
       this.syncTicketToMasterLogs(ticket);
 
       storageService.addAuditLog(
         'REGRIND',
-        `Ticket Reopened: ${ticket.jobCode} (${ticket.partName}) reopened. Reason: ${reason}`,
-        `เปิดงานซ่อมใหม่: ใบงาน ${ticket.jobCode} (${ticket.partName}) ถูกเปิดใช้งานอีกครั้ง (เหตุผล: ${reason})`,
+        `Ticket Reopened: ${ticket.jobCode} (${ticket.partName}) reopened. Reason: ${effectiveReason}`,
+        `เปิดงานซ่อมใหม่: ใบงาน ${ticket.jobCode} (${ticket.partName}) ถูกเปิดใช้งานอีกครั้ง (เหตุผล: ${effectiveReason})`,
         ticket.lineId
       );
 
@@ -963,16 +1228,19 @@ class RegrindService {
 
       return {
         success: true,
-        message: `🔄 เปิดงานซ่อม ${ticket.jobCode} กลับมาสถานะกำลังดำเนินการ (In-Process) เรียบร้อยแล้ว`
+        message: isEn
+          ? `🔄 Reopened ticket ${ticket.jobCode} back to IN_PROCESS.`
+          : `🔄 เปิดงานซ่อม ${ticket.jobCode} กลับมาสถานะกำลังดำเนินการ (In-Process) เรียบร้อยแล้ว`
       };
     } catch (err) {
       console.error('reopenTicket error:', err);
-      return { success: false, message: 'เกิดข้อผิดพลาดในการเปิดงานซ่อมใหม่' };
+      return { success: false, message: isEn ? 'Failed to reopen work ticket' : 'เกิดข้อผิดพลาดในการเปิดงานซ่อมใหม่' };
     }
   }
 
-  // 3.2 Quick Status: Mark Grinding Done (เจียรเสร็จแล้ว - Ready to use / Ready in stock)
+  // 3.2 Quick Status: Mark Grinding Done
   public markTicketAsReady(ticketId: string, technicianName?: string): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const idx = tickets.findIndex(t => t.id === ticketId);
     if (idx === -1) return { success: false, message: 'Ticket not found' };
@@ -983,7 +1251,7 @@ class RegrindService {
     ticket.updatedAt = new Date().toISOString();
     if (!ticket.completedDate) ticket.completedDate = new Date().toISOString();
     if (technicianName) ticket.assignedTechnician = technicianName;
-    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เจียรเสร็จแล้ว พร้อมใช้งาน`;
+    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}${isEn ? 'Grinding done, ready for QC' : 'เจียรเสร็จแล้ว พร้อมใช้งาน'}`;
 
     this.saveQueueTickets(tickets);
     this.syncTicketToMasterLogs(ticket);
@@ -997,12 +1265,15 @@ class RegrindService {
 
     return {
       success: true,
-      message: `🛠️ บันทึกสถานะ "เจียรเสร็จแล้ว" สำหรับ ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
+      message: isEn
+        ? `🛠️ Marked ${ticket.jobCode} (${ticket.partName}) as Grinding Done / READY.`
+        : `🛠️ บันทึกสถานะ "เจียรเสร็จแล้ว" สำหรับ ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
     };
   }
 
-  // 3.3 Quick Status: Mark Postponed (เลื่อนคิว / เลื่อนวัน)
+  // 3.3 Quick Status: Mark Postponed
   public markTicketAsPostponed(ticketId: string, newDateStr?: string, reason?: string): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const idx = tickets.findIndex(t => t.id === ticketId);
     if (idx === -1) return { success: false, message: 'Ticket not found' };
@@ -1015,7 +1286,11 @@ class RegrindService {
     ticket.shiftedCount = (ticket.shiftedCount || 0) + 1;
     if (newDateStr) ticket.scheduledDate = newDateStr;
     ticket.updatedAt = new Date().toISOString();
-    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}เลื่อนกำหนดการ${newDateStr ? ` เป็น ${newDateStr}` : ''}${reason ? ` (${reason})` : ''}`;
+    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}${
+      isEn
+        ? `Postponed${newDateStr ? ` to ${newDateStr}` : ''}${reason ? ` (${reason})` : ''}`
+        : `เลื่อนกำหนดการ${newDateStr ? ` เป็น ${newDateStr}` : ''}${reason ? ` (${reason})` : ''}`
+    }`;
 
     this.saveQueueTickets(tickets);
     this.syncTicketToMasterLogs(ticket);
@@ -1029,12 +1304,15 @@ class RegrindService {
 
     return {
       success: true,
-      message: `🟡 เลื่อนคิวงาน ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
+      message: isEn
+        ? `🟡 Postponed ticket ${ticket.jobCode} (${ticket.partName}).`
+        : `🟡 เลื่อนคิวงาน ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
     };
   }
 
-  // 3.4 Quick Status: Mark Cancelled (ยกเลิกงาน)
+  // 3.4 Quick Status: Mark Cancelled
   public markTicketAsCancelled(ticketId: string, reason?: string): { success: boolean; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const idx = tickets.findIndex(t => t.id === ticketId);
     if (idx === -1) return { success: false, message: 'Ticket not found' };
@@ -1043,7 +1321,7 @@ class RegrindService {
     ticket.status = 'CANCELLED';
     ticket.isScrapped = true;
     ticket.updatedAt = new Date().toISOString();
-    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}ยกเลิกงาน${reason ? ` (${reason})` : ''}`;
+    ticket.remarks = `${ticket.remarks ? ticket.remarks + ' | ' : ''}${isEn ? `Cancelled${reason ? ` (${reason})` : ''}` : `ยกเลิกงาน${reason ? ` (${reason})` : ''}`}`;
 
     this.saveQueueTickets(tickets);
     this.syncTicketToMasterLogs(ticket);
@@ -1057,7 +1335,9 @@ class RegrindService {
 
     return {
       success: true,
-      message: `🚫 ยกเลิกใบงาน ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
+      message: isEn
+        ? `🚫 Cancelled ticket ${ticket.jobCode} (${ticket.partName}).`
+        : `🚫 ยกเลิกใบงาน ${ticket.jobCode} (${ticket.partName}) เรียบร้อยแล้ว`
     };
   }
 
@@ -1068,6 +1348,7 @@ class RegrindService {
     customReason: string,
     technicianName: string
   ): { success: boolean; message: string; prNumber: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const idx = tickets.findIndex(t => t.id === ticketId);
     if (idx === -1) return { success: false, message: 'Ticket not found', prNumber: '' };
@@ -1108,7 +1389,9 @@ class RegrindService {
 
     return {
       success: true,
-      message: `บันทึกตัดทิ้ง (Scrap) ${ticket.partName} เรียบร้อยแล้ว พร้อมส่งใบแจ้งจัดซื้อ ${prItem.prNumber}`,
+      message: isEn
+        ? `Marked ${ticket.partName} as SCRAP and issued purchase requisition ${prItem.prNumber}.`
+        : `บันทึกตัดทิ้ง (Scrap) ${ticket.partName} เรียบร้อยแล้ว พร้อมส่งใบแจ้งจัดซื้อ ${prItem.prNumber}`,
       prNumber: prItem.prNumber
     };
   }
@@ -1145,11 +1428,12 @@ class RegrindService {
     const jobCode = `JOB-RGD-${year}-${String(nextNum).padStart(3, '0')}`;
     const qrCode = `QR-${params.lineId}-${params.positionId || 'P'}-${Date.now().toString().slice(-4)}`;
 
-    const nominal = master?.nominalLengthMm || 70.00;
-    const minLimit = master?.minAllowedLengthMm || 65.00;
-    const grindEst = master?.grindingAmountPerTimeMm || 0.25;
-    const regrindBefore = params.removedPartRegrindCount || 0;
-    const prevLength = Math.max(minLimit, nominal - (regrindBefore * grindEst));
+    const nominal = master?.nominalLengthMm ?? 70.00;
+    const minLimit = master?.minAllowedLengthMm ?? 65.00;
+    const grindEst = master?.grindingAmountPerTimeMm ?? 0.25;
+    const regrindBefore = params.removedPartRegrindCount ?? 0;
+    const prevLength = Number(Math.max(minLimit, nominal - (regrindBefore * grindEst)).toFixed(3));
+    const afterLength = Number((prevLength - grindEst).toFixed(3));
 
     const newTicket: RegrindWorkTicket = {
       id: newId,
@@ -1167,20 +1451,22 @@ class RegrindService {
       receivedDate: new Date().toISOString(),
       receivedBy: params.technicianName || 'Die Line Operator',
       defectReason: params.defectReason || 'NORMAL_WEAR',
-      defectNotes: params.notes || 'ส่งเข้าคิวเจียรลับคมอัตโนมัติจากหน้าจอ 2D Die Layout',
+      defectNotes: params.notes || (this.isEnglishMode() ? 'Auto-queued for regrinding from 2D Die Layout' : 'ส่งเข้าคิวเจียรลับคมอัตโนมัติจากหน้าจอ 2D Die Layout'),
       nominalLengthMm: nominal,
       minAllowedLengthMm: minLimit,
       previousLengthMm: prevLength,
       grindDepthMm: grindEst,
-      lengthAfterGrindMm: prevLength - grindEst,
+      lengthAfterGrindMm: afterLength,
       shimAddedMm: grindEst,
       surfaceRoughnessRa: 0.12,
       hardnessHrc: 63,
       regrindCountBefore: regrindBefore,
       regrindCountAfter: regrindBefore + 1,
-      maxRegrindAllowed: master?.maxRegrindCount || 4,
+      maxRegrindAllowed: master?.maxRegrindCount ?? 4,
       isScrapped: false,
-      remarks: `รับอัตโนมัติจากหน้า 2D Layout (${params.lineId} - ${params.positionId})`,
+      remarks: this.isEnglishMode()
+        ? `Auto-received from 2D Layout (${params.lineId} - ${params.positionId})`
+        : `รับอัตโนมัติจากหน้า 2D Layout (${params.lineId} - ${params.positionId})`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -1200,6 +1486,7 @@ class RegrindService {
 
   // 5. Manual Ticket Creation
   public createManualTicket(data: Partial<RegrindWorkTicket>): RegrindWorkTicket {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const master = this.findMasterByPartName(data.partName || '') || this.findMasterByPartName(data.partCode || '');
 
@@ -1220,9 +1507,12 @@ class RegrindService {
     const jobCode = `JOB-RGD-${year}-${String(nextNum).padStart(3, '0')}`;
     const qrCode = data.qrCode || `QR-${data.lineId || 'E1'}-${Date.now().toString().slice(-4)}`;
 
-    const nominal = master?.nominalLengthMm || data.nominalLengthMm || 70.00;
-    const minLimit = master?.minAllowedLengthMm || data.minAllowedLengthMm || 65.00;
-    const grindEst = master?.grindingAmountPerTimeMm || data.grindDepthMm || 0.25;
+    const nominal = data.nominalLengthMm ?? master?.nominalLengthMm ?? 70.00;
+    const minLimit = data.minAllowedLengthMm ?? master?.minAllowedLengthMm ?? 65.00;
+    const grindEst = data.grindDepthMm ?? master?.grindingAmountPerTimeMm ?? 0.25;
+    const prevLen = data.previousLengthMm ?? nominal;
+    const afterLen = data.lengthAfterGrindMm ?? Number((prevLen - grindEst).toFixed(3));
+    const regrindBefore = data.regrindCountBefore ?? 0;
 
     const newTicket: RegrindWorkTicket = {
       id: newId,
@@ -1240,18 +1530,18 @@ class RegrindService {
       receivedDate: new Date().toISOString(),
       receivedBy: data.receivedBy || 'Tooling Tech',
       defectReason: data.defectReason || 'NORMAL_WEAR',
-      defectNotes: data.defectNotes || 'บันทึกเปิดงานเจียรลับคมด้วยตนเอง (Manual Walk-in)',
+      defectNotes: data.defectNotes || (isEn ? 'Manual walk-in regrind work order' : 'บันทึกเปิดงานเจียรลับคมด้วยตนเอง (Manual Walk-in)'),
       nominalLengthMm: nominal,
       minAllowedLengthMm: minLimit,
-      previousLengthMm: data.previousLengthMm || nominal,
+      previousLengthMm: prevLen,
       grindDepthMm: grindEst,
-      lengthAfterGrindMm: (data.previousLengthMm || nominal) - grindEst,
-      shimAddedMm: grindEst,
+      lengthAfterGrindMm: afterLen,
+      shimAddedMm: data.shimAddedMm ?? grindEst,
       surfaceRoughnessRa: 0.12,
       hardnessHrc: 63,
-      regrindCountBefore: data.regrindCountBefore || 0,
-      regrindCountAfter: (data.regrindCountBefore || 0) + 1,
-      maxRegrindAllowed: master?.maxRegrindCount || 4,
+      regrindCountBefore: regrindBefore,
+      regrindCountAfter: data.regrindCountAfter ?? (regrindBefore + 1),
+      maxRegrindAllowed: data.maxRegrindAllowed ?? master?.maxRegrindCount ?? 4,
       isScrapped: false,
       isEmergency: Boolean(data.isEmergency || data.urgency === 'EMERGENCY'),
       scheduledDate: data.scheduledDate || (data.targetCompletionDate ? data.targetCompletionDate.slice(0, 10) : new Date().toISOString().slice(0, 10)),
@@ -1280,7 +1570,7 @@ class RegrindService {
       this.markTicketAsEmergency(newTicket.id, {
         preemptActiveJob: Boolean((data as any).preemptActiveJob),
         shiftHours: 2,
-        reason: data.defectNotes || data.remarks || 'งานด่วนแทรกคิว'
+        reason: data.defectNotes || data.remarks || (isEn ? 'Urgent queue insertion' : 'งานด่วนแทรกคิว')
       });
     }
 
@@ -1296,6 +1586,7 @@ class RegrindService {
 
   // --- Midnight Auto-Rollover Logic (Module 2 Requirement) ---
   public executeMidnightAutoRollover(): { rolledOverCount: number; message: string } {
+    const isEn = this.isEnglishMode();
     const tickets = this.getQueueTickets();
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
@@ -1347,8 +1638,12 @@ class RegrindService {
     return {
       rolledOverCount,
       message: rolledOverCount > 0
-        ? `⚡ ระบบ Auto-Rollover เที่ยงคืนทำงานสำเร็จ: ย้ายใบงานค้าง (${rolledOverCount} รายการ) มาเป็นวันที่ปัจจุบัน (${todayStr}) พร้อมติดแท็ก [Delayed] เรียบร้อยแล้ว`
-        : `✅ ไม่พบใบงานค้างเกินกำหนด ข้อมูลคิวปัจจุบันอัปเดตตรงตามวันที่ปัจจุบันเรียบร้อยแล้ว`
+        ? (isEn
+            ? `⚡ Midnight Auto-Rollover complete: shifted ${rolledOverCount} overdue job(s) to today (${todayStr}) with [Delayed] tag.`
+            : `⚡ ระบบ Auto-Rollover เที่ยงคืนทำงานสำเร็จ: ย้ายใบงานค้าง (${rolledOverCount} รายการ) มาเป็นวันที่ปัจจุบัน (${todayStr}) พร้อมติดแท็ก [Delayed] เรียบร้อยแล้ว`)
+        : (isEn
+            ? '✅ No overdue jobs found. Queue schedule is up to date.'
+            : `✅ ไม่พบใบงานค้างเกินกำหนด ข้อมูลคิวปัจจุบันอัปเดตตรงตามวันที่ปัจจุบันเรียบร้อยแล้ว`)
     };
   }
 
@@ -1370,7 +1665,7 @@ class RegrindService {
       quantity: params.quantity || 1,
       targetCompletionDate: params.targetCompletionDate || `${params.year}-${String(params.month).padStart(2, '0')}-${String(params.day).padStart(2, '0')}T17:00:00`,
       remarks: params.note || 'Created from Planning Board Matrix',
-      defectNotes: params.note || 'งานเจียรลับคมประจำวัน',
+      defectNotes: params.note || (this.isEnglishMode() ? 'Daily regrind job' : 'งานเจียรลับคมประจำวัน'),
       receivedBy: params.technicianName || 'Planning Engineer'
     });
 

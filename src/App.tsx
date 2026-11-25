@@ -13,6 +13,7 @@ import { UnifiedMasterLogsView } from './views/regrinding/UnifiedMasterLogsView'
 import { ToolingMasterSpecsView } from './views/regrinding/ToolingMasterSpecsView';
 import { UnifiedToolingMasterView } from './views/UnifiedToolingMasterView';
 import { CostRateMasterView } from './views/CostRateMasterView';
+import { UserGuideView } from './views/UserGuideView';
 import { LoginView } from './views/LoginView';
 
 export default function App() {
@@ -85,6 +86,11 @@ export default function App() {
       case 'machine-labor-rates':
         return <CostRateMasterView />;
 
+      case 'user-guide':
+      case 'guide':
+      case 'sop':
+        return <UserGuideView onNavigate={handleNavigate} />;
+
       case 'login':
         return (
           <LoginView
@@ -131,7 +137,7 @@ export default function App() {
 
         {/* Content Body - Independent full-screen view container */}
         <main className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-2.5 custom-scrollbar transition-all duration-300 w-full flex flex-col text-slate-100">
-          <div className="w-full flex-1 flex flex-col min-h-full">
+          <div className="w-full flex-1 flex flex-col min-h-0">
             <ErrorBoundary>
               {renderActiveView()}
             </ErrorBoundary>

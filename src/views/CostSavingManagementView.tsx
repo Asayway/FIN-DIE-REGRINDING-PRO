@@ -1,20 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  PartCostMasterItem, 
-  CostRateMasterItem,
-  RegrindingTransactionItem, 
-  CostDashboardFilter, 
-  CostSummaryMetrics 
+import {
+  RegrindingTransactionItem,
+  CostDashboardFilter,
+  CostSummaryMetrics
 } from '../types/costSaving';
+import { ProductionLineId } from '../types';
 import { costSavingService } from '../services/costSavingService';
 import { CostSavingCalculationService } from '../services/costSavingCalculationService';
-
-// Main Dashboard Component
 import { CostDashboardTab } from '../components/costSaving/CostDashboardTab';
 
 interface CostSavingManagementViewProps {
   initialTab?: string;
-  onNavigate?: (route: string) => void;
+  onNavigate?: (route: string, lineId?: ProductionLineId, logStatusFilter?: string) => void;
 }
 
 export const CostSavingManagementView: React.FC<CostSavingManagementViewProps> = ({
@@ -22,11 +19,12 @@ export const CostSavingManagementView: React.FC<CostSavingManagementViewProps> =
 }) => {
   const [allTransactions, setAllTransactions] = useState<RegrindingTransactionItem[]>([]);
 
-  // Global Filter State for Dashboard
+  const now = new Date();
   const [filters, setFilters] = useState<CostDashboardFilter>({
     periodType: 'MONTHLY',
-    year: 2026,
-    month: 10,
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    selectedDate: now.toISOString().slice(0, 10),
     lineId: 'ALL',
     partNo: 'ALL',
     partType: 'ALL',
@@ -44,26 +42,23 @@ export const CostSavingManagementView: React.FC<CostSavingManagementViewProps> =
     return () => unsub();
   }, []);
 
-  // Filtered transactions for Dashboard
   const dashboardFilteredTransactions = useMemo(() => {
     return costSavingService.getTransactions(filters);
   }, [filters, allTransactions]);
 
-  // Aggregate metrics for Dashboard
   const dashboardMetrics: CostSummaryMetrics = useMemo(() => {
     return CostSavingCalculationService.aggregateMetrics(dashboardFilteredTransactions);
   }, [dashboardFilteredTransactions]);
 
-  const handleNavigateToTab = (route: string) => {
+  const handleNavigateToTab = (route: string, lineId?: ProductionLineId, logStatusFilter?: string) => {
     if (onNavigate) {
-      onNavigate(route);
+      onNavigate(route, lineId, logStatusFilter);
     }
   };
 
   return (
-    <div className="w-full h-full flex flex-col font-sans text-white bg-[#0a0e17] overflow-hidden select-none p-2 sm:p-3">
-      {/* Main Dashboard Viewport */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+    <div className="w-full h-full flex-1 min-h-0 flex flex-col font-sans text-white bg-[#0a0e17] overflow-hidden select-none">
+      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto lg:overflow-hidden">
         <CostDashboardTab
           transactions={dashboardFilteredTransactions}
           metrics={dashboardMetrics}

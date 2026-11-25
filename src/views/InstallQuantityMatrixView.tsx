@@ -60,6 +60,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
   onNavigateToMaster
 }) => {
   const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [lines, setLines] = useState<LineActiveConfiguration[]>([]);
   const [partMasters, setPartMasters] = useState<PartMaster[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -120,7 +121,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
 
   const handleSaveNewRowInline = () => {
     if (!newRowData.partName.trim()) {
-      alert('กรุณากรอก Part Name');
+      setSaveSuccessMsg(isEn ? 'Please enter a Part Name.' : 'กรุณากรอก Part Name');
       return;
     }
     const finalPartCode = newRowData.partCode.trim() 
@@ -129,7 +130,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
 
     const exists = partMasters.some(p => p.partCode.toUpperCase() === finalPartCode);
     if (exists) {
-      alert(`รหัส Part Code "${finalPartCode}" มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`);
+      setSaveSuccessMsg(isEn ? `Part Code "${finalPartCode}" already exists.` : `รหัส Part Code "${finalPartCode}" มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`);
       return;
     }
 
@@ -181,10 +182,10 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
         }
       });
       loadData();
-      setSaveSuccessMsg(`เพิ่มชิ้นส่วน "${newPart.partName}" (${finalPartCode}) สำเร็จแล้ว`);
+      setSaveSuccessMsg(isEn ? `Added part "${newPart.partName}" (${finalPartCode}).` : `เพิ่มชิ้นส่วน "${newPart.partName}" (${finalPartCode}) สำเร็จแล้ว`);
       setTimeout(() => setSaveSuccessMsg(null), 4000);
     } catch (err: any) {
-      alert(`เกิดข้อผิดพลาด: ${err.message}`);
+      setSaveSuccessMsg(isEn ? `Error: ${err.message}` : `เกิดข้อผิดพลาด: ${err.message}`);
     }
   };
 
@@ -349,7 +350,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
   // Cancel Edit Mode
   const handleCancelEdit = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('คุณมีการแก้ไขที่ยังไม่ได้บันทึก ต้องการยกเลิกใช่หรือไม่?')) {
+      if (!window.confirm(isEn ? 'You have unsaved changes. Discard changes?' : 'คุณมีการแก้ไขที่ยังไม่ได้บันทึก ต้องการยกเลิกใช่หรือไม่?')) {
         return;
       }
     }
@@ -407,7 +408,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
     setIsEditing(true);
     setHasUnsavedChanges(true);
     setShowBatchModal(false);
-    setSaveSuccessMsg(`ดำเนินการ Batch Update เสร็จสิ้น (${affectedCount} จุด) - กรุณากดบันทึกเพื่อยืนยัน`);
+    setSaveSuccessMsg(isEn ? `Batch update applied (${affectedCount} cells) — click Save to confirm.` : `ดำเนินการ Batch Update เสร็จสิ้น (${affectedCount} จุด) - กรุณากดบันทึกเพื่อยืนยัน`);
   };
 
   // Save All Changes to Database
@@ -440,10 +441,10 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
 
       setIsEditing(false);
       setHasUnsavedChanges(false);
-      setSaveSuccessMsg(`บันทึกจำนวนติดตั้ง ${partMasters.length} รายการลงในฐานข้อมูลสำเร็จแล้ว`);
+      setSaveSuccessMsg(isEn ? `Saved installed quantities for ${partMasters.length} parts.` : `บันทึกจำนวนติดตั้ง ${partMasters.length} รายการลงในฐานข้อมูลสำเร็จแล้ว`);
       setTimeout(() => setSaveSuccessMsg(null), 4000);
     } catch (err: any) {
-      alert(`เกิดข้อผิดพลาดในการบันทึก: ${err.message}`);
+      setSaveSuccessMsg(isEn ? `Save failed: ${err.message}` : `เกิดข้อผิดพลาดในการบันทึก: ${err.message}`);
     }
   };
 
@@ -452,11 +453,11 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
     if (!deleteTargetPart) return;
     try {
       storageService.deletePartMaster(deleteTargetPart.partCode);
-      setSaveSuccessMsg(`ลบชิ้นส่วน ${deleteTargetPart.partName} (${deleteTargetPart.partCode}) เรียบร้อยแล้ว`);
+      setSaveSuccessMsg(isEn ? `Deleted part ${deleteTargetPart.partName} (${deleteTargetPart.partCode}).` : `ลบชิ้นส่วน ${deleteTargetPart.partName} (${deleteTargetPart.partCode}) เรียบร้อยแล้ว`);
       setDeleteTargetPart(null);
       loadData();
     } catch (err: any) {
-      alert(`ลบไม่สำเร็จ: ${err.message}`);
+      setSaveSuccessMsg(isEn ? `Delete failed: ${err.message}` : `ลบไม่สำเร็จ: ${err.message}`);
     }
   };
 
@@ -469,7 +470,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
 
   // Export Matrix to Excel (.xlsx)
   const handleExportCsv = () => {
-    exportInstallMatrixExcel(matrixRows, LINE_COLUMNS);
+    exportInstallMatrixExcel(matrixRows, LINE_COLUMNS, language);
   };
 
   return (
@@ -517,7 +518,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
                 type="button"
                 onClick={() => setIsStageManagerOpen(true)}
                 className="px-2.5 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-[#00FF00] border border-[#666666] text-xs font-bold rounded flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap"
-                title="เปิดหน้าต่างจัดกลุ่มและจัดการ Stage"
+                title={isEn ? 'Open Stage Grouping & Management' : 'เปิดหน้าต่างจัดกลุ่มและจัดการ Stage'}
               >
                 <Sliders className="w-3.5 h-3.5 text-[#00FF00]" />
                 <span>⚙️ {language === 'TH' ? 'จัดกลุ่ม Stage' : 'Group Stages'}</span>
@@ -557,18 +558,22 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
                 <button
                   type="button"
                   onClick={handleCancelEdit}
-                  className="px-3 py-1.5 bg-[#222222] hover:bg-[#333333] text-slate-300 text-xs font-bold border border-[#666666] flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-[#222222] hover:bg-[#333333] text-slate-300 text-xs font-bold border border-[#666666] flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <X className="w-3.5 h-3.5" />
-                  <span>ยกเลิก</span>
+                  <span>{isEn ? 'Cancel' : 'ยกเลิก'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveMatrix}
-                  className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>บันทึกการแก้ไข ({hasUnsavedChanges ? 'มีการเปลี่ยนแปลง' : 'พร้อมบันทึก'})</span>
+                  <span>
+                    {isEn
+                      ? `Save Changes (${hasUnsavedChanges ? 'Modified' : 'Ready'})`
+                      : `บันทึกการแก้ไข (${hasUnsavedChanges ? 'มีการเปลี่ยนแปลง' : 'พร้อมบันทึก'})`}
+                  </span>
                 </button>
               </>
             ) : (
@@ -576,7 +581,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
                 <button
                   type="button"
                   onClick={handleExportCsv}
-                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-300 border border-[#666666] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-300 border border-[#666666] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-[#00FF00]" />
                   <span>Export Excel (.xlsx)</span>
@@ -584,10 +589,10 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
                 <button
                   type="button"
                   onClick={handleStartEdit}
-                  className="px-3.5 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-[#00FF00] border border-[#00FF00] font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-[#00FF00] border border-[#00FF00] font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
-                  <span>แก้ไขตัวเลขในตาราง (Edit Cells)</span>
+                  <span>{isEn ? 'Edit Cells' : 'แก้ไขตัวเลขในตาราง (Edit Cells)'}</span>
                 </button>
               </>
             )}
@@ -604,13 +609,13 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-[#00FF00]" />
             <span className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-              INSTALLED QUANTITY MATRIX ({matrixRows.length} รายการ)
+              {isEn ? `INSTALLED QUANTITY MATRIX (${matrixRows.length} items)` : `INSTALLED QUANTITY MATRIX (${matrixRows.length} รายการ)`}
             </span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-[#00FF00]"></span>
-              <span>หัวตารางล็อกคงที่ (Locked Sticky Header)</span>
+              <span>{isEn ? 'Locked Sticky Header' : 'หัวตารางล็อกคงที่ (Locked Sticky Header)'}</span>
             </span>
           </div>
         </div>
@@ -778,16 +783,16 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
                         type="button"
                         onClick={handleSaveNewRowInline}
                         className="px-2 py-0.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-bold text-[11px] rounded flex items-center gap-0.5 cursor-pointer shadow-sm"
-                        title="บันทึกรายการใหม่"
+                        title={isEn ? 'Save New Item' : 'บันทึกรายการใหม่'}
                       >
                         <Check className="w-3.5 h-3.5" />
-                        <span>บันทึก</span>
+                        <span>{isEn ? 'Save' : 'บันทึก'}</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsAddingInline(false)}
                         className="p-1 bg-[#222222] hover:bg-[#333333] text-rose-400 rounded border border-[#666666] cursor-pointer"
-                        title="ยกเลิก"
+                        title={isEn ? 'Cancel' : 'ยกเลิก'}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -800,7 +805,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
               {filteredRows.length === 0 && !isAddingInline ? (
                 <tr>
                   <td colSpan={12} className="py-8 text-center text-slate-500 bg-[#161616] border-b border-[#666666]">
-                    ไม่พบรายการชิ้นส่วนที่ตรงกับคำค้นหา "{searchTerm}"
+                    {isEn ? `No tooling parts matching "${searchTerm}"` : `ไม่พบรายการชิ้นส่วนที่ตรงกับคำค้นหา "${searchTerm}"`}
                   </td>
                 </tr>
               ) : (
@@ -879,7 +884,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
                             type="button"
                             onClick={() => handleOpenEditModalForRow(row)}
                             className="p-1 bg-[#111111] hover:bg-[#333333] text-[#00FF00] border border-[#555555] hover:border-[#00FF00] transition-colors cursor-pointer"
-                            title="แก้ไขข้อมูลพาร์ท (Edit Part Details)"
+                            title={isEn ? 'Edit Part Details' : 'แก้ไขข้อมูลพาร์ท (Edit Part Details)'}
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
@@ -893,7 +898,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
                               total: row.total
                             })}
                             className="p-1 bg-[#111111] hover:bg-[#2b000a] text-slate-400 hover:text-[#C40045] border border-[#555555] hover:border-[#C40045] transition-colors cursor-pointer"
-                            title="ลบพาร์ทนี้ (Delete Part)"
+                            title={isEn ? 'Delete Part' : 'ลบพาร์ทนี้ (Delete Part)'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -921,7 +926,7 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
                   {formatShots(grandTotalActiveTooling)}
                 </td>
                 <td className="py-1.5 px-2 text-center bg-[#282838] text-[10px] text-slate-400">
-                  {filteredRows.length} พาร์ท
+                  {filteredRows.length} {isEn ? 'parts' : 'พาร์ท'}
                 </td>
               </tr>
             </tfoot>
@@ -939,10 +944,10 @@ export const InstallQuantityMatrixView: React.FC<InstallQuantityMatrixViewProps>
         isOpen={!!deleteTargetPart}
         onClose={() => setDeleteTargetPart(null)}
         onConfirm={handleConfirmDelete}
-        title="ยืนยันการลบชิ้นส่วน (Delete Part)"
+        title={isEn ? 'Confirm Delete Part' : 'ยืนยันการลบชิ้นส่วน (Delete Part)'}
         itemName={deleteTargetPart ? `${deleteTargetPart.partName} (${deleteTargetPart.partCode})` : "" }
         itemDetails={deleteTargetPart ? `Stage: ${deleteTargetPart.stage} | Total Installed: ${deleteTargetPart.total} EA` : "" }
-        warningText="การลบพาร์ทจากหน้านี้ จะเป็นการลบออกจากฐานข้อมูล Part Master ทั้งหมดอย่างถาวร"
+        warningText={isEn ? 'Deleting a part here permanently removes it from the Part Master database.' : 'การลบพาร์ทจากหน้านี้ จะเป็นการลบออกจากฐานข้อมูล Part Master ทั้งหมดอย่างถาวร'}
       />
 
       {/* Stage Grouping Management Modal */}

@@ -120,10 +120,28 @@ export function exportReplacementHistoryExcel(
 /**
  * Export Re-grinding & Sharpening Ledger to Excel (.xlsx)
  */
+function isEnExport(lang?: string): boolean {
+  if (lang) return lang.toUpperCase() === 'EN' || lang.toUpperCase() === 'DUAL';
+  try {
+    const saved = localStorage.getItem('app_language')?.toUpperCase();
+    return saved === 'EN' || saved === 'DUAL';
+  } catch {
+    return false;
+  }
+}
+
+function cleanEnglishNote(note?: string): string {
+  if (!note) return '-';
+  const stripped = String(note).replace(/\s*\([^)]*[\u0E00-\u0E7F][^)]*\)/g, '').trim();
+  return stripped || '-';
+}
+
 export function exportRegrindingHistoryExcel(
   records: RegrindingRecord[],
-  lineFilter: string = 'ALL'
+  lineFilter: string = 'ALL',
+  lang?: string
 ) {
+  const isEn = isEnExport(lang);
   const data = records.map((rec, index) => {
     const drawingNo = rec.drawingNo || rec.drawingNumber || (rec.partCode ? rec.partCode.replace(/^[A-Z0-9]+-/, '') : 'DWG-PB-001');
     const qty = rec.quantity || 1;
@@ -133,13 +151,21 @@ export function exportRegrindingHistoryExcel(
     const scrapLimit = rec.scrapLimitMm !== undefined ? rec.scrapLimitMm : 61.00;
 
     const reasonLabel = rec.defectReason 
-      ? (rec.defectReason === 'NORMAL_WEAR' ? 'NORMAL WEAR'
-        : rec.defectReason === 'BURR_EXCESSIVE' ? 'BURR EXCESSIVE'
-        : rec.defectReason === 'CHIPPED' ? 'CHIPPED'
-        : rec.defectReason === 'GALLING_SCRATCHED' ? 'GALLING SCRATCHED'
-        : rec.defectReason === 'OUT_OF_TOLERANCE' ? 'OUT OF TOLERANCE'
-        : rec.defectReason === 'BROKEN' ? 'BROKEN'
-        : rec.defectReason)
+      ? (isEn
+          ? (rec.defectReason === 'NORMAL_WEAR' ? 'NORMAL WEAR'
+            : rec.defectReason === 'BURR_EXCESSIVE' ? 'EXCESSIVE BURR'
+            : rec.defectReason === 'CHIPPED' ? 'CHIPPED'
+            : rec.defectReason === 'GALLING_SCRATCHED' ? 'GALLING / SCRATCHED'
+            : rec.defectReason === 'OUT_OF_TOLERANCE' ? 'OUT OF TOLERANCE'
+            : rec.defectReason === 'BROKEN' ? 'BROKEN'
+            : rec.defectReason)
+          : (rec.defectReason === 'NORMAL_WEAR' ? 'NORMAL WEAR'
+            : rec.defectReason === 'BURR_EXCESSIVE' ? 'BURR EXCESSIVE'
+            : rec.defectReason === 'CHIPPED' ? 'CHIPPED'
+            : rec.defectReason === 'GALLING_SCRATCHED' ? 'GALLING SCRATCHED'
+            : rec.defectReason === 'OUT_OF_TOLERANCE' ? 'OUT OF TOLERANCE'
+            : rec.defectReason === 'BROKEN' ? 'BROKEN'
+            : rec.defectReason))
       : 'NORMAL WEAR';
 
     const laborMinutes = rec.laborTimeMinutes !== undefined
@@ -161,7 +187,36 @@ export function exportRegrindingHistoryExcel(
       : (newPrice > 0 ? `${((netSaving / newPrice) * 100).toFixed(1)}%` : '0%');
 
     const operator = rec.performedBy || rec.technicianName || 'Thanakorn Phonpayung';
-    const noteText = rec.note || rec.remarks || 'ลับคมด้วยหิน CBN #400';
+    const rawNote = rec.note || rec.remarks;
+    const noteText = isEn
+      ? (rawNote && !/[\u0E00-\u0E7F]/.test(rawNote) ? rawNote : cleanEnglishNote(rawNote) !== '-' ? cleanEnglishNote(rawNote) : 'Sharpened with CBN #400 Wheel')
+      : (rawNote || 'ลับคมด้วยหิน CBN #400');
+
+    if (isEn) {
+      return {
+        'NO.': index + 1,
+        'STATUS': rec.status || 'READY TO USE',
+        'JOB CODE': rec.jobCode,
+        'DATE': rec.regrindDate || (rec.timestamp ? rec.timestamp.substring(0, 10) : 'N/A'),
+        'LINE': rec.lineId ? `LINE ${rec.lineId}` : 'ALL',
+        'DIE CODE': rec.dieCode || rec.finDie || 'FD-E1-07',
+        'PART NAME': rec.partName,
+        'DRAWING CODE': drawingNo,
+        'QTY (PCS)': qty,
+        'NEW SPEC HEIGHT (mm)': newSpec.toFixed(2),
+        'BEFORE GRIND (mm)': currentH.toFixed(2),
+        'AFTER GRIND (mm)': afterH.toFixed(2),
+        'SCRAP LIMIT (mm)': scrapLimit.toFixed(2),
+        'DEFECT REASON': reasonLabel,
+        'LABOR TIME (MIN)': laborMinutes,
+        'LABOR COST (THB)': laborCost,
+        'NEW PART PRICE (THB)': newPrice,
+        'NET SAVING (THB)': netSaving,
+        'SAVING %': savingPct,
+        'OPERATOR': operator,
+        'REMARKS': noteText
+      };
+    }
 
     return {
       'NO.': index + 1,
@@ -354,18 +409,34 @@ export function exportAllInOneMasterExcel(
  */
 export function exportResetLogsExcel(
   logs: ShotEntryRecord[],
-  lineFilter: string = 'ALL'
+  lineFilter: string = 'ALL',
+  lang?: string
 ) {
-  const data = logs.map((log, idx) => ({
-    'NO.': idx + 1,
-    'DATE TIME (เวลาบันทึก)': log.timestamp ? new Date(log.timestamp).toLocaleString('th-TH') : 'N/A',
-    'LINE (สายการผลิต)': `LINE ${log.lineId}`,
-    'RESETTED BY (ผู้ทำรายการ)': log.operatorName || 'System',
-    'PREVIOUS SHOT (ยอดเดิม)': log.previousTotal ?? 0,
-    'NEW SHOT (ยอดตั้งใหม่)': log.newTotal ?? 0,
-    'RESET REASON (เหตุผลการรีเซ็ต)': log.resetReason || log.entryReason || '-',
-    'APPROVAL REF (รหัสอนุมัติ)': log.resetApprovalId || log.id.slice(-8)
-  }));
+  const isEn = isEnExport(lang);
+  const locale = isEn ? 'en-US' : 'th-TH';
+  const data = logs.map((log, idx) =>
+    isEn
+      ? {
+          'NO.': idx + 1,
+          'DATE TIME': log.timestamp ? new Date(log.timestamp).toLocaleString(locale) : 'N/A',
+          'LINE': `LINE ${log.lineId}`,
+          'RESETTED BY': log.operatorName || 'System',
+          'PREVIOUS SHOT': log.previousTotal ?? 0,
+          'NEW SHOT': log.newTotal ?? 0,
+          'RESET REASON': log.resetReason || log.entryReason || '-',
+          'APPROVAL REF': log.resetApprovalId || log.id.slice(-8)
+        }
+      : {
+          'NO.': idx + 1,
+          'DATE TIME (เวลาบันทึก)': log.timestamp ? new Date(log.timestamp).toLocaleString(locale) : 'N/A',
+          'LINE (สายการผลิต)': `LINE ${log.lineId}`,
+          'RESETTED BY (ผู้ทำรายการ)': log.operatorName || 'System',
+          'PREVIOUS SHOT (ยอดเดิม)': log.previousTotal ?? 0,
+          'NEW SHOT (ยอดตั้งใหม่)': log.newTotal ?? 0,
+          'RESET REASON (เหตุผลการรีเซ็ต)': log.resetReason || log.entryReason || '-',
+          'APPROVAL REF (รหัสอนุมัติ)': log.resetApprovalId || log.id.slice(-8)
+        }
+  );
 
   const worksheet = XLSX.utils.json_to_sheet(data);
   worksheet['!cols'] = [
@@ -419,7 +490,8 @@ export function exportInspectionLogsExcel(
  * Export Part Master list to Excel (.xlsx)
  * Matches table schema 100% with all 5 sections: Spec, Shot Cycles, Regrind Matrix, Pricing & Supplier
  */
-export function exportPartMasterExcel(items: any[]) {
+export function exportPartMasterExcel(items: any[], lang?: string) {
+  const isEn = isEnExport(lang);
   const data = items.map((item, idx) => {
     const applicableLines = Array.isArray(item.applicableLines) && item.applicableLines.length > 0
       ? item.applicableLines.join(', ')
@@ -441,6 +513,33 @@ export function exportPartMasterExcel(items: any[]) {
 
     const priceThbStr = item.purchasePriceThb ? `฿${Number(item.purchasePriceThb).toLocaleString()}` : '-';
     const priceUsdStr = item.purchasePriceUsd ? `$${Number(item.purchasePriceUsd).toLocaleString()}` : '-';
+
+    if (isEn) {
+      return {
+        'NO.': item.no || idx + 1,
+        'STAGE': item.stage || '-',
+        'PART CODE': item.partCode || '-',
+        'PART NAME': item.partName || '-',
+        'DRAWING NO.': item.drawingNo || item.partCode || '-',
+        'INSTALLED LINES': applicableLines,
+        'E1 (Ø7 Slit)': item.shotLifeCycle?.e1_pcm !== undefined ? `${item.shotLifeCycle.e1_pcm}M` : '-',
+        'E2 (Ø5 Slit)': item.shotLifeCycle?.e2_gold !== undefined ? `${item.shotLifeCycle.e2_gold}M` : '-',
+        'E3-1 (Slit 3P)': item.shotLifeCycle?.e3_1_pcm !== undefined ? `${item.shotLifeCycle.e3_1_pcm}M` : '-',
+        'E3-2 (WL+ 4P)': item.shotLifeCycle?.e3_2_gold !== undefined ? `${item.shotLifeCycle.e3_2_gold}M` : '-',
+        'E3-3 (New Cor 4P)': item.shotLifeCycle?.e3_3_gold !== undefined ? `${item.shotLifeCycle.e3_3_gold}M` : '-',
+        'E4 (Ø5 Slit)': item.shotLifeCycle?.e4_bare !== undefined ? `${item.shotLifeCycle.e4_bare}M` : '-',
+        'E5 (Ø5 Slit)': item.shotLifeCycle?.e5_bare !== undefined ? `${item.shotLifeCycle.e5_bare}M` : '-',
+        'NEW SPEC (mm)': newSpecStr,
+        'SCRAP LIMIT (mm)': scrapLimitStr,
+        '1 TIME GRIND (mm)': perGrindStr,
+        'TOTAL REGRIND (mm)': totalGrindStr,
+        'MAX CYCLES': maxCyclesVal,
+        'NOTE / STANDARD': cleanEnglishNote(item.regrindStandard?.note),
+        'PRICE THB': priceThbStr,
+        'PRICE USD': priceUsdStr,
+        'SUPPLIER': item.supplier || '-'
+      };
+    }
 
     return {
       'NO. (ลำดับ)': item.no || idx + 1,
@@ -503,15 +602,24 @@ export function exportPartMasterExcel(items: any[]) {
 /**
  * Export Part Installation Matrix to Excel (.xlsx)
  */
-export function exportInstallMatrixExcel(matrixRows: any[], lineColumns: any[]) {
+export function exportInstallMatrixExcel(matrixRows: any[], lineColumns: any[], lang?: string) {
+  const isEn = isEnExport(lang);
   const data = matrixRows.map(row => {
-    const rowObj: Record<string, any> = {
-      'NO.': row.no,
-      'STAGE (สเตจ)': row.stageName || '',
-      'PART CODE (รหัสพาร์ท)': row.partCode || '',
-      'PART NAME (ชื่อพาร์ท)': row.partName || '',
-      'DRAWING CODE (เลขที่แบบ)': row.drawingCode || ''
-    };
+    const rowObj: Record<string, any> = isEn
+      ? {
+          'NO.': row.no,
+          'STAGE': row.stageName || '',
+          'PART CODE': row.partCode || '',
+          'PART NAME': row.partName || '',
+          'DRAWING CODE': row.drawingCode || ''
+        }
+      : {
+          'NO.': row.no,
+          'STAGE (สเตจ)': row.stageName || '',
+          'PART CODE (รหัสพาร์ท)': row.partCode || '',
+          'PART NAME (ชื่อพาร์ท)': row.partName || '',
+          'DRAWING CODE (เลขที่แบบ)': row.drawingCode || ''
+        };
 
     lineColumns.forEach(col => {
       rowObj[`LINE ${col.id} (${col.subName})`] = row.quantities[col.id] || 0;
@@ -544,27 +652,50 @@ export function exportInstallMatrixExcel(matrixRows: any[], lineColumns: any[]) 
 /**
  * Export Stock Part Repair (สต็อกอะไหล่หมุนเวียนงานซ่อม) to Excel (.xlsx)
  */
-export function exportPartRepairStockExcel(repairRows: any[], lineColumns: any[]) {
+export function exportPartRepairStockExcel(repairRows: any[], lineColumns: any[], lang?: string) {
+  const isEn = isEnExport(lang);
   const data = repairRows.map(row => {
-    const rowObj: Record<string, any> = {
-      'NO.': row.no,
-      'STAGE (สเตจ)': row.stageName || '',
-      'PART CODE (รหัสพาร์ท)': row.partCode || '',
-      'PART NAME (ชื่อชิ้นส่วน)': row.partName || '',
-      'DRAWING NO. (เลขที่แบบ)': row.drawingCode || '',
-      'พร้อมเบิกใช้งาน (READY EA)': row.readyToUseQty || 0,
-      'กำลังเจียร (IN-PROCESS EA)': row.inProcessQty || 0,
-      'รอส่งซ่อม (AWAITING REPAIR EA)': row.awaitingRepairQty || 0,
-      'รวมสต็อกหมุนเวียน (TOTAL POOL EA)': row.totalCirculationQty || 0
-    };
+    const rowObj: Record<string, any> = isEn
+      ? {
+          'NO.': row.no,
+          'STAGE': row.stageName || '',
+          'PART CODE': row.partCode || '',
+          'PART NAME': row.partName || '',
+          'DRAWING NO.': row.drawingCode || '',
+          'READY TO ISSUE (EA)': row.readyToUseQty || 0,
+          'GRINDING IN-PROCESS (EA)': row.inProcessQty || 0,
+          'AWAITING REPAIR (EA)': row.awaitingRepairQty || 0,
+          'TOTAL POOL (EA)': row.totalCirculationQty || 0
+        }
+      : {
+          'NO.': row.no,
+          'STAGE (สเตจ)': row.stageName || '',
+          'PART CODE (รหัสพาร์ท)': row.partCode || '',
+          'PART NAME (ชื่อชิ้นส่วน)': row.partName || '',
+          'DRAWING NO. (เลขที่แบบ)': row.drawingCode || '',
+          'พร้อมเบิกใช้งาน (READY EA)': row.readyToUseQty || 0,
+          'กำลังเจียร (IN-PROCESS EA)': row.inProcessQty || 0,
+          'รอส่งซ่อม (AWAITING REPAIR EA)': row.awaitingRepairQty || 0,
+          'รวมสต็อกหมุนเวียน (TOTAL POOL EA)': row.totalCirculationQty || 0
+        };
 
     lineColumns.forEach((col: any) => {
       rowObj[`READY LINE ${col.id} (${col.subName})`] = row.lineAllocations?.[col.id] || 0;
     });
 
-    rowObj['SAFETY TARGET (เกณฑ์สำรอง EA)'] = row.safetyStockTarget || 0;
-    rowObj['BUFFER STATUS (สถานะความพร้อม)'] = row.isBelowSafety ? 'ต่ำกว่าเกณฑ์สำรอง' : (row.readyToUseQty === 0 ? 'หมดสต็อกพร้อมเบิก' : 'ปกติพร้อมเบิก');
-    rowObj['REMARKS (หมายเหตุงานซ่อม)'] = row.notes || '';
+    if (isEn) {
+      rowObj['SAFETY TARGET (EA)'] = row.safetyStockTarget || 0;
+      rowObj['BUFFER STATUS'] = row.isBelowSafety
+        ? 'Below Safety Stock'
+        : row.readyToUseQty === 0
+        ? 'Out of Ready Stock'
+        : 'Normal / Ready';
+      rowObj['REMARKS'] = row.notes || '';
+    } else {
+      rowObj['SAFETY TARGET (เกณฑ์สำรอง EA)'] = row.safetyStockTarget || 0;
+      rowObj['BUFFER STATUS (สถานะความพร้อม)'] = row.isBelowSafety ? 'ต่ำกว่าเกณฑ์สำรอง' : (row.readyToUseQty === 0 ? 'หมดสต็อกพร้อมเบิก' : 'ปกติพร้อมเบิก');
+      rowObj['REMARKS (หมายเหตุงานซ่อม)'] = row.notes || '';
+    }
     return rowObj;
   });
 

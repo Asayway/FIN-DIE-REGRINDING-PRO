@@ -19,6 +19,7 @@ import { storageService } from '../../services/storageService';
 import { PartMaster } from '../../types';
 import { DEFAULT_STAGE_GROUPS, deriveLogicalStage, sortStagesInOrder } from '../../utils/stageUtils';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface StageManagementModalProps {
   isOpen: boolean;
@@ -31,6 +32,8 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
   onClose,
   onSave
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [activeTab, setActiveTab] = useState<'ASSIGN' | 'MANAGE'>('ASSIGN');
   const [partMasters, setPartMasters] = useState<PartMaster[]>([]);
   const [partSearch, setPartSearch] = useState('');
@@ -129,9 +132,9 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
     if (onSave) onSave();
     
     if (results.added === 0 && results.fixed === 0) {
-      showToast('🛡️ ฐานข้อมูลปกติ: ไม่พบ Stage ที่ขาดหายหรือความสัมพันธ์ที่เสียหาย');
+      showToast(isEn ? '🛡️ Database OK: No missing stages or broken links found.' : '🛡️ ฐานข้อมูลปกติ: ไม่พบ Stage ที่ขาดหายหรือความสัมพันธ์ที่เสียหาย');
     } else {
-      showToast(`⚙️ ซิงค์สำเร็จ: เพิ่ม ${results.added} Stage และแก้ไข ${results.fixed} รายการ`);
+      showToast(isEn ? `⚙️ Synced: Added ${results.added} stage(s) and fixed ${results.fixed} record(s).` : `⚙️ ซิงค์สำเร็จ: เพิ่ม ${results.added} Stage และแก้ไข ${results.fixed} รายการ`);
     }
   };
 
@@ -144,7 +147,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
     if (!trimmed) return;
 
     if (managedStageGroups.some(g => g.toLowerCase() === trimmed.toLowerCase())) {
-      showToast('⚠️ ชื่อ Stage นี้มีอยู่อยู่แล้วในระบบ');
+      showToast(isEn ? '⚠️ Stage name already exists in the system.' : '⚠️ ชื่อ Stage นี้มีอยู่อยู่แล้วในระบบ');
       return;
     }
 
@@ -154,7 +157,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
     setNewStageInput('');
     loadData();
     if (onSave) onSave();
-    showToast(`✅ เพิ่ม Stage ใหม่ "${trimmed}" เรียบร้อย`);
+    showToast(isEn ? `✅ Added new stage "${trimmed}".` : `✅ เพิ่ม Stage ใหม่ "${trimmed}" เรียบร้อย`);
   };
 
   // Handler: Start Editing Stage
@@ -175,7 +178,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
     setEditingStage(null);
     setEditStageInput('');
     setMergeTarget(null);
-    showToast(`✅ เปลี่ยนชื่อ Stage เป็น "${newName}" สำเร็จ`);
+    showToast(isEn ? `✅ Renamed stage to "${newName}".` : `✅ เปลี่ยนชื่อ Stage เป็น "${newName}" สำเร็จ`);
   };
 
   // Handler: Save Edited Stage
@@ -215,7 +218,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
     loadData();
     if (onSave) onSave();
     setStageToDelete(null);
-    showToast(`🗑️ ลบ Stage "${stageName}" เรียบร้อย`);
+    showToast(isEn ? `🗑️ Deleted stage "${stageName}".` : `🗑️ ลบ Stage "${stageName}" เรียบร้อย`);
   };
 
   // Handler: Reassign Single Part Stage
@@ -227,7 +230,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
       storageService.savePartMaster(list[idx]);
       loadData();
       if (onSave) onSave();
-      showToast(`✅ ย้าย "${partName}" ไปยัง "${newStage}" สำเร็จ`);
+      showToast(isEn ? `✅ Moved "${partName}" to "${newStage}".` : `✅ ย้าย "${partName}" ไปยัง "${newStage}" สำเร็จ`);
     }
   };
 
@@ -260,10 +263,10 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-black text-white flex items-center gap-2">
-                <span>⚙️ จัดกลุ่มและจัดการ Stage (Stage Grouping Management)</span>
+                <span>{isEn ? '⚙️ Stage Grouping Management' : '⚙️ จัดกลุ่มและจัดการ Stage (Stage Grouping Management)'}</span>
               </h2>
               <p className="text-xs text-slate-400">
-                กำหนด/แก้ไข Stage ให้กับชิ้นส่วนแม่พิมพ์แต่ละรายการ
+                {isEn ? 'Assign or update die stage categories for each tooling component' : 'กำหนด/แก้ไข Stage ให้กับชิ้นส่วนแม่พิมพ์แต่ละรายการ'}
               </p>
             </div>
           </div>
@@ -290,25 +293,25 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
         <div className="flex px-4 pt-3 bg-[#172131] border-b border-slate-800 gap-2">
           <button
             onClick={() => setActiveTab('ASSIGN')}
-            className={`px-4 py-2 text-xs font-bold rounded-t-lg transition-colors flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-bold rounded-t-lg transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'ASSIGN' 
                 ? 'bg-[#1f2937] text-[#00FF00] border-t border-x border-[#00FF00]/30' 
                 : 'bg-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <LayoutList className="w-4 h-4" />
-            <span>กำหนดพาร์ทลงสเตจ (Assign Parts)</span>
+            <span>{isEn ? 'Assign Parts' : 'กำหนดพาร์ทลงสเตจ (Assign Parts)'}</span>
           </button>
           <button
             onClick={() => setActiveTab('MANAGE')}
-            className={`px-4 py-2 text-xs font-bold rounded-t-lg transition-colors flex items-center gap-2 ${
+            className={`px-4 py-2 text-xs font-bold rounded-t-lg transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'MANAGE' 
                 ? 'bg-[#1f2937] text-[#00FF00] border-t border-x border-[#00FF00]/30' 
                 : 'bg-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Settings2 className="w-4 h-4" />
-            <span>จัดการรายชื่อสเตจ (Manage Stages)</span>
+            <span>{isEn ? 'Manage Stages' : 'จัดการรายชื่อสเตจ (Manage Stages)'}</span>
           </button>
         </div>
 
@@ -321,7 +324,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                   <FolderPlus className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="พิมพ์ชื่อ Stage ใหม่... (e.g. Special Punch)"
+                    placeholder={isEn ? 'Enter new stage name... (e.g. Special Punch)' : 'พิมพ์ชื่อ Stage ใหม่... (e.g. Special Punch)'}
                     value={newStageInput}
                     onChange={e => setNewStageInput(e.target.value)}
                     className="w-full bg-[#111827] border border-slate-700 pl-9 pr-3 py-1.5 text-xs text-white rounded-xl placeholder:text-slate-500 focus:outline-none focus:border-[#00FF00]"
@@ -332,7 +335,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                   className="px-3 py-1.5 bg-[#00FF00] hover:bg-emerald-400 text-black font-black text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm whitespace-nowrap"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>เพิ่ม Stage</span>
+                  <span>{isEn ? 'Add Stage' : 'เพิ่ม Stage'}</span>
                 </button>
               </form>
 
@@ -346,7 +349,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="ค้นหาชื่อพาร์ท หรือสเตจ..."
+                    placeholder={isEn ? 'Search part name or stage...' : 'ค้นหาชื่อพาร์ท หรือสเตจ...'}
                     value={partSearch}
                     onChange={e => setPartSearch(e.target.value)}
                     className="w-full bg-[#111827] border border-slate-700 pl-9 pr-3 py-1.5 text-xs text-slate-200 rounded-xl focus:outline-none focus:border-[#00FF00]"
@@ -357,13 +360,13 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5 text-xs font-mono">
                   <Filter className="w-3.5 h-3.5 text-[#00FF00]" />
-                  <span className="text-slate-400 font-bold">กรองตาม Stage:</span>
+                  <span className="text-slate-400 font-bold">{isEn ? 'Filter Stage:' : 'กรองตาม Stage:'}</span>
                   <select
                     value={stageFilter}
                     onChange={e => setStageFilter(e.target.value)}
                     className="bg-[#111827] text-[#00FF00] border border-slate-700 px-2 py-1 text-xs font-bold rounded-lg focus:outline-none focus:border-[#00FF00] cursor-pointer"
                   >
-                    <option value="ALL">ทุกสเตจ (All Stages)</option>
+                    <option value="ALL">{isEn ? 'All Stages' : 'ทุกสเตจ (All Stages)'}</option>
                     {allStageGroups.map(stg => (
                       <option key={stg} value={stg} className="bg-[#111827] text-white">
                         {stg}
@@ -373,7 +376,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                 </div>
 
                 <div className="text-xs text-slate-400 font-mono">
-                  แสดง <strong className="text-[#00FF00]">{filteredParts.length}</strong> จาก {partMasters.length} รายการ
+                  {isEn ? 'Showing' : 'แสดง'} <strong className="text-[#00FF00]">{filteredParts.length}</strong> {isEn ? 'of' : 'จาก'} {partMasters.length} {isEn ? 'items' : 'รายการ'}
                 </div>
               </div>
             </div>
@@ -384,15 +387,15 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                 <thead>
                   <tr className="bg-[#1a2536] text-slate-300 border-b border-slate-700">
                     <th className="p-3 w-16 text-center font-bold">No</th>
-                    <th className="p-3 font-bold text-white">ชื่อชิ้นส่วนแม่พิมพ์ (Part Name)</th>
-                    <th className="p-3 w-80 font-bold text-[#00FF00]">Stage สเตจที่สังกัด</th>
+                    <th className="p-3 font-bold text-white">{isEn ? 'Part Name' : 'ชื่อชิ้นส่วนแม่พิมพ์ (Part Name)'}</th>
+                    <th className="p-3 w-80 font-bold text-[#00FF00]">{isEn ? 'Assigned Stage' : 'Stage สเตจที่สังกัด'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/80">
                   {filteredParts.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="p-8 text-center text-slate-500 font-sans">
-                        ไม่พบรายการชิ้นส่วนตรงกับคำค้นหา
+                        {isEn ? 'No matching tooling parts found.' : 'ไม่พบรายการชิ้นส่วนตรงกับคำค้นหา'}
                       </td>
                     </tr>
                   ) : (
@@ -444,12 +447,12 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
           <div className="flex-1 min-h-0 flex flex-col bg-[#0c121e]">
             <div className="p-4 bg-[#172131] border-b border-slate-800 flex-none">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-white">เพิ่ม Stage ใหม่</h3>
+                <h3 className="text-sm font-bold text-white">{isEn ? 'Add New Stage' : 'เพิ่ม Stage ใหม่'}</h3>
                 <button
                   type="button"
                   onClick={handleRunSyncCheck}
                   className="px-3 py-1 bg-[#1a2536] hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[10px] font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-sm group"
-                  title="ตรวจสอบความถูกต้องของชื่อ Stage ทั้งระบบและซ่อมแซมความสัมพันธ์ที่เสียหาย"
+                  title={isEn ? 'Validate stage names system-wide and repair broken links' : 'ตรวจสอบความถูกต้องของชื่อ Stage ทั้งระบบและซ่อมแซมความสัมพันธ์ที่เสียหาย'}
                 >
                   <Database className="w-3.5 h-3.5 text-[#00FF00] group-hover:scale-110 transition-transform" />
                   <span>SYNCHRONIZATION CHECK</span>
@@ -460,7 +463,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                   <FolderPlus className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="พิมพ์ชื่อ Stage ใหม่... (e.g. Stage 11: Special Punch)"
+                    placeholder={isEn ? 'Enter new stage name... (e.g. Stage 11: Special Punch)' : 'พิมพ์ชื่อ Stage ใหม่... (e.g. Stage 11: Special Punch)'}
                     value={newStageInput}
                     onChange={e => setNewStageInput(e.target.value)}
                     className="w-full bg-[#111827] border border-slate-700 pl-9 pr-3 py-2 text-xs text-white rounded-xl placeholder:text-slate-500 font-mono focus:outline-none focus:border-[#00FF00]"
@@ -471,7 +474,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                   className="px-4 py-2 bg-[#00FF00] hover:bg-emerald-400 text-black font-black text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>เพิ่ม</span>
+                  <span>{isEn ? 'Add' : 'เพิ่ม'}</span>
                 </button>
               </form>
             </div>
@@ -479,7 +482,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
             <div className="flex-1 min-h-0 p-4 flex flex-col">
               <div className="bg-[#172131] rounded-xl border border-slate-800 flex-1 flex flex-col min-h-0 overflow-hidden">
                 <div className="p-3 border-b border-slate-800 bg-[#1a2536] flex-none">
-                  <h3 className="text-sm font-bold text-white">รายชื่อ Stage ทั้งหมด</h3>
+                  <h3 className="text-sm font-bold text-white">{isEn ? 'All Stage Groups' : 'รายชื่อ Stage ทั้งหมด'}</h3>
                 </div>
                 <ul className="divide-y divide-slate-800/80 flex-1 min-h-0 overflow-y-auto custom-scrollbar p-1 pb-8">
                   {managedStageGroups.map((stg, idx) => (
@@ -494,7 +497,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                               onChange={e => setEditStageInput(e.target.value)}
                               className="bg-[#111827] border border-[#00FF00] text-[#00FF00] px-3 py-1.5 text-sm font-bold rounded-lg focus:outline-none w-full shadow-inner"
                               autoFocus
-                              placeholder="ระบุชื่อ Stage..."
+                              placeholder={isEn ? 'Enter stage name...' : 'ระบุชื่อ Stage...'}
                               onKeyDown={e => {
                                 if (e.key === 'Enter') saveEditedStage(stg);
                                 if (e.key === 'Escape') cancelEditingStage();
@@ -524,19 +527,19 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                               type="button"
                               onClick={() => saveEditedStage(stg)}
                               className="px-2.5 py-1 text-black bg-[#00FF00] hover:bg-[#00FF00]/80 rounded-lg transition-colors font-bold text-xs flex items-center gap-1 cursor-pointer shadow"
-                              title="บันทึก (Enter)"
+                              title={isEn ? 'Save (Enter)' : 'บันทึก (Enter)'}
                             >
                               <Check className="w-3.5 h-3.5" />
-                              <span>บันทึก</span>
+                              <span>{isEn ? 'Save' : 'บันทึก'}</span>
                             </button>
                             <button
                               type="button"
                               onClick={cancelEditingStage}
                               className="px-2.5 py-1 text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors font-bold text-xs flex items-center gap-1 cursor-pointer"
-                              title="ยกเลิก (Esc)"
+                              title={isEn ? 'Cancel (Esc)' : 'ยกเลิก (Esc)'}
                             >
                               <X className="w-3.5 h-3.5" />
-                              <span>ยกเลิก</span>
+                              <span>{isEn ? 'Cancel' : 'ยกเลิก'}</span>
                             </button>
                           </>
                         ) : (
@@ -545,7 +548,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                               type="button"
                               onClick={() => startEditingStage(stg)}
                               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-                              title="แก้ไขชื่อ Stage"
+                              title={isEn ? 'Edit stage name' : 'แก้ไขชื่อ Stage'}
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
@@ -553,7 +556,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                               type="button"
                               onClick={() => handleDeleteStage(stg)}
                               className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-lg transition-colors cursor-pointer"
-                              title="ลบ Stage"
+                              title={isEn ? 'Delete stage' : 'ลบ Stage'}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -571,13 +574,15 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
         {/* Modal Footer */}
         <div className="p-3.5 bg-[#1f2937] border-t border-slate-700 flex items-center justify-between">
           <div className="text-xs text-slate-400">
-            จำนวน Stage ทั้งหมด: <strong className="text-[#00FF00]">{managedStageGroups.length}</strong> กลุ่ม | ชิ้นส่วนทั้งหมด: <strong className="text-white">{partMasters.length}</strong> รายการ
+            {isEn
+              ? <>Total Stages: <strong className="text-[#00FF00]">{managedStageGroups.length}</strong> | Total Parts: <strong className="text-white">{partMasters.length}</strong></>
+              : <>จำนวน Stage ทั้งหมด: <strong className="text-[#00FF00]">{managedStageGroups.length}</strong> กลุ่ม | ชิ้นส่วนทั้งหมด: <strong className="text-white">{partMasters.length}</strong> รายการ</>}
           </div>
           <button
             onClick={onClose}
             className="px-6 py-2 bg-[#00FF00] hover:bg-emerald-400 text-black font-black text-xs rounded-xl shadow-md transition-all cursor-pointer"
           >
-            เสร็จสิ้น (Done)
+            {isEn ? 'Done' : 'เสร็จสิ้น (Done)'}
           </button>
         </div>
 
@@ -590,12 +595,12 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
               handleConfirmDeleteStage(stageToDelete);
             }
           }}
-          title="ยืนยันการลบ Stage (Delete Stage Group)"
+          title={isEn ? 'Confirm Delete Stage' : 'ยืนยันการลบ Stage (Delete Stage Group)'}
           itemName={stageToDelete ? `Stage: ${stageToDelete}` : ''}
-          itemDetails="ชิ้นส่วนและสเปกแม่พิมพ์ที่อยู่ในกลุ่มนี้จะถูกปรับย้ายไปยังสเตจเริ่มต้นอัตโนมัติ"
-          warningText="การลบสเตจนี้จะมีผลต่อการแสดงผลของ Layout, Matrix และ Part Master ทั้งหมดทันที"
-          confirmButtonText="ยืนยันการลบ Stage"
-          cancelButtonText="ยกเลิก"
+          itemDetails={isEn ? 'Parts and die specs in this group will be reassigned automatically to the default stage.' : 'ชิ้นส่วนและสเปกแม่พิมพ์ที่อยู่ในกลุ่มนี้จะถูกปรับย้ายไปยังสเตจเริ่มต้นอัตโนมัติ'}
+          warningText={isEn ? 'Deleting this stage immediately updates Layout, Matrix, and Part Master views.' : 'การลบสเตจนี้จะมีผลต่อการแสดงผลของ Layout, Matrix และ Part Master ทั้งหมดทันที'}
+          confirmButtonText={isEn ? 'Delete Stage' : 'ยืนยันการลบ Stage'}
+          cancelButtonText={isEn ? 'Cancel' : 'ยกเลิก'}
         />
 
         {/* Merge Confirmation Modal (Replaces window.confirm) */}
@@ -608,7 +613,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                     <Layers className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white font-thai">ยืนยันการรวม Stage (Merge Stages)</h3>
+                    <h3 className="text-base font-bold text-white font-thai">{isEn ? 'Confirm Merge Stages' : 'ยืนยันการรวม Stage (Merge Stages)'}</h3>
                     <p className="text-[11px] text-blue-300 font-thai">Duplicate Stage Detected</p>
                   </div>
                 </div>
@@ -621,10 +626,14 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
               </div>
               <div className="p-5 space-y-4">
                 <p className="text-sm text-slate-300 font-thai leading-relaxed">
-                  ชื่อ Stage <strong className="text-[#00FF00]">"{mergeTarget.newName}"</strong> มีอยู่ในระบบอยู่แล้ว
+                  {isEn
+                    ? <>Stage <strong className="text-[#00FF00]">"{mergeTarget.newName}"</strong> already exists.</>
+                    : <>ชื่อ Stage <strong className="text-[#00FF00]">"{mergeTarget.newName}"</strong> มีอยู่ในระบบอยู่แล้ว</>}
                 </p>
                 <div className="p-3 bg-[#172131] border border-slate-700 rounded-lg text-xs text-slate-300">
-                  คุณต้องการรวม (Merge) รายการพาร์ททั้งหมดจากสเตจ <span className="text-rose-400 font-bold font-mono">"{mergeTarget.oldName}"</span> เข้ากับสเตจ <span className="text-[#00FF00] font-bold font-mono">"{mergeTarget.newName}"</span> ใช่หรือไม่?
+                  {isEn
+                    ? <>Do you want to merge all parts from <span className="text-rose-400 font-bold font-mono">"{mergeTarget.oldName}"</span> into <span className="text-[#00FF00] font-bold font-mono">"{mergeTarget.newName}"</span>?</>
+                    : <>คุณต้องการรวม (Merge) รายการพาร์ททั้งหมดจากสเตจ <span className="text-rose-400 font-bold font-mono">"{mergeTarget.oldName}"</span> เข้ากับสเตจ <span className="text-[#00FF00] font-bold font-mono">"{mergeTarget.newName}"</span> ใช่หรือไม่?</>}
                 </div>
                 <div className="flex items-center justify-end gap-3 pt-2">
                   <button
@@ -632,7 +641,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                     onClick={() => setMergeTarget(null)}
                     className="px-4 py-2 rounded-lg text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors cursor-pointer"
                   >
-                    ยกเลิก
+                    {isEn ? 'Cancel' : 'ยกเลิก'}
                   </button>
                   <button
                     type="button"
@@ -641,7 +650,7 @@ export const StageManagementModal: React.FC<StageManagementModalProps> = ({
                     }}
                     className="px-4 py-2 rounded-lg text-xs font-bold text-black bg-[#00FF00] hover:bg-[#00FF00]/80 transition-colors cursor-pointer"
                   >
-                    ยืนยันรวม Stage
+                    {isEn ? 'Confirm Merge' : 'ยืนยันรวม Stage'}
                   </button>
                 </div>
               </div>

@@ -20,6 +20,7 @@ import { DateRangeFilter, isDateInSelectedRange } from '../../components/common/
 import { exportRegrindingHistoryExcel } from '../../utils/excelExport';
 import { UnifiedRegrindJobModal } from '../../components/modals/UnifiedRegrindJobModal';
 import { getUnifiedStatusMeta, resolveUnifiedStatusKey } from '../../utils/statusHelper';
+import { useLanguage } from '../../i18n';
 
 export interface UnifiedMasterLogsViewProps {
   initialLineId?: ProductionLineId;
@@ -37,9 +38,8 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
   const [inspectModalRecord, setInspectModalRecord] = useState<RegrindingRecord | null>(null);
   const [editingTicket, setEditingTicket] = useState<RegrindWorkTicket | null>(null);
 
-  const sysSettings = storageService.getSettings();
-  const sysLanguage = sysSettings?.language || 'TH';
-  const isEnglish = sysLanguage === 'EN';
+  const { language } = useLanguage();
+  const isEnglish = language === 'EN' || language === 'DUAL';
 
   const handleOpenTicketModal = (rec: RegrindingRecord) => {
     const queueTickets = regrindService.getQueueTickets();
@@ -229,7 +229,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
 
   const handleExportCSV = () => {
     if (filteredHistory.length === 0) {
-      alert('ไม่มีข้อมูลสำหรับส่งออก CSV');
+      alert(isEnglish ? 'No records available to export to CSV' : 'ไม่มีข้อมูลสำหรับส่งออก CSV');
       return;
     }
 
@@ -279,7 +279,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col space-y-3 p-2 sm:p-4 overflow-y-auto max-h-[calc(100vh-64px)] custom-scrollbar font-sans text-slate-100">
+    <div className="w-full h-full flex-1 min-h-0 flex flex-col overflow-hidden font-sans text-slate-100">
       {/* Toast Notification */}
       {notification && (
         <div
@@ -305,10 +305,10 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
         </div>
       )}
 
-      {/* Main Container: Pure Log Records (No 31-Day Calendar Tabs) */}
-      <div className="bg-[#0c1018]/95 border border-white/10 rounded-2xl p-3.5 sm:p-4 shadow-2xl backdrop-blur-2xl space-y-3.5">
+      {/* Main Container: Full-Height Log Records */}
+      <div className="flex-1 min-h-0 flex flex-col bg-[#0c1018]/95 border border-white/10 rounded-2xl p-3 sm:p-3.5 shadow-2xl backdrop-blur-2xl gap-2.5">
         {/* Header & Filter Toolbar */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-white/10 pb-3">
+        <div className="shrink-0 flex flex-col xl:flex-row xl:items-center justify-between gap-2 border-b border-white/10 pb-2.5">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
               <FileText className="w-5 h-5" />
@@ -316,31 +316,31 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm sm:text-base font-black text-white tracking-wide">
-                  รายการ Log ประวัติงานเจียระไน & รายการคัดทิ้งทั้งหมด (Unified Master Logs)
+                  {isEnglish
+                    ? 'Master Regrind & Scrap History Logs'
+                    : 'รายการ Log ประวัติงานเจียระไน & รายการคัดทิ้งทั้งหมด (Unified Master Logs)'}
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 font-mono border border-cyan-500/30">
-                  {filteredHistory.length} รายการ
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 font-mono border border-cyan-500/30 whitespace-nowrap">
+                  {filteredHistory.length} {isEnglish ? 'Records' : 'รายการ'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                ฐานข้อมูลบันทึกประวัติการลับคม, ตรวจรับ QC, และคัดทิ้งแม่พิมพ์ทุกไลน์ (E1–E5) ครบถ้วน 100%
+                {isEnglish
+                  ? 'Complete tool sharpening, QC approval, and scrap audit log across all production lines (E1–E5)'
+                  : 'ฐานข้อมูลบันทึกประวัติการลับคม, ตรวจรับ QC, และคัดทิ้งแม่พิมพ์ทุกไลน์ (E1–E5) ครบถ้วน 100%'}
               </p>
             </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
           </div>
         </div>
 
         {/* Filter Bar */}
-        <div className="flex items-center gap-2 flex-wrap bg-slate-950/80 p-2.5 rounded-xl border border-white/5">
+        <div className="shrink-0 flex items-center gap-2 flex-wrap bg-slate-950/80 p-2 rounded-xl border border-white/5">
           {/* Search Bar */}
           <div className="relative flex-1 min-w-[200px] sm:min-w-[240px]">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
             <input
               type="text"
-              placeholder="ค้นหา Tool ID, ชื่อช่าง, Job Code, Lot..."
+              placeholder={isEnglish ? 'Search Tool ID, Operator, Job Code, Lot...' : 'ค้นหา Tool ID, ชื่อช่าง, Job Code, Lot...'}
               value={tableSearch}
               onChange={e => setTableSearch(e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
@@ -352,9 +352,9 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             value={tableToolFilter}
             onChange={e => setTableToolFilter(e.target.value)}
             className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-cyan-300 focus:border-cyan-500 focus:outline-none font-bold cursor-pointer max-w-[180px]"
-            title="กรองตามรหัสพั้นช์/ดาย (Tool ID)"
+            title={isEnglish ? 'Filter by Tool ID' : 'กรองตามรหัสพั้นช์/ดาย (Tool ID)'}
           >
-            <option value="ALL">ทุก Tool ID (All Tools)</option>
+            <option value="ALL">{isEnglish ? 'All Tools' : 'ทุก Tool ID (All Tools)'}</option>
             {availableToolOptions.map(tool => (
               <option key={tool.code} value={tool.code}>
                 {tool.label}
@@ -367,9 +367,9 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             value={tableOperatorFilter}
             onChange={e => setTableOperatorFilter(e.target.value)}
             className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 focus:border-cyan-500 focus:outline-none font-bold cursor-pointer max-w-[180px]"
-            title="กรองตามชื่อช่างผู้เจียร (Operator Name)"
+            title={isEnglish ? 'Filter by Operator' : 'กรองตามชื่อช่างผู้เจียร (Operator Name)'}
           >
-            <option value="ALL">ทุกช่างเจียร (All Operators)</option>
+            <option value="ALL">{isEnglish ? 'All Operators' : 'ทุกช่างเจียร (All Operators)'}</option>
             {availableOperatorOptions.map(op => (
               <option key={op} value={op}>
                 👤 {op}
@@ -383,7 +383,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             onChange={e => setTableLineFilter(e.target.value)}
             className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:border-cyan-500 focus:outline-none font-bold cursor-pointer"
           >
-            <option value="ALL">ทุกลายน์ (All Lines)</option>
+            <option value="ALL">{isEnglish ? 'All Lines (E1–E5)' : 'ทุกลายน์ (All Lines)'}</option>
             {linesList.map(l => (
               <option key={l} value={l}>
                 LINE {l}
@@ -391,19 +391,19 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             ))}
           </select>
 
-          {/* Status Filter (Canonical 6 Operational States) */}
+          {/* Status Filter (Canonical Operational States) */}
           <select
             value={tableStatusFilter}
             onChange={e => setTableStatusFilter(e.target.value)}
             className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:border-cyan-500 focus:outline-none font-bold cursor-pointer"
           >
-            <option value="ALL">ทุกสถานะ (All Statuses)</option>
-            <option value="EMERGENCY">🚨 งานด่วน #1 (Urgent Job)</option>
-            <option value="WAITING">⏳ รอคิวเจียร (Waiting Queue)</option>
-            <option value="POSTPONED">🟡 งานเลื่อน (Postponed / Shifted)</option>
-            <option value="READY">🔵 งานเจียรเสร็จแล้ว (รอตรวจ QC)</option>
-            <option value="COMPLETED">🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)</option>
-            <option value="SCRAP">❌ ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร)</option>
+            <option value="ALL">{isEnglish ? 'All Statuses' : 'ทุกสถานะ (All Statuses)'}</option>
+            <option value="EMERGENCY">{isEnglish ? '🚨 Urgent #1' : '🚨 งานด่วน #1 (Urgent Job)'}</option>
+            <option value="WAITING">{isEnglish ? '⏳ Waiting Queue' : '⏳ รอคิวเจียร (Waiting Queue)'}</option>
+            <option value="POSTPONED">{isEnglish ? '🟡 Postponed' : '🟡 งานเลื่อน (Postponed / Shifted)'}</option>
+            <option value="READY">{isEnglish ? '🔵 Ready for QC' : '🔵 งานเจียรเสร็จแล้ว (รอตรวจ QC)'}</option>
+            <option value="COMPLETED">{isEnglish ? '🟢 QC Passed (Done)' : '🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)'}</option>
+            <option value="SCRAP">{isEnglish ? '❌ Cancelled / Scrapped' : '❌ ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร)'}</option>
           </select>
 
           {/* Date Range Filter */}
@@ -437,61 +437,63 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                 setHistoryStartDate('');
                 setHistoryEndDate('');
               }}
-              className="px-2.5 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
-              title="ล้างตัวกรองทั้งหมด"
+              className="px-2.5 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              title={isEnglish ? 'Clear all filters' : 'ล้างตัวกรองทั้งหมด'}
             >
               <X className="w-3.5 h-3.5" />
-              <span>ล้างค่า</span>
+              <span>{isEnglish ? 'Clear' : 'ล้างค่า'}</span>
             </button>
           )}
 
           {/* Excel Export */}
           <button
             type="button"
-            onClick={() => exportRegrindingHistoryExcel(filteredHistory, tableLineFilter)}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer ml-auto"
-            title="ส่งออกรายงาน Excel (.xlsx)"
+            onClick={() => exportRegrindingHistoryExcel(filteredHistory, tableLineFilter, language)}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer ml-auto whitespace-nowrap"
+            title={isEnglish ? 'Export Excel Report (.xlsx)' : 'ส่งออกรายงาน Excel (.xlsx)'}
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Excel</span>
           </button>
         </div>
 
-        {/* Master Log Table - Full 20 Column Engineering Matrix */}
-        <div className="overflow-x-auto max-h-[600px] custom-scrollbar rounded-xl border border-white/10">
-          <table className="min-w-[2000px] w-full text-left text-[11px] border-collapse">
+        {/* Master Log Table - Full 23 Column Engineering Matrix (Stretches to Fill Remaining Height) */}
+        <div className="flex-1 min-h-0 overflow-auto custom-scrollbar rounded-xl border border-white/10 bg-slate-950/40">
+          <table className="w-full min-w-max text-left text-[11px] border-collapse">
             <thead className="sticky top-0 z-10 bg-[#090d16] text-slate-300 font-mono border-b border-slate-800 shadow-md">
               <tr>
-                <th className="p-2.5 text-center w-10">#</th>
-                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Status' : 'สถานะ'}</th>
-                <th className="p-2.5 whitespace-nowrap">Job Code</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Scheduled Date' : 'วันที่ลงคิว'}</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Grind Finished Date' : 'วันที่เจียรเสร็จสิ้น'}</th>
-                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Line' : 'ไลน์'}</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Die Code' : 'แม่พิมพ์'}</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Part Name' : 'ชื่อชิ้นงาน'}</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Drawing' : 'Drawing Code'}</th>
-                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Qty' : 'จำนวน'}</th>
-                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'New Spec' : 'สเปคซื้อใหม่'}</th>
-                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Current Height' : 'ก่อนเจียร'}</th>
-                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Height After' : 'หลังเจียร'}</th>
-                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Scrap Limit' : 'ระยะ Min'}</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Defect Reason / สาเหตุ' : 'สาเหตุ / Defect Reason'}</th>
-                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Labor Time (min)' : 'เวลาเจียร (นาที)'}</th>
-                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Labor Cost' : 'ค่าแรง'}</th>
-                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'New Price' : 'ราคาซื้อใหม่'}</th>
-                <th className="p-2.5 text-right whitespace-nowrap">{isEnglish ? 'Net Saving' : 'ประหยัดสุทธิ'}</th>
-                <th className="p-2.5 text-center whitespace-nowrap">Saving %</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Operator' : 'ช่างเจียร'}</th>
-                <th className="p-2.5 whitespace-nowrap">{isEnglish ? 'Remarks' : 'หมายเหตุ'}</th>
-                <th className="p-2.5 text-center whitespace-nowrap">{isEnglish ? 'Actions' : 'จัดการ'}</th>
+                <th className="px-2 py-2.5 text-center w-9">#</th>
+                <th className="px-2 py-2.5 text-center whitespace-nowrap">{isEnglish ? 'Status' : 'สถานะ'}</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">Job Code</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">{isEnglish ? 'Scheduled Date' : 'วันที่ลงคิว'}</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">{isEnglish ? 'Completed Date' : 'วันที่เจียรเสร็จสิ้น'}</th>
+                <th className="px-2 py-2.5 text-center whitespace-nowrap">{isEnglish ? 'Line' : 'ไลน์'}</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">{isEnglish ? 'Die Code' : 'แม่พิมพ์'}</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">{isEnglish ? 'Part Name' : 'ชื่อชิ้นงาน'}</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">{isEnglish ? 'Drawing Code' : 'Drawing Code'}</th>
+                <th className="px-2 py-2.5 text-center whitespace-nowrap">{isEnglish ? 'Qty' : 'จำนวน'}</th>
+                <th className="px-2 py-2.5 text-right whitespace-nowrap">{isEnglish ? 'New Spec' : 'สเปคซื้อใหม่'}</th>
+                <th className="px-2 py-2.5 text-right whitespace-nowrap">{isEnglish ? 'Before Grind' : 'ก่อนเจียร'}</th>
+                <th className="px-2 py-2.5 text-right whitespace-nowrap">{isEnglish ? 'After Grind' : 'หลังเจียร'}</th>
+                <th className="px-2 py-2.5 text-right whitespace-nowrap">{isEnglish ? 'Scrap Limit' : 'ระยะ Min'}</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">{isEnglish ? 'Defect Reason' : 'สาเหตุ / Defect Reason'}</th>
+                <th className="px-2 py-2.5 text-center whitespace-nowrap">{isEnglish ? 'Grind Time (min)' : 'เวลาเจียร (นาที)'}</th>
+                <th className="px-2 py-2.5 text-right whitespace-nowrap">{isEnglish ? 'Labor Cost' : 'ค่าแรง'}</th>
+                <th className="px-2 py-2.5 text-right whitespace-nowrap">{isEnglish ? 'New Price' : 'ราคาซื้อใหม่'}</th>
+                <th className="px-2 py-2.5 text-right whitespace-nowrap">{isEnglish ? 'Net Saving' : 'ประหยัดสุทธิ'}</th>
+                <th className="px-2 py-2.5 text-center whitespace-nowrap">Saving %</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">{isEnglish ? 'Operator' : 'ช่างเจียร'}</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">{isEnglish ? 'Remarks' : 'หมายเหตุ'}</th>
+                <th className="px-2 py-2.5 text-center whitespace-nowrap">{isEnglish ? 'Actions' : 'จัดการ'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80 bg-slate-950/40 font-mono">
               {filteredHistory.length === 0 ? (
                 <tr>
                   <td colSpan={23} className="p-8 text-center text-slate-500 font-sans">
-                    ไม่พบข้อมูลงานเจียระไนที่ตรงกับเงื่อนไขการค้นหา
+                    {isEnglish
+                      ? 'No regrind or scrap records match your current search filters'
+                      : 'ไม่พบข้อมูลงานเจียระไนที่ตรงกับเงื่อนไขการค้นหา'}
                   </td>
                 </tr>
               ) : (
@@ -506,15 +508,23 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                   const afterH = rec.currentLength !== undefined ? rec.currentLength : (rec.afterGrindMm || 62.40);
                   const scrapLimit = rec.scrapLimitMm !== undefined ? rec.scrapLimitMm : (partMaster?.scrapLimitMm || 61.00);
                   
-                  const reasonLabel = rec.defectReason 
-                    ? (rec.defectReason === 'NORMAL_WEAR' ? 'NORMAL WEAR (สึกหรอปกติ)'
-                      : rec.defectReason === 'BURR_EXCESSIVE' ? 'BURR EXCESSIVE (ครีบสูงเกิน)'
-                      : rec.defectReason === 'CHIPPED' ? 'CHIPPED (คมบิ่น/กะเทาะ)'
-                      : rec.defectReason === 'GALLING_SCRATCHED' ? 'GALLING (ผิวเป็นรอย/เศษติด)'
-                      : rec.defectReason === 'OUT_OF_TOLERANCE' ? 'OUT OF SPEC (หลุดสเปค Min)'
-                      : rec.defectReason === 'BROKEN' ? 'BROKEN (แตกหักชำรุด)'
-                      : rec.defectReason)
-                    : 'NORMAL WEAR (สึกหรอปกติ)';
+                  const reasonLabel = rec.defectReason
+                    ? (isEnglish
+                        ? (rec.defectReason === 'NORMAL_WEAR' ? 'NORMAL WEAR'
+                          : rec.defectReason === 'BURR_EXCESSIVE' ? 'EXCESSIVE BURR'
+                          : rec.defectReason === 'CHIPPED' ? 'CHIPPED EDGE'
+                          : rec.defectReason === 'GALLING_SCRATCHED' ? 'GALLING / SCRATCHED'
+                          : rec.defectReason === 'OUT_OF_TOLERANCE' ? 'OUT OF SPEC (BELOW MIN)'
+                          : rec.defectReason === 'BROKEN' ? 'BROKEN / DAMAGED'
+                          : rec.defectReason)
+                        : (rec.defectReason === 'NORMAL_WEAR' ? 'NORMAL WEAR (สึกหรอปกติ)'
+                          : rec.defectReason === 'BURR_EXCESSIVE' ? 'BURR EXCESSIVE (ครีบสูงเกิน)'
+                          : rec.defectReason === 'CHIPPED' ? 'CHIPPED (คมบิ่น/กะเทาะ)'
+                          : rec.defectReason === 'GALLING_SCRATCHED' ? 'GALLING (ผิวเป็นรอย/เศษติด)'
+                          : rec.defectReason === 'OUT_OF_TOLERANCE' ? 'OUT OF SPEC (หลุดสเปค Min)'
+                          : rec.defectReason === 'BROKEN' ? 'BROKEN (แตกหักชำรุด)'
+                          : rec.defectReason))
+                    : (isEnglish ? 'NORMAL WEAR' : 'NORMAL WEAR (สึกหรอปกติ)');
 
                   const laborMinutes = rec.laborTimeMinutes !== undefined
                     ? rec.laborTimeMinutes
@@ -538,19 +548,19 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                     : (newPrice > 0 ? `${((netSaving / newPrice) * 100).toFixed(1)}%` : '0%');
 
                   const operator = rec.performedBy || rec.technicianName || 'Thanakorn Phonpayung';
-                  const noteText = rec.note || rec.remarks || 'ลับคมด้วยหิน CBN #400';
+                  const noteText = rec.note || rec.remarks || (isEnglish ? 'Sharpened with CBN #400 wheel' : 'ลับคมด้วยหิน CBN #400');
 
                   return (
                   <tr key={rec.id ? `log-${rec.id}-${idx}` : `idx-${idx}`} className="hover:bg-white/[0.04] transition-colors">
                     {/* 1. Row No */}
-                    <td className="p-2.5 text-center font-bold text-cyan-400/80">
+                    <td className="px-2 py-2 text-center font-bold text-cyan-400/80">
                       {idx + 1}
                     </td>
 
                     {/* 2. Status */}
-                    <td className="p-2.5 text-center whitespace-nowrap">
+                    <td className="px-2 py-2 text-center whitespace-nowrap">
                       {(() => {
-                        const meta = getUnifiedStatusMeta(rec);
+                        const meta = getUnifiedStatusMeta(rec, language);
                         return (
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-mono font-bold whitespace-nowrap shadow-sm ${
@@ -566,17 +576,17 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                     </td>
 
                     {/* 3. Job Code */}
-                    <td className="p-2.5 whitespace-nowrap">
+                    <td className="px-2 py-2 whitespace-nowrap">
                       <span className="font-bold text-cyan-300 block text-xs">{rec.jobCode || 'N/A'}</span>
                     </td>
 
                     {/* 4. Scheduled Date */}
-                    <td className="p-2.5 text-slate-300 text-[11px] whitespace-nowrap">
+                    <td className="px-2 py-2 text-slate-300 text-[11px] whitespace-nowrap">
                       {rec.regrindDate || (rec.timestamp ? rec.timestamp.substring(0, 10) : '-')}
                     </td>
 
                     {/* 4.1. Grind Finished Date */}
-                    <td className="p-2.5 whitespace-nowrap">
+                    <td className="px-2 py-2 whitespace-nowrap">
                       {rec.completedDate ? (
                         <span className="text-emerald-300 font-bold flex items-center gap-1">
                           <span>✓</span>
@@ -588,95 +598,95 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                     </td>
 
                     {/* 5. Line */}
-                    <td className="p-2.5 text-center whitespace-nowrap">
+                    <td className="px-2 py-2 text-center whitespace-nowrap">
                       <span className="text-white font-bold block text-xs">{rec.lineId || rec.lineLastUsed || 'E1'}</span>
                     </td>
 
                     {/* 6. Die Code */}
-                    <td className="p-2.5 text-slate-300 font-bold whitespace-nowrap">
+                    <td className="px-2 py-2 text-slate-300 font-bold whitespace-nowrap">
                       {rec.dieCode || rec.finDie || 'FD-E1-07'}
                     </td>
 
                     {/* 7. Part Name */}
-                    <td className="p-2.5 font-sans whitespace-nowrap">
+                    <td className="px-2 py-2 font-sans whitespace-nowrap">
                       <span className="font-bold text-slate-100 block text-xs">{rec.partName}</span>
                       <span className="text-[10px] text-cyan-400 font-mono">{rec.partCode}</span>
                     </td>
 
                     {/* 8. Drawing Code */}
-                    <td className="p-2.5 font-mono text-cyan-200 font-bold whitespace-nowrap">
+                    <td className="px-2 py-2 font-mono text-cyan-200 font-bold whitespace-nowrap">
                       {drawingNo}
                     </td>
 
                     {/* 9. Qty */}
-                    <td className="p-2.5 text-center font-bold text-slate-200 whitespace-nowrap">
+                    <td className="px-2 py-2 text-center font-bold text-slate-200 whitespace-nowrap">
                       {qty}
                     </td>
 
                     {/* 10. New Spec mm */}
-                    <td className="p-2.5 text-right font-bold text-slate-300 whitespace-nowrap">
+                    <td className="px-2 py-2 text-right font-bold text-slate-300 whitespace-nowrap">
                       {newSpec.toFixed(2)} mm
                     </td>
 
                     {/* 11. Current Height mm */}
-                    <td className="p-2.5 text-right font-bold text-amber-300 whitespace-nowrap">
+                    <td className="px-2 py-2 text-right font-bold text-amber-300 whitespace-nowrap">
                       {currentH.toFixed(2)} mm
                     </td>
 
                     {/* 12. Height After Regrind mm */}
-                    <td className="p-2.5 text-right font-bold text-emerald-400 whitespace-nowrap">
+                    <td className="px-2 py-2 text-right font-bold text-emerald-400 whitespace-nowrap">
                       {afterH.toFixed(2)} mm
                     </td>
 
                     {/* 13. Scrap Limit mm */}
-                    <td className="p-2.5 text-right font-bold text-rose-400 whitespace-nowrap">
+                    <td className="px-2 py-2 text-right font-bold text-rose-400 whitespace-nowrap">
                       {scrapLimit.toFixed(2)} mm
                     </td>
 
                     {/* 14. Defect / Grind Reason */}
-                    <td className="p-2.5 whitespace-nowrap">
+                    <td className="px-2 py-2 whitespace-nowrap">
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-amber-300 border border-slate-700">
                         {reasonLabel}
                       </span>
                     </td>
 
                     {/* 15. Labor Time (Minutes strictly) */}
-                    <td className="p-2.5 text-center font-bold text-sky-300 whitespace-nowrap">
+                    <td className="px-2 py-2 text-center font-bold text-sky-300 whitespace-nowrap">
                       {laborMinutes}
                     </td>
 
                     {/* 16. Labor Cost THB */}
-                    <td className="p-2.5 text-right font-bold text-amber-300 whitespace-nowrap">
+                    <td className="px-2 py-2 text-right font-bold text-amber-300 whitespace-nowrap">
                       ฿{laborCost.toLocaleString()}
                     </td>
 
                     {/* 17. New Part Price THB */}
-                    <td className="p-2.5 text-right font-bold text-slate-200 whitespace-nowrap">
+                    <td className="px-2 py-2 text-right font-bold text-slate-200 whitespace-nowrap">
                       ฿{newPrice.toLocaleString()}
                     </td>
 
                     {/* 18. Net Saving THB */}
-                    <td className="p-2.5 text-right font-bold text-emerald-400 whitespace-nowrap">
+                    <td className="px-2 py-2 text-right font-bold text-emerald-400 whitespace-nowrap">
                       ฿{netSaving.toLocaleString()}
                     </td>
 
                     {/* 19. Saving % */}
-                    <td className="p-2.5 text-center font-bold text-cyan-300 whitespace-nowrap">
+                    <td className="px-2 py-2 text-center font-bold text-cyan-300 whitespace-nowrap">
                       {savingPct}
                     </td>
 
                     {/* 20. Operator Name */}
-                    <td className="p-2.5 text-slate-200 font-sans whitespace-nowrap">
+                    <td className="px-2 py-2 text-slate-200 font-sans whitespace-nowrap">
                       👤 {operator}
                     </td>
 
                     {/* 21. Remarks / Notes */}
-                    <td className="p-2.5 text-slate-400 font-sans text-[11px] max-w-[200px] truncate" title={noteText}>
+                    <td className="px-2 py-2 text-slate-400 font-sans text-[11px] max-w-[200px] truncate" title={noteText}>
                       {noteText}
                     </td>
 
                     {/* 22. Actions */}
-                    <td className="p-2.5 text-center whitespace-nowrap">
+                    <td className="px-2 py-2 text-center whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => handleOpenTicketModal(rec)}
@@ -697,12 +707,14 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
 
         {/* Pagination bar */}
         {filteredHistory.length > 0 && (
-          <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-white/5 font-mono">
+          <div className="shrink-0 flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-white/5 font-mono">
             <span>
-              แสดง 1 ถึง {Math.min(tablePageSize, filteredHistory.length)} จากทั้งหมด {filteredHistory.length} รายการ
+              {isEnglish
+                ? `Showing 1 to ${Math.min(tablePageSize, filteredHistory.length)} of ${filteredHistory.length} entries`
+                : `แสดง 1 ถึง ${Math.min(tablePageSize, filteredHistory.length)} จากทั้งหมด ${filteredHistory.length} รายการ`}
             </span>
             <div className="flex items-center gap-2">
-              <span>แสดงแถว:</span>
+              <span>{isEnglish ? 'Rows per page:' : 'แสดงแถว:'}</span>
               <select
                 value={tablePageSize}
                 onChange={e => setTablePageSize(Number(e.target.value))}
@@ -732,10 +744,14 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <FileText className="w-5 h-5 text-cyan-400" />
-                  <span>บันทึกงานเจียระไน: {inspectModalRecord.jobCode}</span>
+                  <span>
+                    {isEnglish
+                      ? `Regrind Job Record: ${inspectModalRecord.jobCode}`
+                      : `บันทึกงานเจียระไน: ${inspectModalRecord.jobCode}`}
+                  </span>
                 </h3>
                 <span className="text-xs text-slate-400 font-mono">
-                  LINE {inspectModalRecord.lineId || inspectModalRecord.lineLastUsed} • แม่พิมพ์{' '}
+                  LINE {inspectModalRecord.lineId || inspectModalRecord.lineLastUsed} • {isEnglish ? 'Die' : 'แม่พิมพ์'}{' '}
                   {inspectModalRecord.dieCode || inspectModalRecord.finDie}
                 </span>
               </div>
@@ -749,7 +765,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-slate-400 block">สถานะ:</span>
+                <span className="text-slate-400 block">{isEnglish ? 'Status:' : 'สถานะ:'}</span>
                 <span
                   className={`inline-block px-2.5 py-0.5 rounded-full font-bold font-mono text-[11px] mt-1 ${
                     inspectModalRecord.status === 'READY TO USE' || inspectModalRecord.status === 'COMPLETED'
@@ -759,7 +775,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                       : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                   }`}
                 >
-                  {inspectModalRecord.status}
+                  {getUnifiedStatusMeta(inspectModalRecord, language).label}
                 </span>
               </div>
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
@@ -769,17 +785,17 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                 </span>
               </div>
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-slate-400 block">ชื่อชิ้นส่วน & รหัส:</span>
+                <span className="text-slate-400 block">{isEnglish ? 'Part Name & Code:' : 'ชื่อชิ้นส่วน & รหัส:'}</span>
                 <span className="font-bold text-slate-200 mt-1 block">
                   {inspectModalRecord.partName} ({inspectModalRecord.partCode})
                 </span>
               </div>
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-slate-400 block">ช่างผู้ปฏิบัติงาน:</span>
+                <span className="text-slate-400 block">{isEnglish ? 'Operator:' : 'ช่างผู้ปฏิบัติงาน:'}</span>
                 <span className="font-bold text-slate-200 mt-1 block">{inspectModalRecord.performedBy || '-'}</span>
               </div>
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-slate-400 block">ความยาวก่อน &rarr; หลังเจียร:</span>
+                <span className="text-slate-400 block">{isEnglish ? 'Before → After Length:' : 'ความยาวก่อน → หลังเจียร:'}</span>
                 <span className="font-mono font-bold text-slate-100 mt-1 block">
                   {(inspectModalRecord.previousLength !== undefined
                     ? inspectModalRecord.previousLength
@@ -794,7 +810,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                 </span>
               </div>
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-slate-400 block">ระยะที่เจียรออก:</span>
+                <span className="text-slate-400 block">{isEnglish ? 'Grind Removed:' : 'ระยะที่เจียรออก:'}</span>
                 <span className="font-mono font-bold text-cyan-300 mt-1 block">
                   -{(inspectModalRecord.actualGrindingRemovedMm !== undefined
                     ? inspectModalRecord.actualGrindingRemovedMm
@@ -806,14 +822,14 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                 </span>
               </div>
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-slate-400 block">รอบการเจียร:</span>
+                <span className="text-slate-400 block">{isEnglish ? 'Regrind Cycle:' : 'รอบการเจียร:'}</span>
                 <span className="font-mono text-slate-200 mt-1 block">
-                  รอบที่ {inspectModalRecord.regrindCountAfter || inspectModalRecord.regrindCycleCount || 1} /{' '}
+                  {isEnglish ? 'Cycle' : 'รอบที่'} {inspectModalRecord.regrindCountAfter || inspectModalRecord.regrindCycleCount || 1} /{' '}
                   {inspectModalRecord.maxAllowedCycles || 4}
                 </span>
               </div>
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <span className="text-slate-400 block">ผลการตรวจรับ QC:</span>
+                <span className="text-slate-400 block">{isEnglish ? 'QC Result:' : 'ผลการตรวจรับ QC:'}</span>
                 <span className="font-bold text-emerald-400 mt-1 block">
                   {inspectModalRecord.inspectionResult || inspectModalRecord.inspectionStatus || 'PASSED'}
                 </span>
@@ -821,8 +837,10 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
             </div>
 
             <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-300">
-              <span className="text-slate-400 block mb-1 font-bold">หมายเหตุ / ข้อมูลเพิ่มเติม:</span>
-              <p className="italic text-slate-200">{inspectModalRecord.note || 'ไม่มีหมายเหตุเพิ่มเติม'}</p>
+              <span className="text-slate-400 block mb-1 font-bold">{isEnglish ? 'Remarks / Notes:' : 'หมายเหตุ / ข้อมูลเพิ่มเติม:'}</span>
+              <p className="italic text-slate-200">
+                {inspectModalRecord.note || (isEnglish ? 'No additional remarks' : 'ไม่มีหมายเหตุเพิ่มเติม')}
+              </p>
             </div>
 
             <div className="flex justify-end pt-2">
@@ -830,7 +848,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
                 onClick={() => setInspectModalRecord(null)}
                 className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold cursor-pointer"
               >
-                ปิดหน้าต่าง
+                {isEnglish ? 'Close' : 'ปิดหน้าต่าง'}
               </button>
             </div>
           </div>
@@ -852,6 +870,7 @@ export const UnifiedMasterLogsView: React.FC<UnifiedMasterLogsViewProps> = ({
           setNotification({ type: 'success', message: msg });
         }}
         initialLineId={initialLineId}
+        onOpenFullGuide={onNavigate ? () => onNavigate('user-guide') : undefined}
       />
     </div>
   );

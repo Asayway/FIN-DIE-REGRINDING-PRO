@@ -31,6 +31,7 @@ import {
 import { CostSavingCalculationService } from '../../services/costSavingCalculationService';
 import { regrindService } from '../../services/regrindService';
 import { CostStepLadderChart } from './CostStepLadderChart';
+import { useLanguage } from '../../i18n';
 
 interface StepByStepJobCostSimulatorProps {
   activeMachines?: CostRateMasterItem[];
@@ -75,6 +76,8 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
   activeMachines = [],
   onApplyRateToMachine
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [inputData, setInputData] = useState<TrueJobCostSimulationInput>(DEFAULT_SIMULATION_INPUT);
   const [selectedPreset, setSelectedPreset] = useState<string>('burring');
   const [copiedNotice, setCopiedNotice] = useState<boolean>(false);
@@ -125,7 +128,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
           maintenanceReservePerHour: 25,
           ratedPowerKw: 11.0,
           loadFactorPercent: 65,
-          machineRunningHours: 0.8,
+          machineRunningHours: 0.85,
           baseLaborRatePerHour: 140,
           skillGrade: 'GRADE_B',
           overtimeCondition: 'NORMAL',
@@ -147,28 +150,90 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
     }
   };
 
+  // Bidirectional auto-sync: Machine Hours === Setup Hours + Direct Hours
+  const handleMachineHoursChange = (val: number) => {
+    const cleanTotal = Math.max(0, Number((val || 0).toFixed(2)));
+    setInputData(prev => {
+      const nextSetup = cleanTotal < prev.setupLaborHours ? cleanTotal : prev.setupLaborHours;
+      const nextDirect = Number(Math.max(0, cleanTotal - nextSetup).toFixed(2));
+      return {
+        ...prev,
+        machineRunningHours: cleanTotal,
+        setupLaborHours: nextSetup,
+        directLaborHours: nextDirect
+      };
+    });
+  };
+
+  const handleSetupHoursChange = (val: number) => {
+    const cleanSetup = Math.max(0, Number((val || 0).toFixed(2)));
+    setInputData(prev => ({
+      ...prev,
+      setupLaborHours: cleanSetup,
+      machineRunningHours: Number((cleanSetup + prev.directLaborHours).toFixed(2))
+    }));
+  };
+
+  const handleDirectHoursChange = (val: number) => {
+    const cleanDirect = Math.max(0, Number((val || 0).toFixed(2)));
+    setInputData(prev => ({
+      ...prev,
+      directLaborHours: cleanDirect,
+      machineRunningHours: Number((prev.setupLaborHours + cleanDirect).toFixed(2))
+    }));
+  };
+
   // Import from an active queue ticket
   const handleImportFromQueueTicket = (ticketId: string) => {
     const ticket = queueTickets.find(t => t.id === ticketId);
     if (!ticket) return;
 
+    const totalHours = Math.max(0.1, Number((ticket.laborHours || 1.5).toFixed(2)));
+    const setupHrs = totalHours < 0.35 ? Number((totalHours * 0.3).toFixed(2)) : 0.35;
+    const directHrs = Number(Math.max(0, totalHours - setupHrs).toFixed(2));
+
     setInputData(prev => ({
       ...prev,
-      machineRunningHours: ticket.laborHours || 1.5,
-      setupLaborHours: 0.35,
-      directLaborHours: Math.max(0.2, (ticket.laborHours || 1.5) - 0.35),
+      machineRunningHours: Number((setupHrs + directHrs).toFixed(2)),
+      setupLaborHours: setupHrs,
+      directLaborHours: directHrs,
       quantityPieces: ticket.quantity || 1,
       newPurchasePricePerPiece: ticket.newPurchasePrice || prev.newPurchasePricePerPiece
     }));
   };
 
+  const isLoss = results.step5NetCostSaving < 0;
+  const formattedNetSaving = isLoss
+    ? `-฿${Math.abs(results.step5NetCostSaving).toLocaleString()}`
+    : `฿${results.step5NetCostSaving.toLocaleString()}`;
+
   const handleCopySummary = () => {
-    const text = `=== สรุปการคำนวณต้นทุนงานเจียรจริง (True Grinding Cost Summary) ===
+    const text = isEn
+      ? `=== True Grinding Cost Summary ===
+Parts: ${inputData.quantityPieces} pcs (New Purchase Equivalent: ฿${(inputData.quantityPieces * inputData.newPurchasePricePerPiece).toLocaleString()})
+1. Machine & Electricity Cost: ฿${results.step1TotalMachineAndPower.toLocaleString()} (Machine Rate: ฿${results.totalMachineRatePerHour}/hr x ${inputData.machineRunningHours} hr)
+   - Machine Depreciation: ฿${results.step1MachineDepreciationCost.toLocaleString()}
+   - Electricity (${inputData.ratedPowerKw}kW @${inputData.loadFactorPercent}% load): ฿${results.step1ElectricityCost.toLocaleString()}
+   - Maintenance Reserve: ฿${results.step1MaintenanceCost.toLocaleString()}
+2. Operator Labor Cost: ฿${results.step2TotalLaborCost.toLocaleString()} (Effective Rate: ฿${results.effectiveOtRatePerHour}/hr, OT: ${results.otMultiplier}x, Skill: +฿${results.skillAllowancePerHour}/hr)
+   - Setup Labor: ฿${results.step2SetupLaborCost.toLocaleString()}
+   - Direct Grinding Labor: ฿${results.step2DirectLaborCost.toLocaleString()}${results.laborDoubleCountingPrevented ? ' [Included in Machine Rate]' : ''}
+3. Grinding Wheel & Consumables: ฿${results.step3TotalConsumables.toLocaleString()}
+   - CBN/Diamond Wheel Wear: ฿${results.step3WheelWearCost.toLocaleString()}
+   - Diamond Dresser Wear: ฿${results.step3DressingToolCost.toLocaleString()}
+   - Sundries (Wipes/Brushes/Paste): ฿${results.step3SundriesCost.toLocaleString()}
+   - Synthetic Coolant: ฿${results.step3CoolantCost.toLocaleString()}
+4. QC Inspection & Workshop Utilities: ฿${results.step4TotalQcAndOverhead.toLocaleString()}
+---------------------------------------------------------------
+* Grand Total Job Cost: ฿${results.step5GrandTotalJobCost.toLocaleString()}
+* Cost per Piece: ฿${results.step5CostPerPiece.toLocaleString()} / pc
+* Net Cost Saving vs. New Purchase: ${formattedNetSaving} (${results.step5SavingPercentage}% ${isLoss ? 'LOSS - Exceeds New Price' : 'saved'})`
+      : `=== สรุปการคำนวณต้นทุนงานเจียรจริง (True Grinding Cost Summary) ===
 ชิ้นงาน: จำนวน ${inputData.quantityPieces} ชิ้น (ราคาซื้อใหม่เทียบเคียง: ฿${(inputData.quantityPieces * inputData.newPurchasePricePerPiece).toLocaleString()})
 1. ต้นทุนเครื่องจักร & ไฟฟ้า: ฿${results.step1TotalMachineAndPower.toLocaleString()} (เรทเครื่อง: ฿${results.totalMachineRatePerHour}/ชม. x ${inputData.machineRunningHours} ชม.)
    - ค่าเสื่อมเครื่อง: ฿${results.step1MachineDepreciationCost.toLocaleString()}
    - ค่าไฟฟ้า (${inputData.ratedPowerKw}kW @${inputData.loadFactorPercent}% load): ฿${results.step1ElectricityCost.toLocaleString()}
-   - ค่าสำรองบำรุงรักษา: ฿${results.step1MaintenanceCost.toLocaleString()}
+   - ค่าสำรองซ่อมบำรุงเครื่อง: ฿${results.step1MaintenanceCost.toLocaleString()}
 2. ต้นทุนค่าแรงพนักงาน: ฿${results.step2TotalLaborCost.toLocaleString()} (เรทจริง: ฿${results.effectiveOtRatePerHour}/ชม., OT: ${results.otMultiplier}x, สกิล: +฿${results.skillAllowancePerHour}/ชม.)
    - ค่าแรง Setup: ฿${results.step2SetupLaborCost.toLocaleString()}
    - ค่าแรงเจียรตรง: ฿${results.step2DirectLaborCost.toLocaleString()}${results.laborDoubleCountingPrevented ? ' [รวมในค่าเครื่องแล้ว]' : ''}
@@ -177,11 +242,11 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
    - สึกหรอหัวกรีดเพชร: ฿${results.step3DressingToolCost.toLocaleString()}
    - ผ้าเช็ด/แปรง/ผงขัด: ฿${results.step3SundriesCost.toLocaleString()}
    - น้ำยาหล่อเย็น: ฿${results.step3CoolantCost.toLocaleString()}
-4. ค่าตรวจสอบ QC & โสหุ้ย: ฿${results.step4TotalQcAndOverhead.toLocaleString()}
+4. ค่าตรวจ QC & ค่าน้ำ/ไฟ/แอร์ส่วนกลางโรงซ่อม: ฿${results.step4TotalQcAndOverhead.toLocaleString()}
 ---------------------------------------------------------------
 * ต้นทุนรวมงานเจียรจริงทั้งสิ้น (Grand Total): ฿${results.step5GrandTotalJobCost.toLocaleString()}
 * ต้นทุนเฉลี่ยต่อชิ้น (Cost per Piece): ฿${results.step5CostPerPiece.toLocaleString()} / ชิ้น
-* ยอดประหยัดสุทธิเทียบซื้อใหม่ (Net Saving): ฿${results.step5NetCostSaving.toLocaleString()} (${results.step5SavingPercentage}% ประหยัด)`;
+* ${isLoss ? 'ขาดทุนเทียบซื้อใหม่ (Net Loss)' : 'ยอดประหยัดสุทธิเทียบซื้อใหม่ (Net Saving)'}: ${formattedNetSaving} (${results.step5SavingPercentage}%)`;
 
     navigator.clipboard.writeText(text);
     setCopiedNotice(true);
@@ -200,14 +265,18 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base sm:text-lg font-black text-white tracking-wide">
-                เครื่องมือคำนวณต้นทุนจริงงานเจียร 1 งาน (Step-by-Step True Cost Engine)
+                {isEn
+                  ? 'Single-Job True Grinding Cost Simulator (Step-by-Step Cost Engine)'
+                  : 'เครื่องมือคำนวณต้นทุนจริงงานเจียร 1 งาน (Step-by-Step True Cost Engine)'}
               </h3>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                 TRUE COST SIMULATOR
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              คำนวณแยก 5 ขั้นตอน: ค่าเสื่อมเครื่องจักร + ค่าไฟจริง + ค่าแรงช่างและ OT + ค่าหินเจียร/ของใช้ + ค่า QC & โสหุ้ย
+              {isEn
+                ? '5-step cost breakdown: Machine & Maint. + Power + Operator Labor & OT + Wheel/Consumables + QC & Workshop Utilities'
+                : 'คำนวณแยก 5 ขั้นตอน: ค่าเสื่อมและซ่อมบำรุงเครื่อง + ค่าไฟจริง + ค่าแรงช่างและ OT + ค่าหินเจียร/ของใช้ + ค่าตรวจ QC และส่วนกลางโรงซ่อม'}
             </p>
           </div>
         </div>
@@ -220,10 +289,10 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
               defaultValue=""
               className="px-2.5 py-1.5 bg-slate-950 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 font-mono focus:outline-none"
             >
-              <option value="" disabled>📥 ดึงเวลาจริงจากใบงานคิว...</option>
+              <option value="" disabled>{isEn ? '📥 Import actual hours from queue ticket...' : '📥 ดึงเวลาจริงจากใบงานคิว...'}</option>
               {queueTickets.map(t => (
                 <option key={t.id} value={t.id}>
-                  {t.jobCode} - {t.partName} ({t.lineId}) [{t.laborHours || 1.5} ชม.]
+                  {t.jobCode} - {t.partName} ({t.lineId}) [{t.laborHours || 1.5} {isEn ? 'hrs' : 'ชม.'}]
                 </option>
               ))}
             </select>
@@ -242,57 +311,73 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
             <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2">
               <span className="text-xs font-black text-cyan-300 font-mono flex items-center gap-1.5">
                 <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-[10px] font-bold">1</span>
-                <span>ต้นทุนเครื่องจักร & ไฟฟ้า</span>
+                <span>{isEn ? 'Machine & Power Cost' : 'ต้นทุนเครื่องจักร & ไฟฟ้า'}</span>
               </span>
               <span className="text-[10px] font-mono text-cyan-400 font-bold bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
-                ฿{results.totalMachineRatePerHour}/ชม.
+                ฿{results.totalMachineRatePerHour}/{isEn ? 'hr' : 'ชม.'}
               </span>
             </div>
 
             <div className="space-y-2 mt-3 text-xs">
               <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase block">
-                  ชั่วโมงเดินเครื่อง (Machine Hours)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase block">
+                    {isEn ? 'Machine Hours (Setup + Direct)' : 'ชั่วโมงเดินเครื่อง (Setup + เจียรตรง)'}
+                  </label>
+                  <span className="text-[9.5px] font-mono text-cyan-400">
+                    {isEn ? 'Auto-synced' : 'ซิงค์อัตโนมัติ'}
+                  </span>
+                </div>
                 <div className="flex items-center gap-2 mt-0.5">
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     value={inputData.machineRunningHours}
-                    onChange={e => setInputData({ ...inputData, machineRunningHours: parseFloat(e.target.value) || 0 })}
+                    onChange={e => handleMachineHoursChange(parseFloat(e.target.value) || 0)}
                     className="w-full px-2.5 py-1 bg-slate-950 border border-slate-700 rounded-lg text-cyan-300 font-mono font-black text-sm focus:border-cyan-400 focus:outline-none"
                   />
-                  <span className="text-[11px] text-slate-400 font-mono">ชม.</span>
+                  <span className="text-[11px] text-slate-400 font-mono">{isEn ? 'hrs' : 'ชม.'}</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-1.5">
                 <div>
-                  <label className="text-[10px] text-slate-400 block font-mono">ราคาเครื่อง (Asset)</label>
+                  <label className="text-[9.5px] text-slate-400 block font-mono">{isEn ? 'Asset (฿)' : 'ราคาเครื่อง'}</label>
                   <input
                     type="number"
                     step="50000"
                     value={inputData.machineAssetValueThb}
                     onChange={e => setInputData({ ...inputData, machineAssetValueThb: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                    className="w-full px-1.5 py-1 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 block font-mono">อายุใช้งาน (ชม.)</label>
+                  <label className="text-[9.5px] text-slate-400 block font-mono">{isEn ? 'Life (hrs)' : 'อายุ (ชม.)'}</label>
                   <input
                     type="number"
                     step="1000"
                     value={inputData.usefulLifeHours}
                     onChange={e => setInputData({ ...inputData, usefulLifeHours: parseFloat(e.target.value) || 20000 })}
-                    className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                    className="w-full px-1.5 py-1 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9.5px] text-slate-400 block font-mono">{isEn ? 'Maint (฿/hr)' : 'ซ่อมบำรุง/ชม.'}</label>
+                  <input
+                    type="number"
+                    step="5"
+                    min="0"
+                    value={inputData.maintenanceReservePerHour}
+                    onChange={e => setInputData({ ...inputData, maintenanceReservePerHour: Math.max(0, parseFloat(e.target.value) || 0) })}
+                    className="w-full px-1.5 py-1 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:border-cyan-400 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-1.5">
                 <div>
-                  <label className="text-[9.5px] text-slate-400 block font-mono">กำลังไฟ (kW)</label>
+                  <label className="text-[9.5px] text-slate-400 block font-mono">{isEn ? 'Power (kW)' : 'กำลังไฟ (kW)'}</label>
                   <input
                     type="number"
                     step="1"
@@ -313,7 +398,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                   />
                 </div>
                 <div>
-                  <label className="text-[9.5px] text-slate-400 block font-mono">ค่าไฟ (฿/kWh)</label>
+                  <label className="text-[9.5px] text-slate-400 block font-mono">{isEn ? 'Power (฿/kWh)' : 'ค่าไฟ (฿/kWh)'}</label>
                   <input
                     type="number"
                     step="0.1"
@@ -327,15 +412,15 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
               {/* Sub-itemized details */}
               <div className="bg-slate-950/70 p-2 rounded-xl border border-white/5 space-y-1 text-[10.5px] font-mono">
                 <div className="flex justify-between text-slate-400">
-                  <span>ค่าเสื่อมราคา:</span>
+                  <span>{isEn ? 'Depreciation:' : 'ค่าเสื่อมราคา:'}</span>
                   <span className="text-white">฿{results.step1MachineDepreciationCost.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>ค่าไฟฟ้าจริง ({inputData.ratedPowerKw}kW):</span>
+                  <span>{isEn ? `Electricity (${inputData.ratedPowerKw}kW):` : `ค่าไฟฟ้าจริง (${inputData.ratedPowerKw}kW):`}</span>
                   <span className="text-white">฿{results.step1ElectricityCost.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>สำรองบำรุงรักษา:</span>
+                  <span>{isEn ? 'Maint. Reserve:' : 'สำรองบำรุงรักษา:'}</span>
                   <span className="text-white">฿{results.step1MaintenanceCost.toLocaleString()}</span>
                 </div>
               </div>
@@ -343,7 +428,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
           </div>
 
           <div className="pt-2 border-t border-cyan-500/20 flex items-center justify-between text-xs font-mono">
-            <span className="font-bold text-slate-300">รวม Step 1:</span>
+            <span className="font-bold text-slate-300">{isEn ? 'Step 1 Total:' : 'รวม Step 1:'}</span>
             <span className="text-cyan-300 font-black text-sm">฿{results.step1TotalMachineAndPower.toLocaleString()}</span>
           </div>
         </div>
@@ -356,34 +441,34 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
             <div className="flex items-center justify-between border-b border-purple-500/20 pb-2">
               <span className="text-xs font-black text-purple-300 font-mono flex items-center gap-1.5">
                 <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-300 flex items-center justify-center text-[10px] font-bold">2</span>
-                <span>ค่าแรงช่าง, OT & ค่าสกิล</span>
+                <span>{isEn ? 'Labor, OT & Skill Grade' : 'ค่าแรงช่าง, OT & ค่าสกิล'}</span>
               </span>
               <span className="text-[10px] font-mono text-purple-300 font-bold bg-purple-950/60 px-2 py-0.5 rounded border border-purple-500/30">
-                ฿{results.effectiveOtRatePerHour}/ชม.
+                ฿{results.effectiveOtRatePerHour}/{isEn ? 'hr' : 'ชม.'}
               </span>
             </div>
 
             <div className="space-y-2 mt-3 text-xs">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] text-slate-400 block font-mono">Setup Hours</label>
+                  <label className="text-[10px] text-slate-400 block font-mono">{isEn ? 'Setup Hours' : 'เวลาตั้งเครื่อง (Setup ชม.)'}</label>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     value={inputData.setupLaborHours}
-                    onChange={e => setInputData({ ...inputData, setupLaborHours: parseFloat(e.target.value) || 0 })}
+                    onChange={e => handleSetupHoursChange(parseFloat(e.target.value) || 0)}
                     className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:border-purple-400 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 block font-mono">Direct Hours</label>
+                  <label className="text-[10px] text-slate-400 block font-mono">{isEn ? 'Direct Grind Hours' : 'เวลาเจียรจริง (Direct ชม.)'}</label>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     value={inputData.directLaborHours}
-                    onChange={e => setInputData({ ...inputData, directLaborHours: parseFloat(e.target.value) || 0 })}
+                    onChange={e => handleDirectHoursChange(parseFloat(e.target.value) || 0)}
                     className="w-full px-2 py-1 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:border-purple-400 focus:outline-none"
                   />
                 </div>
@@ -391,7 +476,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
 
               {/* Base wage */}
               <div>
-                <label className="text-[10px] text-slate-400 block font-mono">อัตราค่าแรงพื้นฐาน (Base Wage ฿/ชม.)</label>
+                <label className="text-[10px] text-slate-400 block font-mono">{isEn ? 'Base Wage (฿/hr)' : 'อัตราค่าแรงพื้นฐาน (Base Wage ฿/ชม.)'}</label>
                 <input
                   type="number"
                   step="10"
@@ -403,7 +488,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
 
               {/* Skill Tier Buttons */}
               <div>
-                <label className="text-[10px] text-slate-400 block font-mono mb-1">ระดับทักษะช่าง (Skill Grade)</label>
+                <label className="text-[10px] text-slate-400 block font-mono mb-1">{isEn ? 'Technician Skill Grade' : 'ระดับทักษะช่าง (Skill Grade)'}</label>
                 <div className="grid grid-cols-2 gap-1 font-mono text-[10px]">
                   <button
                     type="button"
@@ -454,7 +539,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
 
               {/* Overtime Selector */}
               <div>
-                <label className="text-[10px] text-slate-400 block font-mono mb-1">ล่วงเวลา (OT Multiplier)</label>
+                <label className="text-[10px] text-slate-400 block font-mono mb-1">{isEn ? 'OT Multiplier' : 'ล่วงเวลา (OT Multiplier)'}</label>
                 <div className="grid grid-cols-4 gap-1 font-mono text-[10px]">
                   <button
                     type="button"
@@ -465,7 +550,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
-                    1.0x ปกติ
+                    {isEn ? '1.0x Normal' : '1.0x ปกติ'}
                   </button>
                   <button
                     type="button"
@@ -476,7 +561,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
-                    1.5x วันธรรมดา
+                    {isEn ? '1.5x Weekday' : '1.5x วันธรรมดา'}
                   </button>
                   <button
                     type="button"
@@ -487,7 +572,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
-                    2.0x วันหยุด
+                    {isEn ? '2.0x Holiday' : '2.0x วันหยุด'}
                   </button>
                   <button
                     type="button"
@@ -498,7 +583,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                         : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
-                    3.0x พิเศษ
+                    {isEn ? '3.0x Special' : '3.0x พิเศษ'}
                   </button>
                 </div>
               </div>
@@ -512,14 +597,14 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                   className="w-3.5 h-3.5 accent-purple-500 rounded"
                 />
                 <span className="text-[10.5px] text-slate-300">
-                  ค่าเครื่องรวมค่าแรงช่างแล้ว (ไม่คิดซ้ำ)
+                  {isEn ? 'Machine rate includes operator labor (no double-count)' : 'ค่าเครื่องรวมค่าแรงช่างแล้ว (ไม่คิดซ้ำ)'}
                 </span>
               </label>
             </div>
           </div>
 
           <div className="pt-2 border-t border-purple-500/20 flex items-center justify-between text-xs font-mono">
-            <span className="font-bold text-slate-300">รวม Step 2:</span>
+            <span className="font-bold text-slate-300">{isEn ? 'Step 2 Total:' : 'รวม Step 2:'}</span>
             <span className="text-purple-300 font-black text-sm">฿{results.step2TotalLaborCost.toLocaleString()}</span>
           </div>
         </div>
@@ -532,7 +617,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
             <div className="flex items-center justify-between border-b border-amber-500/20 pb-2">
               <span className="text-xs font-black text-amber-300 font-mono flex items-center gap-1.5">
                 <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center text-[10px] font-bold">3</span>
-                <span>หินเจียร & วัสดุสิ้นเปลือง</span>
+                <span>{isEn ? 'Grinding Wheel & Consumables' : 'หินเจียร & วัสดุสิ้นเปลือง'}</span>
               </span>
               <span className="text-[10px] font-mono text-amber-400 font-bold bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30">
                 CONSUMABLES
@@ -542,7 +627,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
             <div className="space-y-2 mt-3 text-xs">
               <div>
                 <label className="text-[10px] text-slate-400 block font-mono">
-                  1. การสึกหรอหินเจียร CBN / Diamond (฿/งาน)
+                  {isEn ? '1. CBN / Diamond Wheel Wear (฿/job)' : '1. การสึกหรอหินเจียร CBN / Diamond (฿/งาน)'}
                 </label>
                 <input
                   type="number"
@@ -555,7 +640,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
 
               <div>
                 <label className="text-[10px] text-slate-400 block font-mono">
-                  2. สึกหรอหัวกรีดเพชร (Dressing Tool ฿)
+                  {isEn ? '2. Diamond Dresser Wear (฿)' : '2. สึกหรอหัวกรีดเพชร (Dressing Tool ฿)'}
                 </label>
                 <input
                   type="number"
@@ -568,7 +653,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
 
               <div>
                 <label className="text-[10px] text-slate-400 block font-mono">
-                  3. ผ้าเช็ด, แปรงขัด, วาสลีน & ผงขัดเงา (฿)
+                  {isEn ? '3. Wipes, Brushes, Grease & Polishing Paste (฿)' : '3. ผ้าเช็ด, แปรงขัด, วาสลีน & ผงขัดเงา (฿)'}
                 </label>
                 <input
                   type="number"
@@ -581,7 +666,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
 
               <div>
                 <label className="text-[10px] text-slate-400 block font-mono">
-                  4. น้ำยาหล่อเย็นสังเคราะห์ (Coolant ฿)
+                  {isEn ? '4. Synthetic Coolant (฿)' : '4. น้ำยาหล่อเย็นสังเคราะห์ (Coolant ฿)'}
                 </label>
                 <input
                   type="number"
@@ -593,13 +678,15 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
               </div>
 
               <div className="bg-slate-950/70 p-2 rounded-xl border border-white/5 text-[10.5px] font-mono text-slate-400">
-                รวมคำนวณจากอายุสึกหรอของหินเจียร CBN และวัสดุสิ้นเปลืองงานละเอียด
+                {isEn
+                  ? 'Calculated from CBN grinding wheel wear life and precision finishing consumables'
+                  : 'รวมคำนวณจากอายุสึกหรอของหินเจียร CBN และวัสดุสิ้นเปลืองงานละเอียด'}
               </div>
             </div>
           </div>
 
           <div className="pt-2 border-t border-amber-500/20 flex items-center justify-between text-xs font-mono">
-            <span className="font-bold text-slate-300">รวม Step 3:</span>
+            <span className="font-bold text-slate-300">{isEn ? 'Step 3 Total:' : 'รวม Step 3:'}</span>
             <span className="text-amber-300 font-black text-sm">฿{results.step3TotalConsumables.toLocaleString()}</span>
           </div>
         </div>
@@ -612,17 +699,17 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
             <div className="flex items-center justify-between border-b border-blue-500/20 pb-2">
               <span className="text-xs font-black text-blue-300 font-mono flex items-center gap-1.5">
                 <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center text-[10px] font-bold">4</span>
-                <span>ค่าตรวจสอบ QC & โสหุ้ย</span>
+                <span>{isEn ? 'QC & Workshop Utilities' : 'ค่าตรวจสอบ QC & ส่วนกลาง'}</span>
               </span>
               <span className="text-[10px] font-mono text-blue-300 font-bold bg-blue-950/60 px-2 py-0.5 rounded border border-blue-500/30">
-                QC & OVERHEAD
+                QC & UTILITIES
               </span>
             </div>
 
             <div className="space-y-2 mt-3 text-xs">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] text-slate-400 block font-mono">QC Hours (ชม.)</label>
+                  <label className="text-[10px] text-slate-400 block font-mono">{isEn ? 'QC Hours (hrs)' : 'เวลาตรวจ QC (ชม.)'}</label>
                   <input
                     type="number"
                     step="0.05"
@@ -633,7 +720,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 block font-mono">QC Rate (฿/ชม.)</label>
+                  <label className="text-[10px] text-slate-400 block font-mono">{isEn ? 'QC Rate (฿/hr)' : 'ค่าตรวจ QC (฿/ชม.)'}</label>
                   <input
                     type="number"
                     step="10"
@@ -646,7 +733,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
 
               <div>
                 <label className="text-[10px] text-slate-400 block font-mono">
-                  ค่าโสหุ้ยจัดสรรของโรงซ่อม (Overhead ฿/งาน)
+                  {isEn ? 'Workshop Utilities: Water/Power/AC (฿/job)' : 'ค่าน้ำ/ไฟ/แอร์ส่วนกลางโรงซ่อม (฿/งาน)'}
                 </label>
                 <input
                   type="number"
@@ -659,11 +746,11 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
 
               <div className="bg-slate-950/70 p-2.5 rounded-xl border border-white/5 space-y-1 text-[10.5px] font-mono">
                 <div className="flex justify-between text-slate-400">
-                  <span>ค่าตรวจขนาดด้วย Profile Projector:</span>
+                  <span>{isEn ? 'QC Size Check (Profile Projector):' : 'ค่าตรวจขนาด QC (Profile Projector):'}</span>
                   <span className="text-white font-bold">฿{results.step4QcCost.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>ค่าโสหุ้ยไฟส่องสว่าง/แอร์โรงซ่อม:</span>
+                  <span>{isEn ? 'Workshop Water / Power / AC:' : 'ค่าน้ำ/ไฟ/แอร์ส่วนกลางโรงซ่อม:'}</span>
                   <span className="text-white font-bold">฿{results.step4OverheadCost.toLocaleString()}</span>
                 </div>
               </div>
@@ -671,7 +758,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
           </div>
 
           <div className="pt-2 border-t border-blue-500/20 flex items-center justify-between text-xs font-mono">
-            <span className="font-bold text-slate-300">รวม Step 4:</span>
+            <span className="font-bold text-slate-300">{isEn ? 'Step 4 Total:' : 'รวม Step 4:'}</span>
             <span className="text-blue-300 font-black text-sm">฿{results.step4TotalQcAndOverhead.toLocaleString()}</span>
           </div>
         </div>
@@ -697,7 +784,9 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
               5
             </span>
             <h4 className="text-sm sm:text-base font-black text-white font-mono">
-              สรุปต้นทุนจริงงานเจียร (Step 5: True Grinding Cost Roll-Up & Unit Economics)
+              {isEn
+                ? 'Step 5: True Grinding Cost Roll-Up & Unit Economics'
+                : 'สรุปต้นทุนจริงงานเจียร (Step 5: True Grinding Cost Roll-Up & Unit Economics)'}
             </h4>
           </div>
 
@@ -705,17 +794,17 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
             <button
               type="button"
               onClick={handleCopySummary}
-              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/40 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow"
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/40 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow whitespace-nowrap shrink-0"
             >
               {copiedNotice ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-cyan-400" />}
-              <span>{copiedNotice ? 'คัดลอกสรุปแล้ว!' : 'คัดลอกสรุปสูตรคำนวณ'}</span>
+              <span>{copiedNotice ? (isEn ? 'Summary Copied!' : 'คัดลอกสรุปแล้ว!') : (isEn ? 'Copy Cost Breakdown' : 'คัดลอกสรุปสูตรคำนวณ')}</span>
             </button>
 
             <button
               type="button"
               onClick={() => setInputData(DEFAULT_SIMULATION_INPUT)}
               className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-xs font-mono transition-all cursor-pointer"
-              title="รีเซ็ตเป็นค่าเริ่มต้น"
+              title={isEn ? 'Reset to defaults' : 'รีเซ็ตเป็นค่าเริ่มต้น'}
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
@@ -725,7 +814,7 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
         {/* Workpiece Quantity & Benchmark Inputs Bar */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-slate-950/80 p-3 rounded-xl border border-white/10 text-xs">
           <div>
-            <label className="text-[10.5px] text-slate-400 font-mono block">จำนวนชิ้นงานในรอบเจียรนี้ (Batch Qty):</label>
+            <label className="text-[10.5px] text-slate-400 font-mono block">{isEn ? 'Batch Quantity (pcs):' : 'จำนวนชิ้นงานในรอบเจียรนี้ (Batch Qty):'}</label>
             <div className="flex items-center gap-1.5 mt-1">
               <input
                 type="number"
@@ -734,12 +823,12 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                 onChange={e => setInputData({ ...inputData, quantityPieces: Math.max(1, parseInt(e.target.value) || 1) })}
                 className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-emerald-300 font-mono font-black text-sm focus:border-emerald-400 focus:outline-none text-center"
               />
-              <span className="text-slate-400 font-mono">ชิ้น</span>
+              <span className="text-slate-400 font-mono">{isEn ? 'pcs' : 'ชิ้น'}</span>
             </div>
           </div>
 
           <div>
-            <label className="text-[10.5px] text-slate-400 font-mono block">ราคาจัดซื้ออะไหล่ใหม่เทียบเคียง (ต่อชิ้น):</label>
+            <label className="text-[10.5px] text-slate-400 font-mono block">{isEn ? 'New Part Unit Price (฿/pc):' : 'ราคาจัดซื้ออะไหล่ใหม่เทียบเคียง (ต่อชิ้น):'}</label>
             <div className="flex items-center gap-1.5 mt-1">
               <input
                 type="number"
@@ -748,22 +837,28 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                 onChange={e => setInputData({ ...inputData, newPurchasePricePerPiece: Math.max(0, parseFloat(e.target.value) || 0) })}
                 className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono font-bold text-sm focus:border-emerald-400 focus:outline-none"
               />
-              <span className="text-slate-400 font-mono">฿/ชิ้น</span>
+              <span className="text-slate-400 font-mono">{isEn ? '฿/pc' : '฿/ชิ้น'}</span>
             </div>
           </div>
 
           <div>
-            <label className="text-[10.5px] text-slate-400 font-mono block">มูลค่าซื้อใหม่รวมทั้งแบทช์ ({inputData.quantityPieces} ชิ้น):</label>
+            <label className="text-[10.5px] text-slate-400 font-mono block">{isEn ? `Batch New Purchase Value (${inputData.quantityPieces} pcs):` : `มูลค่าซื้อใหม่รวมทั้งแบทช์ (${inputData.quantityPieces} ชิ้น):`}</label>
             <div className="text-sm sm:text-base font-black text-white font-mono mt-1.5">
               ฿{results.step5TotalNewToolEquivalentCost.toLocaleString()}
             </div>
           </div>
 
           <div>
-            <label className="text-[10.5px] text-emerald-400 font-mono block font-bold">อัตราส่วนประหยัด (Saving %):</label>
-            <div className="text-sm sm:text-base font-black text-[#00FF7F] font-mono mt-1.5 flex items-center gap-1">
+            <label className={`text-[10px] font-mono block font-bold ${isLoss ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {isLoss
+                ? (isEn ? 'Cost Loss Rate (%):' : 'อัตราขาดทุนเทียบซื้อใหม่:')
+                : (isEn ? 'Cost Saving Rate (%):' : 'อัตราส่วนประหยัด (Saving %):')}
+            </label>
+            <div className={`text-sm sm:text-base font-black font-mono mt-1.5 flex items-center gap-1 ${isLoss ? 'text-rose-400' : 'text-[#00FF7F]'}`}>
               <span>{results.step5SavingPercentage}%</span>
-              <span className="text-[10px] text-slate-400 font-normal">ประหยัด</span>
+              <span className="text-[10px] text-slate-400 font-normal">
+                {isLoss ? (isEn ? 'Loss' : 'ขาดทุน') : (isEn ? 'Saved' : 'ประหยัด')}
+              </span>
             </div>
           </div>
         </div>
@@ -773,66 +868,94 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
           
           {/* Card 1: Grand Total Job Cost */}
           <div className="bg-slate-950/90 border border-white/15 rounded-xl p-3 shadow-lg">
-            <span className="text-[10.5px] text-slate-400 font-mono block uppercase">ต้นทุนจริงงานเจียรรวมทั้งสิ้น</span>
-            <div className="text-xl sm:text-2xl font-black text-cyan-300 font-mono mt-1 tracking-tight">
+            <span className="text-[10.5px] text-slate-400 font-mono block uppercase">{isEn ? 'Grand Total Job Cost' : 'ต้นทุนจริงงานเจียรรวมทั้งสิ้น'}</span>
+            <div className="text-xl sm:text-2xl font-black text-cyan-300 font-mono mt-1 tracking-tight tabular-nums">
               ฿{results.step5GrandTotalJobCost.toLocaleString()}
             </div>
             <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
-              Step 1+2+3+4 รวมทั้งหมด
+              {isEn ? 'Sum of Steps 1 + 2 + 3 + 4' : 'Step 1+2+3+4 รวมทั้งหมด'}
             </span>
           </div>
 
           {/* Card 2: Cost Per Piece */}
           <div className="bg-slate-950/90 border border-white/15 rounded-xl p-3 shadow-lg">
-            <span className="text-[10.5px] text-slate-400 font-mono block uppercase">ต้นทุนเจียรเฉลี่ยต่อชิ้น</span>
-            <div className="text-xl sm:text-2xl font-black text-amber-300 font-mono mt-1 tracking-tight">
+            <span className="text-[10.5px] text-slate-400 font-mono block uppercase">{isEn ? 'Unit Regrind Cost / Pc' : 'ต้นทุนเจียรเฉลี่ยต่อชิ้น'}</span>
+            <div className="text-xl sm:text-2xl font-black text-amber-300 font-mono mt-1 tracking-tight tabular-nums">
               ฿{results.step5CostPerPiece.toLocaleString()}
             </div>
             <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
-              (÷ {inputData.quantityPieces} ชิ้นในแบทช์)
+              {isEn ? `(÷ ${inputData.quantityPieces} pcs in batch)` : `(÷ ${inputData.quantityPieces} ชิ้นในแบทช์)`}
             </span>
           </div>
 
           {/* Card 3: Avoided Purchase Cost */}
           <div className="bg-slate-950/90 border border-white/15 rounded-xl p-3 shadow-lg">
-            <span className="text-[10.5px] text-slate-400 font-mono block uppercase">มูลค่าซื้อใหม่ที่หลีกเลี่ยง</span>
-            <div className="text-xl sm:text-2xl font-black text-white font-mono mt-1 tracking-tight">
+            <span className="text-[10.5px] text-slate-400 font-mono block uppercase">{isEn ? 'Avoided New Purchase Cost' : 'มูลค่าซื้อใหม่ที่หลีกเลี่ยง'}</span>
+            <div className="text-xl sm:text-2xl font-black text-white font-mono mt-1 tracking-tight tabular-nums">
               ฿{results.step5TotalNewToolEquivalentCost.toLocaleString()}
             </div>
             <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
-              ราคาอะไหล่ใหม่เทียบเคียง
+              {isEn ? 'Equivalent new tooling value' : 'ราคาอะไหล่ใหม่เทียบเคียง'}
             </span>
           </div>
 
-          {/* Card 4: Net Cost Saving */}
-          <div className="bg-slate-950/90 border-2 border-emerald-500/60 rounded-xl p-3 shadow-lg shadow-emerald-500/10">
-            <span className="text-[10.5px] text-emerald-300 font-mono block uppercase font-bold">ยอดประหยัดสุทธิ (Net Saving)</span>
-            <div className="text-xl sm:text-2xl font-black text-[#00FF7F] font-mono mt-1 tracking-tight drop-shadow-[0_0_10px_rgba(0,255,127,0.3)]">
-              ฿{results.step5NetCostSaving.toLocaleString()}
+          {/* Card 4: Net Cost Saving / Loss */}
+          <div className={`rounded-xl p-3 shadow-lg border-2 ${
+            isLoss
+              ? 'bg-rose-950/35 border-rose-500/70 shadow-rose-500/15'
+              : 'bg-slate-950/90 border-emerald-500/60 shadow-emerald-500/10'
+          }`}>
+            <span className={`text-[10px] font-mono block uppercase font-bold ${isLoss ? 'text-rose-300' : 'text-emerald-300'}`}>
+              {isLoss
+                ? (isEn ? 'Net Cost Loss (Uneconomical)' : 'ขาดทุนเทียบซื้อใหม่ (Net Loss)')
+                : (isEn ? 'Net Cost Saving' : 'ยอดประหยัดสุทธิ (Net Saving)')}
+            </span>
+            <div className={`text-xl sm:text-2xl font-black font-mono mt-1 tracking-tight tabular-nums ${
+              isLoss ? 'text-rose-400' : 'text-[#00FF7F] drop-shadow-[0_0_10px_rgba(0,255,127,0.3)]'
+            }`}>
+              {formattedNetSaving}
             </div>
-            <span className="text-[10px] text-emerald-400 mt-0.5 block font-mono font-bold">
-              ✓ ประหยัดได้จริง {results.step5SavingPercentage}%
+            <span className={`text-[10px] mt-0.5 block font-mono font-bold ${isLoss ? 'text-rose-300' : 'text-emerald-400'}`}>
+              {isLoss
+                ? (isEn
+                    ? `⚠ Repair costs ${Math.abs(results.step5SavingPercentage)}% more than new`
+                    : `⚠ ค่าเจียรสูงกว่าซื้อใหม่ ${Math.abs(results.step5SavingPercentage)}%`)
+                : (isEn ? `✓ ${results.step5SavingPercentage}% Net Cost Reduction` : `✓ ประหยัดได้จริง ${results.step5SavingPercentage}%`)}
             </span>
           </div>
 
         </div>
+
+        {/* Red Warning Banner when Regrind Cost Exceeds New Replacement Value */}
+        {isLoss && (
+          <div className="bg-rose-950/50 border border-rose-500/60 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-rose-200 font-mono">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>
+              {isEn
+                ? `Warning: Total regrind cost (฿${results.step5GrandTotalJobCost.toLocaleString()}) exceeds new replacement value (฿${results.step5TotalNewToolEquivalentCost.toLocaleString()}) by ฿${Math.abs(results.step5NetCostSaving).toLocaleString()}. Evaluate replacing with a new part instead.`
+                : `คำเตือน: ต้นทุนงานซ่อมเจียรจริง (฿${results.step5GrandTotalJobCost.toLocaleString()}) สูงกว่าราคาซื้ออะไหล่ใหม่ (฿${results.step5TotalNewToolEquivalentCost.toLocaleString()}) อยู่ ฿${Math.abs(results.step5NetCostSaving).toLocaleString()} — แนะนำพิจารณาเบิกอะไหล่ใหม่แทนการซ่อม`}
+            </span>
+          </div>
+        )}
 
         {/* Step Waterfall Summary Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-mono">
             <thead>
               <tr className="border-b border-white/10 text-[10px] text-slate-400 uppercase">
-                <th className="py-2 px-2.5">ขั้นตอนการคำนวณ (Calculation Step)</th>
-                <th className="py-2 px-2.5">พารามิเตอร์หลัก</th>
-                <th className="py-2 px-2.5 text-right">จำนวนเงิน (THB)</th>
-                <th className="py-2 px-2.5 text-right">สัดส่วน %</th>
+                <th className="py-2 px-2.5">{isEn ? 'Calculation Step' : 'ขั้นตอนการคำนวณ (Calculation Step)'}</th>
+                <th className="py-2 px-2.5">{isEn ? 'Key Parameters' : 'พารามิเตอร์หลัก'}</th>
+                <th className="py-2 px-2.5 text-right">{isEn ? 'Amount (THB)' : 'จำนวนเงิน (THB)'}</th>
+                <th className="py-2 px-2.5 text-right">{isEn ? 'Share %' : 'สัดส่วน %'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-[11px]">
               <tr>
-                <td className="py-2 px-2.5 text-cyan-300 font-bold">Step 1: เครื่องจักรและไฟฟ้า</td>
+                <td className="py-2 px-2.5 text-cyan-300 font-bold">{isEn ? 'Step 1: Machine & Power' : 'Step 1: เครื่องจักรและไฟฟ้า'}</td>
                 <td className="py-2 px-2.5 text-slate-400">
-                  {inputData.machineRunningHours} ชม. × (ค่าเสื่อม ฿{results.depreciationPerHour} + ค่าไฟ ฿{results.electricityPerHour} + บำรุงรักษา ฿{inputData.maintenanceReservePerHour})
+                  {isEn
+                    ? `${inputData.machineRunningHours} hrs × (Depr. ฿${results.depreciationPerHour} + Power ฿${results.electricityPerHour} + Maint. ฿${inputData.maintenanceReservePerHour})`
+                    : `${inputData.machineRunningHours} ชม. × (ค่าเสื่อม ฿${results.depreciationPerHour} + ค่าไฟ ฿${results.electricityPerHour} + บำรุงรักษา ฿${inputData.maintenanceReservePerHour})`}
                 </td>
                 <td className="py-2 px-2.5 text-right font-bold text-white">฿{results.step1TotalMachineAndPower.toLocaleString()}</td>
                 <td className="py-2 px-2.5 text-right text-slate-400">
@@ -840,9 +963,11 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                 </td>
               </tr>
               <tr>
-                <td className="py-2 px-2.5 text-purple-300 font-bold">Step 2: ค่าแรงช่าง, OT & ค่าสกิล</td>
+                <td className="py-2 px-2.5 text-purple-300 font-bold">{isEn ? 'Step 2: Labor, OT & Skill' : 'Step 2: ค่าแรงช่าง, OT & ค่าสกิล'}</td>
                 <td className="py-2 px-2.5 text-slate-400">
-                  (Setup {inputData.setupLaborHours} ชม. + เจียร {results.laborDoubleCountingPrevented ? '0' : inputData.directLaborHours} ชม.) × ฿{results.effectiveOtRatePerHour}/ชม. [{inputData.skillGrade}, OT {results.otMultiplier}x]
+                  {isEn
+                    ? `(Setup ${inputData.setupLaborHours} hrs + Run ${results.laborDoubleCountingPrevented ? '0' : inputData.directLaborHours} hrs) × ฿${results.effectiveOtRatePerHour}/hr [${inputData.skillGrade}, OT ${results.otMultiplier}x]`
+                    : `(Setup ${inputData.setupLaborHours} ชม. + เจียร ${results.laborDoubleCountingPrevented ? '0' : inputData.directLaborHours} ชม.) × ฿${results.effectiveOtRatePerHour}/ชม. [${inputData.skillGrade}, OT ${results.otMultiplier}x]`}
                 </td>
                 <td className="py-2 px-2.5 text-right font-bold text-white">฿{results.step2TotalLaborCost.toLocaleString()}</td>
                 <td className="py-2 px-2.5 text-right text-slate-400">
@@ -850,9 +975,11 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                 </td>
               </tr>
               <tr>
-                <td className="py-2 px-2.5 text-amber-300 font-bold">Step 3: หินเจียรและวัสดุสิ้นเปลือง</td>
+                <td className="py-2 px-2.5 text-amber-300 font-bold">{isEn ? 'Step 3: Wheel & Consumables' : 'Step 3: หินเจียรและวัสดุสิ้นเปลือง'}</td>
                 <td className="py-2 px-2.5 text-slate-400">
-                  หิน CBN ฿{inputData.wheelWearCostPerJob} + หัวกรีดเพชร ฿{inputData.dressingToolWearCost} + ผ้า/แปรง/ผงขัด ฿{inputData.consumableSundriesCost} + น้ำยาหล่อเย็น ฿{inputData.coolantCostPerJob}
+                  {isEn
+                    ? `CBN Wheel ฿${inputData.wheelWearCostPerJob} + Dresser ฿${inputData.dressingToolWearCost} + Sundries ฿${inputData.consumableSundriesCost} + Coolant ฿${inputData.coolantCostPerJob}`
+                    : `หิน CBN ฿${inputData.wheelWearCostPerJob} + หัวกรีดเพชร ฿${inputData.dressingToolWearCost} + ผ้า/แปรง/ผงขัด ฿${inputData.consumableSundriesCost} + น้ำยาหล่อเย็น ฿${inputData.coolantCostPerJob}`}
                 </td>
                 <td className="py-2 px-2.5 text-right font-bold text-white">฿{results.step3TotalConsumables.toLocaleString()}</td>
                 <td className="py-2 px-2.5 text-right text-slate-400">
@@ -860,9 +987,11 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                 </td>
               </tr>
               <tr>
-                <td className="py-2 px-2.5 text-blue-300 font-bold">Step 4: ตรวจสอบ QC & โสหุ้ยโรงซ่อม</td>
+                <td className="py-2 px-2.5 text-blue-300 font-bold">{isEn ? 'Step 4: QC & Workshop Utilities' : 'Step 4: ตรวจ QC & ส่วนกลางโรงซ่อม'}</td>
                 <td className="py-2 px-2.5 text-slate-400">
-                  ตรวจขนาด QC {inputData.qcInspectionHours} ชม. (@฿{inputData.qcHourlyRate}/ชม.) + ค่าโสหุ้ยจัดสรร ฿{inputData.shopfloorOverheadFixedThb}
+                  {isEn
+                    ? `QC ${inputData.qcInspectionHours} hrs (@฿${inputData.qcHourlyRate}/hr) + Workshop Utilities ฿${inputData.shopfloorOverheadFixedThb}`
+                    : `ตรวจขนาด QC ${inputData.qcInspectionHours} ชม. (@฿${inputData.qcHourlyRate}/ชม.) + ค่าน้ำ/ไฟ/แอร์ส่วนกลาง ฿${inputData.shopfloorOverheadFixedThb}`}
                 </td>
                 <td className="py-2 px-2.5 text-right font-bold text-white">฿{results.step4TotalQcAndOverhead.toLocaleString()}</td>
                 <td className="py-2 px-2.5 text-right text-slate-400">
@@ -870,9 +999,11 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                 </td>
               </tr>
               <tr className="bg-emerald-950/20 font-black">
-                <td className="py-2.5 px-2.5 text-[#00FF7F]">ต้นทุนรวมสุทธิ (Grand Total True Cost)</td>
+                <td className="py-2.5 px-2.5 text-[#00FF7F]">{isEn ? 'Grand Total True Cost' : 'ต้นทุนรวมสุทธิ (Grand Total True Cost)'}</td>
                 <td className="py-2.5 px-2.5 text-emerald-300">
-                  ต้นทุนรวมเฉลี่ย ฿{results.step5CostPerPiece.toLocaleString()} / ชิ้น (แบทช์ {inputData.quantityPieces} ชิ้น)
+                  {isEn
+                    ? `Avg. Unit Cost ฿${results.step5CostPerPiece.toLocaleString()} / pc (Batch ${inputData.quantityPieces} pcs)`
+                    : `ต้นทุนรวมเฉลี่ย ฿${results.step5CostPerPiece.toLocaleString()} / ชิ้น (แบทช์ ${inputData.quantityPieces} ชิ้น)`}
                 </td>
                 <td className="py-2.5 px-2.5 text-right text-emerald-300 text-sm">฿{results.step5GrandTotalJobCost.toLocaleString()}</td>
                 <td className="py-2.5 px-2.5 text-right text-[#00FF7F]">100.0%</td>
@@ -885,13 +1016,13 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
         {activeMachines.length > 0 && onApplyRateToMachine && (
           <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
             <div className="flex items-center gap-2">
-              <span className="text-slate-300">นำผลลัพธ์อัตราต้นทุนนี้ไปบันทึกที่เครื่องจักร:</span>
+              <span className="text-slate-300">{isEn ? 'Apply simulated rates to machine:' : 'นำผลลัพธ์อัตราต้นทุนนี้ไปบันทึกที่เครื่องจักร:'}</span>
               <select
                 value={selectedMachineId}
                 onChange={e => setSelectedMachineId(e.target.value)}
                 className="px-2.5 py-1 bg-slate-950 border border-cyan-500/40 rounded-xl text-white text-xs"
               >
-                <option value="">-- เลือกเครื่องจักรในระบบ --</option>
+                <option value="">{isEn ? '-- Select Machine --' : '-- เลือกเครื่องจักรในระบบ --'}</option>
                 {activeMachines.map(m => (
                   <option key={m.id} value={m.machineId}>
                     {m.machineId} - {m.machineName}
@@ -912,13 +1043,13 @@ export const StepByStepJobCostSimulator: React.FC<StepByStepJobCostSimulatorProp
                   );
                 }
               }}
-              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border whitespace-nowrap shrink-0 ${
                 selectedMachineId
                   ? 'bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 border-cyan-300 shadow-md hover:scale-105'
                   : 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
               }`}
             >
-              ✓ บันทึกเป็นอัตรามาตรฐานของ {selectedMachineId || 'เครื่องจักร'}
+              {isEn ? `✓ Save as Standard Rate for ${selectedMachineId || 'Machine'}` : `✓ บันทึกเป็นอัตรามาตรฐานของ ${selectedMachineId || 'เครื่องจักร'}`}
             </button>
           </div>
         )}

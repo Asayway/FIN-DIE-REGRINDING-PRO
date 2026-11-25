@@ -57,6 +57,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
   onNavigateToMaster
 }) => {
   const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [lines, setLines] = useState<LineActiveConfiguration[]>([]);
   const [partMasters, setPartMasters] = useState<PartMaster[]>([]);
   const [queueTickets, setQueueTickets] = useState<RegrindWorkTicket[]>([]);
@@ -184,8 +185,8 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
       // Default safety target: ~10% to 20% of install quantity (or 10 min)
       const defaultSafetyTarget = installedTotal > 0 ? Math.max(10, Math.round(installedTotal * 0.15)) : 10;
 
-      // Ready-to-use qty
-      let readyToUseQty = stored ? stored.readyToUseQty : (installedTotal > 0 ? Math.round(defaultSafetyTarget * 1.2) : 10);
+      // Ready-to-use qty (default 0 when not manually saved)
+      let readyToUseQty = stored?.readyToUseQty ?? 0;
       let inProcessQty = liveQueue.inProcess;
       let awaitingRepairQty = stored ? (stored.awaitingRepairQty ?? liveQueue.pending) : liveQueue.pending;
       let safetyStockTarget = stored ? (stored.safetyStockTarget ?? defaultSafetyTarget) : defaultSafetyTarget;
@@ -312,7 +313,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
     };
 
     storageService.savePartRepairStock(updatedItem);
-    setSaveSuccessMsg(`ปรับสต็อกพร้อมเบิก "${row.partName}": ${newQty} ชิ้น (${delta > 0 ? '+1' : '-1'})`);
+    setSaveSuccessMsg(isEn ? `Updated ready stock "${row.partName}": ${newQty} EA (${delta > 0 ? '+1' : '-1'})` : `ปรับสต็อกพร้อมเบิก "${row.partName}": ${newQty} ชิ้น (${delta > 0 ? '+1' : '-1'})`);
     setTimeout(() => setSaveSuccessMsg(null), 3000);
   };
 
@@ -337,7 +338,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
   // Cancel Edit
   const handleCancelEdit = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('คุณมีการแก้ไขที่ยังไม่ได้บันทึก ต้องการยกเลิกใช่หรือไม่?')) {
+      if (!window.confirm(isEn ? 'You have unsaved changes. Discard changes?' : 'คุณมีการแก้ไขที่ยังไม่ได้บันทึก ต้องการยกเลิกใช่หรือไม่?')) {
         return;
       }
     }
@@ -385,17 +386,17 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
       setIsEditing(false);
       setEditValues({});
       setHasUnsavedChanges(false);
-      setSaveSuccessMsg(`บันทึกสต็อกอะไหล่หมุนเวียนงานซ่อม ${repairStockRows.length} รายการสำเร็จแล้ว`);
+      setSaveSuccessMsg(isEn ? `Saved repair spare stock for ${repairStockRows.length} parts.` : `บันทึกสต็อกอะไหล่หมุนเวียนงานซ่อม ${repairStockRows.length} รายการสำเร็จแล้ว`);
       setTimeout(() => setSaveSuccessMsg(null), 4000);
       loadData();
     } catch (err: any) {
-      alert(`บันทึกไม่สำเร็จ: ${err.message}`);
+      setSaveSuccessMsg(isEn ? `Save failed: ${err.message}` : `บันทึกไม่สำเร็จ: ${err.message}`);
     }
   };
 
   // Export Excel
   const handleExportExcel = () => {
-    exportPartRepairStockExcel(repairStockRows, LINE_COLUMNS);
+    exportPartRepairStockExcel(repairStockRows, LINE_COLUMNS, language);
   };
 
   return (
@@ -412,21 +413,23 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                 <Wrench className="w-4 h-4" />
               </span>
               <h2 className="text-base sm:text-lg font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
-                <span>STOCK PART REPAIR</span>
+                <span>REPAIR SPARE STOCK</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800 font-mono font-normal">
-                  สต็อกอะไหล่หมุนเวียนเฉพาะงานซ่อมเจียร
+                  {isEn ? 'Regrind Circulation Pool' : 'สต็อกอะไหล่หมุนเวียนเฉพาะงานซ่อมเจียร'}
                 </span>
               </h2>
             </div>
             <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-              ติดตามและควบคุมจำนวนอะไหล่หมุนเวียนงานซ่อมแยก 3 สถานะ: <span className="text-emerald-400 font-semibold">พร้อมเบิกใช้งาน</span>, <span className="text-purple-400 font-semibold">กำลังเจียรบนแท่นเครื่อง</span>, และ <span className="text-amber-400 font-semibold">รอส่งซ่อม</span> (แยกอิสระจากสต็อกของใหม่ ไม่ปะปนกับคลังใหญ่)
+              {isEn
+                ? <>Track rotating repair spare parts across 3 live states: <span className="text-emerald-400 font-semibold">Ready to Issue</span>, <span className="text-purple-400 font-semibold">In-Process Grinding</span>, and <span className="text-amber-400 font-semibold">Awaiting Regrind</span> (isolated from brand-new warehouse inventory).</>
+                : <>ติดตามและควบคุมจำนวนอะไหล่หมุนเวียนงานซ่อมแยก 3 สถานะ: <span className="text-emerald-400 font-semibold">พร้อมเบิกใช้งาน</span>, <span className="text-purple-400 font-semibold">กำลังเจียรบนแท่นเครื่อง</span>, และ <span className="text-amber-400 font-semibold">รอส่งซ่อม</span> (แยกอิสระจากสต็อกของใหม่ ไม่ปะปนกับคลังใหญ่)</>}
             </p>
           </div>
 
           <div className="flex items-center gap-2 self-start lg:self-center">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#162132] border border-[#2d3e58] text-[11px] font-mono text-cyan-300">
               <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-              <span>ซิงค์อัตโนมัติจากระบบคิวงาน</span>
+              <span>{isEn ? 'Auto-Synced from Regrind Queue' : 'ซิงค์อัตโนมัติจากระบบคิวงาน'}</span>
             </span>
           </div>
         </div>
@@ -436,49 +439,49 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
           {/* Card 1: Ready to Use */}
           <div className="bg-[#0f1d17] border border-emerald-500/40 p-2.5 rounded-sm relative overflow-hidden">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider">พร้อมเบิกใช้งาน</span>
+              <span className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider">{isEn ? 'READY TO ISSUE' : 'พร้อมเบิกใช้งาน'}</span>
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             </div>
             <div className="text-xl sm:text-2xl font-black text-emerald-300 mt-1">
               {kpis.totalReady.toLocaleString()} <span className="text-xs font-normal text-slate-400">EA</span>
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">ผ่าน QC พร้อมเบิกเข้าไลน์</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">{isEn ? 'QC passed & ready for press line' : 'ผ่าน QC พร้อมเบิกเข้าไลน์'}</div>
           </div>
 
           {/* Card 2: In-Process Grinding */}
           <div className="bg-[#1c152e] border border-purple-500/40 p-2.5 rounded-sm relative overflow-hidden">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-purple-300 font-bold uppercase tracking-wider">กำลังเจียรบนเครื่อง</span>
+              <span className="text-[11px] text-purple-300 font-bold uppercase tracking-wider">{isEn ? 'IN-PROCESS GRINDING' : 'กำลังเจียรบนเครื่อง'}</span>
               <span className="w-2 h-2 rounded-full bg-purple-400"></span>
             </div>
             <div className="text-xl sm:text-2xl font-black text-purple-200 mt-1">
               {kpis.totalInProcess.toLocaleString()} <span className="text-xs font-normal text-slate-400">EA</span>
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">ซิงค์จาก {kpis.inProcessCount} รายการในคิว</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">{isEn ? `Synced from ${kpis.inProcessCount} active queue jobs` : `ซิงค์จาก ${kpis.inProcessCount} รายการในคิว`}</div>
           </div>
 
           {/* Card 3: Awaiting Regrind */}
           <div className="bg-[#241c10] border border-amber-500/40 p-2.5 rounded-sm relative overflow-hidden">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-amber-300 font-bold uppercase tracking-wider">รอส่งซ่อม / รอคิว</span>
+              <span className="text-[11px] text-amber-300 font-bold uppercase tracking-wider">{isEn ? 'AWAITING REGRIND' : 'รอส่งซ่อม / รอคิว'}</span>
               <span className="w-2 h-2 rounded-full bg-amber-400"></span>
             </div>
             <div className="text-xl sm:text-2xl font-black text-amber-200 mt-1">
               {kpis.totalAwaiting.toLocaleString()} <span className="text-xs font-normal text-slate-400">EA</span>
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">บัฟเฟอร์รอเจียรใน Toolroom</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">{isEn ? 'Buffer awaiting regrind in toolroom' : 'บัฟเฟอร์รอเจียรใน Toolroom'}</div>
           </div>
 
           {/* Card 4: Total Circulation Pool */}
           <div className="bg-[#121c2c] border border-cyan-500/40 p-2.5 rounded-sm relative overflow-hidden">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-cyan-300 font-bold uppercase tracking-wider">รวมสต็อกหมุนเวียน</span>
+              <span className="text-[11px] text-cyan-300 font-bold uppercase tracking-wider">{isEn ? 'TOTAL POOL' : 'รวมสต็อกหมุนเวียน'}</span>
               <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
             </div>
             <div className="text-xl sm:text-2xl font-black text-cyan-200 mt-1">
               {kpis.totalPool.toLocaleString()} <span className="text-xs font-normal text-slate-400">EA</span>
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">ยอดรวม 3 สถานะงานซ่อม</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">{isEn ? 'Sum of all 3 repair circulation states' : 'ยอดรวม 3 สถานะงานซ่อม'}</div>
           </div>
 
           {/* Card 5: Low Buffer Alerts */}
@@ -492,16 +495,16 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
           >
             <div className="flex items-center justify-between">
               <span className={`text-[11px] font-bold uppercase tracking-wider ${kpis.lowBufferCount > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
-                ต่ำกว่าเกณฑ์สำรอง
+                {isEn ? 'BELOW SAFETY STOCK' : 'ต่ำกว่าเกณฑ์สำรอง'}
               </span>
               {kpis.lowBufferCount > 0 && (
                 <ShieldAlert className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
               )}
             </div>
             <div className={`text-xl sm:text-2xl font-black mt-1 ${kpis.lowBufferCount > 0 ? 'text-rose-300' : 'text-slate-400'}`}>
-              {kpis.lowBufferCount} <span className="text-xs font-normal text-slate-400">พาร์ท</span>
+              {kpis.lowBufferCount} <span className="text-xs font-normal text-slate-400">{isEn ? 'parts' : 'พาร์ท'}</span>
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">คลิกเพื่อกรองเฉพาะรายการวิกฤต</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">{isEn ? 'Click to filter critical low items' : 'คลิกเพื่อกรองเฉพาะรายการวิกฤต'}</div>
           </div>
         </div>
       </div>
@@ -549,7 +552,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
               type="button"
               onClick={() => setIsStageManagerOpen(true)}
               className="px-2.5 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-[#00FF00] border border-[#475569] text-xs font-bold rounded flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap"
-              title="เปิดหน้าต่างจัดกลุ่มและจัดการ Stage"
+              title={isEn ? 'Open Stage Grouping & Management' : 'เปิดหน้าต่างจัดกลุ่มและจัดการ Stage'}
             >
               <Sliders className="w-3.5 h-3.5 text-[#00FF00]" />
               <span>⚙️ {language === 'TH' ? 'จัดกลุ่ม Stage' : 'Group Stages'}</span>
@@ -560,49 +563,49 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
               <button
                 type="button"
                 onClick={() => setStatusQuickFilter('ALL')}
-                className={`px-2 py-1 rounded border transition-colors cursor-pointer ${
+                className={`px-2 py-1 rounded border transition-colors cursor-pointer whitespace-nowrap ${
                   statusQuickFilter === 'ALL'
                     ? 'bg-slate-700 text-white border-slate-500 font-bold'
                     : 'bg-[#181818] text-slate-400 border-slate-700 hover:text-white'
                 }`}
               >
-                ทั้งหมด ({repairStockRows.length})
+                {isEn ? `All (${repairStockRows.length})` : `ทั้งหมด (${repairStockRows.length})`}
               </button>
               <button
                 type="button"
                 onClick={() => setStatusQuickFilter('LOW')}
-                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
+                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 whitespace-nowrap ${
                   statusQuickFilter === 'LOW'
                     ? 'bg-rose-950 text-rose-300 border-rose-600 font-bold'
                     : 'bg-[#181818] text-slate-400 border-slate-700 hover:text-rose-300'
                 }`}
               >
                 <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                <span>ต่ำกว่าเกณฑ์ ({kpis.lowBufferCount})</span>
+                <span>{isEn ? `Low Stock (${kpis.lowBufferCount})` : `ต่ำกว่าเกณฑ์ (${kpis.lowBufferCount})`}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setStatusQuickFilter('IN_PROCESS')}
-                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
+                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 whitespace-nowrap ${
                   statusQuickFilter === 'IN_PROCESS'
                     ? 'bg-purple-950 text-purple-300 border-purple-600 font-bold'
                     : 'bg-[#181818] text-slate-400 border-slate-700 hover:text-purple-300'
                 }`}
               >
                 <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                <span>กำลังเจียร ({kpis.inProcessCount})</span>
+                <span>{isEn ? `Grinding (${kpis.inProcessCount})` : `กำลังเจียร (${kpis.inProcessCount})`}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setStatusQuickFilter('AWAITING')}
-                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 ${
+                className={`px-2 py-1 rounded border transition-colors cursor-pointer flex items-center gap-1 whitespace-nowrap ${
                   statusQuickFilter === 'AWAITING'
                     ? 'bg-amber-950 text-amber-300 border-amber-600 font-bold'
                     : 'bg-[#181818] text-slate-400 border-slate-700 hover:text-amber-300'
                 }`}
               >
                 <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                <span>รอส่งซ่อม ({kpis.awaitingCount})</span>
+                <span>{isEn ? `Awaiting (${kpis.awaitingCount})` : `รอส่งซ่อม (${kpis.awaitingCount})`}</span>
               </button>
             </div>
 
@@ -613,7 +616,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="ค้นหาชื่อชิ้นส่วน หรือ Stage..."
+                placeholder={isEn ? 'Search Part Name or Stage...' : 'ค้นหาชื่อชิ้นส่วน หรือ Stage...'}
                 className="w-full pl-8 pr-7 py-1 bg-[#1a1a1a] border border-[#475569] text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-[#00FF00]"
               />
               {searchTerm && (
@@ -635,18 +638,22 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                 <button
                   type="button"
                   onClick={handleCancelEdit}
-                  className="px-3 py-1.5 bg-[#222222] hover:bg-[#333333] text-slate-300 text-xs font-bold border border-[#666666] flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-[#222222] hover:bg-[#333333] text-slate-300 text-xs font-bold border border-[#666666] flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <X className="w-3.5 h-3.5" />
-                  <span>ยกเลิก</span>
+                  <span>{isEn ? 'Cancel' : 'ยกเลิก'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveAll}
-                  className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>บันทึกการแก้ไข ({hasUnsavedChanges ? 'มีการเปลี่ยนแปลง' : 'พร้อมบันทึก'})</span>
+                  <span>
+                    {isEn
+                      ? `Save Changes (${hasUnsavedChanges ? 'Modified' : 'Ready'})`
+                      : `บันทึกการแก้ไข (${hasUnsavedChanges ? 'มีการเปลี่ยนแปลง' : 'พร้อมบันทึก'})`}
+                  </span>
                 </button>
               </>
             ) : (
@@ -654,7 +661,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                 <button
                   type="button"
                   onClick={handleExportExcel}
-                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-300 border border-[#475569] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-300 border border-[#475569] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-[#00FF00]" />
                   <span>Export Excel (.xlsx)</span>
@@ -662,10 +669,10 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                 <button
                   type="button"
                   onClick={handleStartEdit}
-                  className="px-3.5 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-[#00FF00] border border-[#00FF00] font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-[#00FF00] border border-[#00FF00] font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
-                  <span>แก้ไขตัวเลขในตาราง (Edit Cells)</span>
+                  <span>{isEn ? 'Edit Cells' : 'แก้ไขตัวเลขในตาราง (Edit Cells)'}</span>
                 </button>
               </>
             )}
@@ -682,21 +689,23 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-[#00FF00]" />
             <span className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-              STOCK PART REPAIR MATRIX ({filteredRows.length} / {repairStockRows.length} รายการ)
+              {isEn
+                ? `REPAIR SPARE STOCK MATRIX (${filteredRows.length} / ${repairStockRows.length} items)`
+                : `STOCK PART REPAIR MATRIX (${filteredRows.length} / ${repairStockRows.length} รายการ)`}
             </span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-[#00FF00]"></span>
-              <span>พร้อมเบิกใช้งาน (Ready Buffer)</span>
+              <span>{isEn ? 'Ready to Issue (Buffer)' : 'พร้อมเบิกใช้งาน (Ready Buffer)'}</span>
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-              <span>กำลังเจียร (In-Process)</span>
+              <span>{isEn ? 'Grinding (In-Process)' : 'กำลังเจียร (In-Process)'}</span>
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-              <span>รอส่งซ่อม (Awaiting Regrind)</span>
+              <span>{isEn ? 'Awaiting Regrind' : 'รอส่งซ่อม (Awaiting Regrind)'}</span>
             </span>
           </div>
         </div>
@@ -721,7 +730,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                   colSpan={4} 
                   className="sticky top-0 z-20 bg-[#1e2a38] text-cyan-300 font-black py-1.5 px-2 border-b border-r border-[#475569] text-center uppercase tracking-wider text-[11px] shadow-xs"
                 >
-                  2. REPAIRED PART STATUS (สต็อกงานซ่อมแยก 3 สถานะ)
+                  {isEn ? '2. REPAIRED PART STATUS (3 CIRCULATION STATES)' : '2. REPAIRED PART STATUS (สต็อกงานซ่อมแยก 3 สถานะ)'}
                 </th>
                 <th 
                   colSpan={7} 
@@ -755,9 +764,9 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                   Stage
                 </th>
 
-                {/* Col 3: รูปชิ้นงาน (Photo / Spec) */}
+                {/* Col 3: Photo / Spec */}
                 <th className="sticky top-[27px] z-20 py-1 px-1 w-16 text-center border-b border-r border-[#475569] bg-[#334155]">
-                  <div>รูปชิ้นงาน</div>
+                  <div>{isEn ? 'Photo' : 'รูปชิ้นงาน'}</div>
                   <div className="text-[8px] text-slate-300 font-normal">Photo/Spec</div>
                 </th>
 
@@ -766,27 +775,27 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                   Part Name & DWG No.
                 </th>
 
-                {/* Col 5: พร้อมเบิกใช้งาน (Ready EA) */}
+                {/* Col 5: Ready EA */}
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#143224] text-emerald-300 min-w-[105px]">
-                  <div className="font-black text-[11px]">พร้อมเบิก</div>
+                  <div className="font-black text-[11px]">{isEn ? 'Ready' : 'พร้อมเบิก'}</div>
                   <div className="text-[8px] text-emerald-200 font-normal">Ready to Use (EA)</div>
                 </th>
 
-                {/* Col 6: กำลังเจียร (In-Process EA) */}
+                {/* Col 6: In-Process EA */}
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#2a1a38] text-purple-300 min-w-[95px]">
-                  <div className="font-black text-[11px]">กำลังเจียร</div>
+                  <div className="font-black text-[11px]">{isEn ? 'Grinding' : 'กำลังเจียร'}</div>
                   <div className="text-[8px] text-purple-200 font-normal">In-Process (EA)</div>
                 </th>
 
-                {/* Col 7: รอส่งซ่อม (Awaiting EA) */}
+                {/* Col 7: Awaiting EA */}
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#382a14] text-amber-300 min-w-[95px]">
-                  <div className="font-black text-[11px]">รอส่งซ่อม</div>
+                  <div className="font-black text-[11px]">{isEn ? 'Awaiting' : 'รอส่งซ่อม'}</div>
                   <div className="text-[8px] text-amber-200 font-normal">Awaiting (EA)</div>
                 </th>
 
-                {/* Col 8: รวมหมุนเวียน (Total Circulation EA) */}
+                {/* Col 8: Total Circulation EA */}
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#1e2a3a] text-cyan-300 min-w-[90px]">
-                  <div className="font-black text-[11px]">รวมหมุนเวียน</div>
+                  <div className="font-black text-[11px]">{isEn ? 'Total Pool' : 'รวมหมุนเวียน'}</div>
                   <div className="text-[8px] text-cyan-200 font-normal">Total Pool (EA)</div>
                 </th>
 
@@ -800,19 +809,19 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
 
                 {/* Col 16: Safety Stock Target */}
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#3a2d1e] text-amber-300 min-w-[85px]">
-                  <div>เกณฑ์สำรอง</div>
+                  <div>{isEn ? 'Safety Min' : 'เกณฑ์สำรอง'}</div>
                   <div className="text-[8px] text-slate-300 font-normal">Safety Target</div>
                 </th>
 
                 {/* Col 17: Status */}
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#475569] bg-[#3a2d1e] text-amber-300 min-w-[110px]">
-                  <div>สถานะความพร้อม</div>
+                  <div>{isEn ? 'Status' : 'สถานะความพร้อม'}</div>
                   <div className="text-[8px] text-slate-300 font-normal">Buffer Status</div>
                 </th>
 
                 {/* Col 18: Notes */}
                 <th className="sticky top-[27px] z-20 py-1 px-2 text-left border-b border-r border-[#475569] bg-[#334155] min-w-[140px]">
-                  หมายเหตุงานซ่อม
+                  {isEn ? 'Repair Notes' : 'หมายเหตุงานซ่อม'}
                 </th>
 
                 {/* Col 19: Actions */}
@@ -827,7 +836,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
               {filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={19} className="py-10 text-center text-slate-400 bg-[#161b24] border-b border-[#334155]">
-                    ไม่พบรายการอะไหล่ซ่อมที่ตรงกับเงื่อนไขการค้นหา
+                    {isEn ? 'No repair stock parts matching filter criteria' : 'ไม่พบรายการอะไหล่ซ่อมที่ตรงกับเงื่อนไขการค้นหา'}
                   </td>
                 </tr>
               ) : (
@@ -864,7 +873,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                           <div 
                             onClick={() => setPreviewPhoto({ url: row.primaryPhoto.dataUrl, title: row.partName, partCode: row.partCode })}
                             className="group relative inline-block cursor-pointer"
-                            title="คลิกเพื่อดูรูปชิ้นงานขยายใหญ่"
+                            title={isEn ? 'Click to enlarge part photo' : 'คลิกเพื่อดูรูปชิ้นงานขยายใหญ่'}
                           >
                             <img 
                               src={row.primaryPhoto.dataUrl} 
@@ -919,7 +928,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                               onClick={() => handleQuickAdjustReady(row, -1)}
                               disabled={row.readyToUseQty <= 0}
                               className="w-5 h-5 rounded bg-[#16271f] hover:bg-[#1f3a2c] text-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors cursor-pointer text-xs font-bold"
-                              title="ลดสต็อกพร้อมเบิก 1 ชิ้น"
+                              title={isEn ? 'Decrease ready stock by 1' : 'ลดสต็อกพร้อมเบิก 1 ชิ้น'}
                             >
                               -
                             </button>
@@ -936,7 +945,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                               type="button"
                               onClick={() => handleQuickAdjustReady(row, 1)}
                               className="w-5 h-5 rounded bg-[#16271f] hover:bg-[#1f3a2c] text-emerald-400 flex items-center justify-center transition-colors cursor-pointer text-xs font-bold"
-                              title="เพิ่มสต็อกพร้อมเบิก 1 ชิ้น"
+                              title={isEn ? 'Increase ready stock by 1' : 'เพิ่มสต็อกพร้อมเบิก 1 ชิ้น'}
                             >
                               +
                             </button>
@@ -970,51 +979,51 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                               {row.inProcessQty}
                             </span>
                             {row.liveQueue.inProcess > 0 && (
-                              <span 
-                                className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping" 
-                                title={`ซิงค์ตรงจากคิวงานกำลังเจียร: ${row.liveQueue.inProcess} ชิ้น`}
-                              />
-                            )}
-                          </div>
-                        )}
-                      </td>
+                                <span 
+                                  className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping" 
+                                  title={isEn ? `Synced from active queue: ${row.liveQueue.inProcess} EA` : `ซิงค์ตรงจากคิวงานกำลังเจียร: ${row.liveQueue.inProcess} ชิ้น`}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </td>
 
-                      {/* Col 7: รอส่งซ่อม (Awaiting Regrind EA) */}
-                      <td className="py-1 px-1.5 text-center border-r border-[#242f44] bg-[#22190f]">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min="0"
-                            value={editedRow.awaitingRepairQty !== undefined ? editedRow.awaitingRepairQty : row.awaitingRepairQty}
-                            onChange={(e) => {
-                              const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                              setEditValues(prev => ({
-                                ...prev,
-                                [row.partCode]: {
-                                  ...(prev[row.partCode] || {}),
-                                  awaitingRepairQty: val
-                                }
-                              }));
-                              setHasUnsavedChanges(true);
-                            }}
-                            className="w-16 bg-[#302213] border border-amber-500 text-amber-200 font-bold text-center text-xs py-0.5 focus:outline-none rounded"
-                          />
-                        ) : (
-                          <div className="flex items-center justify-center gap-1 font-bold">
-                            <span className={`text-xs ${row.awaitingRepairQty > 0 ? 'text-amber-300 font-bold' : 'text-slate-500'}`}>
-                              {row.awaitingRepairQty}
-                            </span>
-                            {row.liveQueue.pending > 0 && (
-                              <span 
-                                className="text-[9px] px-1 rounded bg-amber-950 text-amber-300 border border-amber-800"
-                                title={`มีในคิวรอเจียร ${row.liveQueue.pending} ชิ้น`}
-                              >
-                                คิว {row.liveQueue.pending}
+                        {/* Col 7: Awaiting Regrind EA */}
+                        <td className="py-1 px-1.5 text-center border-r border-[#242f44] bg-[#22190f]">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min="0"
+                              value={editedRow.awaitingRepairQty !== undefined ? editedRow.awaitingRepairQty : row.awaitingRepairQty}
+                              onChange={(e) => {
+                                const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                setEditValues(prev => ({
+                                  ...prev,
+                                  [row.partCode]: {
+                                    ...(prev[row.partCode] || {}),
+                                    awaitingRepairQty: val
+                                  }
+                                }));
+                                setHasUnsavedChanges(true);
+                              }}
+                              className="w-16 bg-[#302213] border border-amber-500 text-amber-200 font-bold text-center text-xs py-0.5 focus:outline-none rounded"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center gap-1 font-bold">
+                              <span className={`text-xs ${row.awaitingRepairQty > 0 ? 'text-amber-300 font-bold' : 'text-slate-500'}`}>
+                                {row.awaitingRepairQty}
                               </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
+                              {row.liveQueue.pending > 0 && (
+                                <span 
+                                  className="text-[9px] px-1 rounded bg-amber-950 text-amber-300 border border-amber-800"
+                                  title={isEn ? `In regrind queue: ${row.liveQueue.pending} EA` : `มีในคิวรอเจียร ${row.liveQueue.pending} ชิ้น`}
+                                >
+                                  {isEn ? `Queue ${row.liveQueue.pending}` : `คิว ${row.liveQueue.pending}`}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
 
                       {/* Col 8: รวมหมุนเวียน (Total Circulation EA) */}
                       <td className="py-1 px-1.5 text-center border-r border-[#242f44] bg-[#121c29]">
@@ -1088,16 +1097,16 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                       {/* Col 17: Status Badge */}
                       <td className="py-1 px-1.5 text-center border-r border-[#242f44]">
                         {row.isCriticalEmpty ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700 animate-pulse">
-                            🔴 หมดสต็อกพร้อมเบิก
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-700 animate-pulse whitespace-nowrap">
+                            {isEn ? '🔴 Out of Ready Stock' : '🔴 หมดสต็อกพร้อมเบิก'}
                           </span>
                         ) : row.isBelowSafety ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700">
-                            🟡 ต่ำกว่าเกณฑ์สำรอง
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700 whitespace-nowrap">
+                            {isEn ? '🟡 Below Safety Stock' : '🟡 ต่ำกว่าเกณฑ์สำรอง'}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
-                            🟢 พร้อมเบิกปกติ
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700 whitespace-nowrap">
+                            {isEn ? '🟢 Normal Ready' : '🟢 พร้อมเบิกปกติ'}
                           </span>
                         )}
                       </td>
@@ -1108,7 +1117,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                           <input
                             type="text"
                             value={editedRow.notes !== undefined ? editedRow.notes : row.notes}
-                            placeholder="ระบุหมายเหตุงานซ่อม..."
+                            placeholder={isEn ? 'Enter repair notes...' : 'ระบุหมายเหตุงานซ่อม...'}
                             onChange={(e) => {
                               const val = e.target.value;
                               setEditValues(prev => ({
@@ -1140,7 +1149,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                               }
                             }}
                             className="p-1 rounded bg-[#162132] hover:bg-[#203048] text-cyan-300 hover:text-white border border-[#2d3e58] cursor-pointer transition-colors"
-                            title="เปิดดูรายละเอียดใน Part Master"
+                            title={isEn ? 'Open details in Part Master' : 'เปิดดูรายละเอียดใน Part Master'}
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </button>
@@ -1192,7 +1201,7 @@ export const StockQuantityMatrixView: React.FC<StockQuantityMatrixViewProps> = (
                 onClick={() => setPreviewPhoto(null)}
                 className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-mono font-bold rounded cursor-pointer"
               >
-                ปิดหน้าต่าง
+                {isEn ? 'Close' : 'ปิดหน้าต่าง'}
               </button>
             </div>
           </div>

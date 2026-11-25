@@ -32,7 +32,7 @@ import {
   ChevronsUp,
   ChevronsDown,
   Repeat,
-  Box,
+  Calculator,
   QrCode,
   Barcode,
   Camera,
@@ -44,10 +44,11 @@ import { storageService } from '../services/storageService';
 
 import { DeleteConfirmationModal } from '../components/common/DeleteConfirmationModal';
 import { StageManagementModal } from '../components/common/StageManagementModal';
-import { Part3DBlueprintModal } from '../components/common/Part3DBlueprintModal';
+import { PartRegrindLadderModal } from '../components/common/Part3DBlueprintModal';
 import { PartQrLabelModal } from '../components/common/PartQrLabelModal';
 import { exportPartMasterExcel } from '../utils/excelExport';
 import { DEFAULT_STAGE_GROUPS, deriveLogicalStage, sortStagesInOrder } from '../utils/stageUtils';
+import { useLanguage } from '../i18n';
 
 export interface UnifiedPartMasterRow {
   no: number;
@@ -117,84 +118,156 @@ export const getPartDefaultSpecs = (partName: string) => {
     return {
       newSpecMm: 46.20,
       scrapLimitMm: 44.80,
-      perGrindMm: '0.10 mm',
+      perGrindMm: '0.10',
       totalGrindMm: '1.40',
-      maxCycles: 14,
-      note: 'Change every 10-15 Day (เปลี่ยนทุกๆ 10-15 วัน)'
+      maxCycles: '12-13 time' as number | string,
+      note: 'Change every 10 -15 Day (เปลี่ยนทุกๆ 10-15 วัน)'
+    };
+  }
+  if (upper.includes('BURRING') && upper.includes('WIDE LOWER')) {
+    return {
+      newSpecMm: 28.00,
+      scrapLimitMm: 26.50,
+      perGrindMm: '0.10 -0.15',
+      totalGrindMm: '1.50',
+      maxCycles: '7-9 time' as number | string,
+      note: 'Change every 10 -15 Day (เปลี่ยนทุกๆ 10-15 วัน)'
     };
   }
   if (upper.includes('BURRING PUNCH')) {
     return {
       newSpecMm: 62.50,
-      scrapLimitMm: 62.50,
-      perGrindMm: 'Dispose',
-      totalGrindMm: '-',
-      maxCycles: 'Dispose',
-      note: 'Dispose of after 1 use (เปลี่ยนใหม่หลังใช้งาน)'
-    };
-  }
-  if (upper.includes('PIERCE DIE') || upper.includes('BURRING DIE')) {
-    return {
-      newSpecMm: 28.00,
-      scrapLimitMm: 27.00,
-      perGrindMm: '0.10 mm',
-      totalGrindMm: '1.00',
-      maxCycles: 10,
-      note: 'Standard regrind 0.10mm'
+      scrapLimitMm: 61.00,
+      perGrindMm: '0.10 -0.15',
+      totalGrindMm: '1.50',
+      maxCycles: '7-9 time' as number | string,
+      note: 'Change every 10 -15 Day (เปลี่ยนทุกๆ 10-15 วัน)'
     };
   }
   if (upper.includes('IRONING') || upper.includes('BUCKING')) {
     return {
       newSpecMm: 35.00,
       scrapLimitMm: 33.50,
-      perGrindMm: '0.15 mm',
-      totalGrindMm: '1.50',
-      maxCycles: 10,
-      note: 'Standard regrind 0.15mm'
+      perGrindMm: 'Dispose of after 1 use',
+      totalGrindMm: '-',
+      maxCycles: '-' as number | string,
+      note: 'Dispose of after 1 use'
     };
   }
   if (upper.includes('LOUVER')) {
     return {
       newSpecMm: 50.00,
       scrapLimitMm: 48.00,
-      perGrindMm: '0.20 mm',
-      totalGrindMm: '2.00',
-      maxCycles: 10,
-      note: 'Standard regrind 0.20mm'
+      perGrindMm: 'Dispose of after 1 use',
+      totalGrindMm: '-',
+      maxCycles: '-' as number | string,
+      note: 'Dispose of after 1 use'
     };
   }
-  if (upper.includes('SLIT') || upper.includes('CUT OFF') || upper.includes('CUTTER') || upper.includes('FLARE') || upper.includes('BLADE')) {
+  if (upper.includes('REFLARE')) {
     return {
       newSpecMm: 75.00,
       scrapLimitMm: 72.00,
-      perGrindMm: '0.25 mm',
-      totalGrindMm: '3.00',
-      maxCycles: 12,
-      note: 'Blade sharpening standard'
+      perGrindMm: 'Dispose of after 1 use',
+      totalGrindMm: '-',
+      maxCycles: '-' as number | string,
+      note: 'Dispose of after 1 use'
+    };
+  }
+  if (upper.includes('ROW SLIT') || upper.includes('ROW SLID')) {
+    return {
+      newSpecMm: 75.00,
+      scrapLimitMm: 73.50,
+      perGrindMm: '0.10',
+      totalGrindMm: '1.50',
+      maxCycles: '15 time' as number | string,
+      note: 'Change every 10 -15 Day (เปลี่ยนทุกๆ 10-15 วัน)'
+    };
+  }
+  if (upper.includes('CUT OFF')) {
+    return {
+      newSpecMm: 75.00,
+      scrapLimitMm: 73.50,
+      perGrindMm: '0.10',
+      totalGrindMm: '1.50',
+      maxCycles: '14-15 time' as number | string,
+      note: '-'
+    };
+  }
+  if (upper.includes('SLIT')) {
+    return {
+      newSpecMm: 75.00,
+      scrapLimitMm: 74.00,
+      perGrindMm: '0.10',
+      totalGrindMm: '1.00',
+      maxCycles: '3-4 time' as number | string,
+      note: '-'
+    };
+  }
+  if (upper.includes('SIDE CUT PUNCH (3P)')) {
+    return {
+      newSpecMm: 28.00,
+      scrapLimitMm: 26.60,
+      perGrindMm: '0.10',
+      totalGrindMm: '1.40',
+      maxCycles: '7-9 time' as number | string,
+      note: '-'
+    };
+  }
+  if (upper.includes('SIDE CUT')) {
+    return {
+      newSpecMm: 28.00,
+      scrapLimitMm: 26.50,
+      perGrindMm: '0.10',
+      totalGrindMm: '1.50',
+      maxCycles: (upper.includes('WIDE LOWER') ? '14-15 time' : '8-10 time') as number | string,
+      note: '-'
+    };
+  }
+  if (upper.includes('HITCH FEED')) {
+    return {
+      newSpecMm: 0,
+      scrapLimitMm: 0,
+      perGrindMm: '-',
+      totalGrindMm: '-',
+      maxCycles: '-' as number | string,
+      note: '-'
     };
   }
   return {
     newSpecMm: 28.00,
-    scrapLimitMm: 27.00,
-    perGrindMm: '0.10 mm',
-    totalGrindMm: '1.00',
-    maxCycles: 10,
-    note: 'Standard regular sharpen'
+    scrapLimitMm: 26.50,
+    perGrindMm: '0.10',
+    totalGrindMm: '1.50',
+    maxCycles: '4-5 time' as number | string,
+    note: '-'
   };
 };
 
 export const calculateRegrindMatrix = (newSpec: number, scrapLimit: number, perGrindInput: any) => {
-  const isDispose = (perGrindInput || '').toString().toLowerCase().includes('dispose');
-  if (isDispose) {
+  const raw = String(perGrindInput ?? '').trim();
+  const isDispose = raw.toLowerCase().includes('dispose');
+  if (isDispose || raw === '-') {
     return {
       totalGrindMm: '-',
-      regrindCycles: 'Dispose'
+      regrindCycles: isDispose ? 'Dispose' : '-'
     };
   }
-  const perGrindVal = parseFloat(perGrindInput.replace(/[^0-9.]/g, '')) || 0;
-  const total = Math.max(0, newSpec - scrapLimit);
+  const nums = (raw.match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(n => Number.isFinite(n) && n > 0);
+  const total = Math.max(0, Number((newSpec - scrapLimit).toFixed(2)));
   const totalStr = total.toFixed(2);
-  const cycles = perGrindVal > 0 ? Math.floor(total / perGrindVal) : 0;
+  if (nums.length >= 2) {
+    const minStep = Math.min(...nums);
+    const maxStep = Math.max(...nums);
+    const cLow = Math.floor(total / maxStep + 1e-6);
+    const cHigh = Math.floor(total / minStep + 1e-6);
+    return {
+      totalGrindMm: totalStr,
+      regrindCycles: cLow === cHigh ? `${cLow} time` : `${cLow}-${cHigh} time`
+    };
+  }
+  const perGrindVal = nums[0] || 0;
+  const cycles = perGrindVal > 0 ? Math.floor(total / perGrindVal + 1e-6) : 0;
   return {
     totalGrindMm: totalStr,
     regrindCycles: cycles
@@ -202,6 +275,8 @@ export const calculateRegrindMatrix = (newSpec: number, scrapLimit: number, perG
 };
 
 export const PartMasterView: React.FC = () => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [partMasters, setPartMasters] = useState<PartMaster[]>([]);
   const [lifeStandards, setLifeStandards] = useState<PartLifeStandard[]>([]);
   const [lineConfigs, setLineConfigs] = useState<LineActiveConfiguration[]>([]);
@@ -210,7 +285,7 @@ export const PartMasterView: React.FC = () => {
   const [selectedStage, setSelectedStage] = useState<string>('ALL');
   const [selectedLineFilter, setSelectedLineFilter] = useState<string>('ALL');
   const [selectedPartForDetail, setSelectedPartForDetail] = useState<UnifiedPartMasterRow | null>(null);
-  const [selectedPartFor3D, setSelectedPartFor3D] = useState<UnifiedPartMasterRow | null>(null);
+  const [selectedPartForLadder, setSelectedPartForLadder] = useState<UnifiedPartMasterRow | null>(null);
   const [selectedPartForQrModal, setSelectedPartForQrModal] = useState<UnifiedPartMasterRow | null>(null);
   const [showRegrindOnly, setShowRegrindOnly] = useState(false);
   const [selectedPartForPhoto, setSelectedPartForPhoto] = useState<UnifiedPartMasterRow | null>(null);
@@ -226,7 +301,7 @@ export const PartMasterView: React.FC = () => {
         storageService.savePartWorkpiecePhoto(partKey, {
           dataUrl: base64,
           fileName: file.name,
-          caption: `รูปถ่ายชิ้นงาน ${partKey}`,
+          caption: isEn ? `Workpiece photo ${partKey}` : `รูปถ่ายชิ้นงาน ${partKey}`,
           uploadedBy: 'Master Admin',
           isPrimary: true
         });
@@ -486,7 +561,7 @@ export const PartMasterView: React.FC = () => {
   // Save new part entered via inline top row
   const handleSaveNewRowInline = () => {
     if (!newRowData.partName.trim()) {
-      showToast('กรุณาระบุ Part Name ให้ครบถ้วน', 'error');
+      showToast(isEn ? 'Please enter a valid Part Name.' : 'กรุณาระบุ Part Name ให้ครบถ้วน', 'error');
       return;
     }
 
@@ -495,7 +570,7 @@ export const PartMasterView: React.FC = () => {
       : `P-${Date.now().toString().slice(-5)}`;
     
     if (partMasters.some(p => p.partCode.toUpperCase() === code)) {
-      showToast(`รายการ ${newRowData.partName} มีอยู่ในระบบแล้ว`, 'error');
+      showToast(isEn ? `Part "${newRowData.partName}" already exists in the master catalog.` : `รายการ ${newRowData.partName} มีอยู่ในระบบแล้ว`, 'error');
       return;
     }
 
@@ -565,7 +640,7 @@ export const PartMasterView: React.FC = () => {
     storageService.savePartMaster(newMaster);
     storageService.saveLifeStandard(newLifeStd);
 
-    showToast(`เพิ่มชิ้นส่วนใหม่ ${newMaster.partName} (${newMaster.partCode}) บันทึกลงตารางสำเร็จแล้ว`);
+    showToast(isEn ? `Added new part ${newMaster.partName} (${newMaster.partCode}) to Part Master.` : `เพิ่มชิ้นส่วนใหม่ ${newMaster.partName} (${newMaster.partCode}) บันทึกลงตารางสำเร็จแล้ว`);
     setIsAddingInline(false);
     setNewRowData({
       stage: 'Stage 1: Piercing & Burring',
@@ -622,23 +697,32 @@ export const PartMasterView: React.FC = () => {
   // Save inline edit for a row
   const handleSaveInlineEdit = () => {
     if (!inlineEditRowData) return;
+    const isDispose = (inlineEditRowData.perGrindMm || '').toString().toLowerCase().includes('dispose') || inlineEditRowData.perGrindMm === '-';
     const pm = partMasters.find(p => p.partCode === inlineEditRowData.partCode);
     if (pm) {
       const updatedPm: PartMaster = {
         ...pm,
+        partName: inlineEditRowData.partName,
+        partNameTh: inlineEditRowData.partName,
         stageName: inlineEditRowData.stage,
         purchasePriceThb: inlineEditRowData.purchasePriceThb,
         purchasePriceUsd: inlineEditRowData.purchasePriceUsd,
         expectedShotLife: inlineEditRowData.expectedShotLife,
-        supplier: inlineEditRowData.supplier
+        supplier: inlineEditRowData.supplier,
+        maintenanceType: isDispose ? 'DISPOSE' : 'REGRIND'
       };
       (updatedPm as any).newSpecMm = inlineEditRowData.newSpecMm;
       (updatedPm as any).scrapLimitMm = inlineEditRowData.scrapLimitMm;
+      (updatedPm as any).regrindStandard = {
+        perGrindMm: inlineEditRowData.perGrindMm,
+        totalGrindMm: inlineEditRowData.totalGrindMm,
+        regrindCycles: inlineEditRowData.regrindCycles,
+        note: inlineEditRowData.note
+      };
       storageService.savePartMaster(updatedPm);
     }
 
     const ls = lifeStandards.find(s => (s as any).partCode === inlineEditRowData.partCode || s.configKey?.partCode === inlineEditRowData.partCode || s.id === inlineEditRowData.partCode);
-    const isDispose = (inlineEditRowData.perGrindMm || '').toString().toLowerCase().includes('dispose');
     if (ls) {
       const updatedLs: PartLifeStandard = {
         ...ls,
@@ -719,7 +803,7 @@ export const PartMasterView: React.FC = () => {
       storageService.saveLifeStandard(newLs);
     }
 
-    showToast(`บันทึกการแก้ไข ${inlineEditRowData.partName} (${inlineEditRowData.partCode}) ในตารางสำเร็จแล้ว`);
+    showToast(isEn ? `Saved changes for ${inlineEditRowData.partName} (${inlineEditRowData.partCode}).` : `บันทึกการแก้ไข ${inlineEditRowData.partName} (${inlineEditRowData.partCode}) ในตารางสำเร็จแล้ว`);
     setInlineEditingPartCode(null);
     setInlineEditRowData(null);
     loadDatabaseData();
@@ -758,7 +842,7 @@ export const PartMasterView: React.FC = () => {
 
   const handleCancelEdit = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('คุณมีการแก้ไขที่ยังไม่ได้บันทึก ต้องการยกเลิกใช่หรือไม่?')) {
+      if (!window.confirm(isEn ? 'You have unsaved changes. Discard and exit edit mode?' : 'คุณมีการแก้ไขที่ยังไม่ได้บันทึก ต้องการยกเลิกใช่หรือไม่?')) {
         return;
       }
     }
@@ -915,13 +999,18 @@ export const PartMasterView: React.FC = () => {
       setPartMasters(updatedParts);
       setLifeStandards(updatedStds);
 
-      showToast(`บันทึกการแก้ไขข้อมูลตาราง ${updatedParts.length} รายการลงในฐานข้อมูลเรียบร้อยแล้ว (อัปเดต 100%)`, 'success');
+      showToast(
+        isEn
+          ? `Saved ${updatedParts.length} Part Master records to the database.`
+          : `บันทึกการแก้ไขข้อมูลตาราง ${updatedParts.length} รายการลงในฐานข้อมูลเรียบร้อยแล้ว (อัปเดต 100%)`,
+        'success'
+      );
       setIsEditing(false);
       setEditValues({});
       setHasUnsavedChanges(false);
       loadDatabaseData();
     } catch (err: any) {
-      showToast(`เกิดข้อผิดพลาดในการบันทึก: ${err.message}`, 'error');
+      showToast(isEn ? `Failed to save changes: ${err.message}` : `เกิดข้อผิดพลาดในการบันทึก: ${err.message}`, 'error');
     }
   };
 
@@ -930,13 +1019,17 @@ export const PartMasterView: React.FC = () => {
     if (!deleteTargetPart) return;
     try {
       storageService.deletePartMaster(deleteTargetPart.partCode);
-      showToast(`ลบข้อมูลชิ้นส่วน ${deleteTargetPart.partName} (${deleteTargetPart.partCode}) เรียบร้อยแล้ว`);
+      showToast(
+        isEn
+          ? `Deleted part ${deleteTargetPart.partName} (${deleteTargetPart.partCode}).`
+          : `ลบข้อมูลชิ้นส่วน ${deleteTargetPart.partName} (${deleteTargetPart.partCode}) เรียบร้อยแล้ว`
+      );
       setDeleteTargetPart(null);
       if (selectedPartForDetail?.partCode === deleteTargetPart.partCode) {
         setSelectedPartForDetail(null);
       }
     } catch (err: any) {
-      showToast(`เกิดข้อผิดพลาดในการลบ: ${err.message}`, 'error');
+      showToast(isEn ? `Failed to delete part: ${err.message}` : `เกิดข้อผิดพลาดในการลบ: ${err.message}`, 'error');
     }
   };
 
@@ -963,7 +1056,7 @@ export const PartMasterView: React.FC = () => {
 
     // Persist new order
     storageService.savePartMasters(newItems);
-    showToast(`ปรับปรุงตำแหน่งชิ้นส่วนเรียบร้อยแล้ว`, 'success');
+    showToast(isEn ? 'Updated part row order.' : `ปรับปรุงตำแหน่งชิ้นส่วนเรียบร้อยแล้ว`, 'success');
     loadDatabaseData();
   };
 
@@ -1024,7 +1117,7 @@ export const PartMasterView: React.FC = () => {
       }
       return item;
     });
-    exportPartMasterExcel(itemsToExport);
+    exportPartMasterExcel(itemsToExport, language);
   };
 
   return (
@@ -1064,7 +1157,9 @@ export const PartMasterView: React.FC = () => {
                   onChange={e => setSelectedStage(e.target.value)}
                   className="bg-transparent text-[#00FF00] font-mono text-xs font-bold focus:outline-none cursor-pointer w-full"
                 >
-                  <option value="ALL" className="bg-[#111111] text-white">ทุกสเตจ (All Stages)</option>
+                  <option value="ALL" className="bg-[#111111] text-white">
+                    {isEn ? 'All Stages' : 'ทุกสเตจ (All Stages)'}
+                  </option>
                   {allStages.map(stage => (
                     <option key={stage} value={stage} className="bg-[#111111] text-white">
                       {stage}
@@ -1076,11 +1171,11 @@ export const PartMasterView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsStageManagerOpen(true)}
-                className="px-2.5 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-[#00FF00] border border-[#666666] text-xs font-bold rounded flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap"
-                title="เปิดหน้าต่างจัดกลุ่มและจัดการ Stage"
+                className="px-2.5 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-[#00FF00] border border-[#666666] text-xs font-bold rounded flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap shrink-0"
+                title={isEn ? 'Open Stage Grouping & Management' : 'เปิดหน้าต่างจัดกลุ่มและจัดการ Stage'}
               >
                 <Sliders className="w-3.5 h-3.5 text-[#00FF00]" />
-                <span>⚙️ จัดกลุ่ม Stage</span>
+                <span>{isEn ? 'Group Stages' : '⚙️ จัดกลุ่ม Stage'}</span>
               </button>
             </div>
 
@@ -1089,7 +1184,7 @@ export const PartMasterView: React.FC = () => {
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="ค้นหาชื่อพาร์ท หรือสเตจ..."
+                placeholder={isEn ? 'Search part name, code, or stage...' : 'ค้นหาชื่อพาร์ท หรือสเตจ...'}
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 className="w-full bg-[#1a1a1a] border border-[#666666] pl-8 pr-7 py-1.5 text-xs text-white placeholder:text-slate-500 font-mono focus:outline-none focus:border-[#00FF00]"
@@ -1113,7 +1208,9 @@ export const PartMasterView: React.FC = () => {
                 onChange={e => setSelectedLineFilter(e.target.value)}
                 className="bg-transparent text-[#FFCC00] font-mono text-xs font-bold focus:outline-none cursor-pointer"
               >
-                <option value="ALL" className="bg-[#111111] text-white">ทุกไลน์ (All 7 Lines)</option>
+                <option value="ALL" className="bg-[#111111] text-white">
+                  {isEn ? 'All 7 Lines (E1–E5)' : 'ทุกไลน์ (All 7 Lines)'}
+                </option>
                 <option value="E1" className="bg-[#111111] text-white">Line E1 (Ø7 Slit)</option>
                 <option value="E2" className="bg-[#111111] text-white">Line E2 (Ø5 Slit)</option>
                 <option value="E3-1" className="bg-[#111111] text-white">Line E3-1 (Slit 3P)</option>
@@ -1133,11 +1230,11 @@ export const PartMasterView: React.FC = () => {
                   setShowRegrindOnly(false);
                   setSearchTerm('');
                 }}
-                className="px-2 py-1 text-xs bg-[#222222] hover:bg-[#333333] text-slate-300 border border-[#666666] flex items-center gap-1 transition-colors cursor-pointer"
-                title="รีเซ็ตตัวกรองทั้งหมด"
+                className="px-2 py-1 text-xs bg-[#222222] hover:bg-[#333333] text-slate-300 border border-[#666666] flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                title={isEn ? 'Reset all filters' : 'รีเซ็ตตัวกรองทั้งหมด'}
               >
                 <X className="w-3 h-3 text-[#FFCC00]" />
-                <span>รีเซ็ต</span>
+                <span>{isEn ? 'Reset' : 'รีเซ็ต'}</span>
               </button>
             )}
           </div>
@@ -1147,14 +1244,14 @@ export const PartMasterView: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsAddingInline(prev => !prev)}
-              className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 isAddingInline 
                   ? 'bg-amber-400 text-black font-extrabold shadow-md'
                   : 'bg-[#00FF00] hover:bg-[#00dd00] text-black'
               }`}
             >
               <Plus className="w-4 h-4" />
-              <span>+ เพิ่มรายการใหม่ (Add Part Master)</span>
+              <span>{isEn ? 'Add Part Master' : '+ เพิ่มรายการใหม่ (Add Part Master)'}</span>
             </button>
 
             {isEditing ? (
@@ -1162,8 +1259,8 @@ export const PartMasterView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleExportCSV}
-                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-200 border border-[#666666] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Export ข้อมูลล่าสุดขณะนี้เป็นไฟล์ Excel (.xlsx)"
+                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-200 border border-[#666666] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                  title={isEn ? 'Export current table data as Excel (.xlsx)' : 'Export ข้อมูลล่าสุดขณะนี้เป็นไฟล์ Excel (.xlsx)'}
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-[#00FF00]" />
                   <span>Export Excel (.xlsx)</span>
@@ -1171,18 +1268,22 @@ export const PartMasterView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleCancelEdit}
-                  className="px-3 py-1.5 bg-[#222222] hover:bg-[#333333] text-slate-300 text-xs font-bold border border-[#666666] flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-[#222222] hover:bg-[#333333] text-slate-300 text-xs font-bold border border-[#666666] flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
-                  <span>ยกเลิก</span>
+                  <span>{isEn ? 'Cancel' : 'ยกเลิก'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveBatchEdit}
-                  className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-[#00FF00]/20"
+                  className="px-4 py-1.5 bg-[#00FF00] hover:bg-[#00dd00] text-black font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-[#00FF00]/20 whitespace-nowrap shrink-0"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>บันทึกการแก้ไข ({hasUnsavedChanges ? 'มีการเปลี่ยนแปลง' : 'พร้อมบันทึก'})</span>
+                  <span>
+                    {isEn
+                      ? `Save Changes (${hasUnsavedChanges ? 'Modified' : 'Ready'})`
+                      : `บันทึกการแก้ไข (${hasUnsavedChanges ? 'มีการเปลี่ยนแปลง' : 'พร้อมบันทึก'})`}
+                  </span>
                 </button>
               </>
             ) : (
@@ -1190,7 +1291,7 @@ export const PartMasterView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleExportCSV}
-                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-200 border border-[#666666] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-slate-200 border border-[#666666] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-[#00FF00]" />
                   <span>Export Excel (.xlsx)</span>
@@ -1198,10 +1299,10 @@ export const PartMasterView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleStartEdit}
-                  className="px-3.5 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-[#00FF00] border border-[#00FF00] font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 bg-[#1a1a1a] hover:bg-[#262626] text-[#00FF00] border border-[#00FF00] font-black text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
-                  <span>แก้ไขตัวเลขในตาราง (Edit Cells)</span>
+                  <span>{isEn ? 'Edit Cells' : 'แก้ไขตัวเลขในตาราง (Edit Cells)'}</span>
                 </button>
               </>
             )}
@@ -1217,15 +1318,17 @@ export const PartMasterView: React.FC = () => {
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-[#00FF00]" />
             <span className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-              PARTS MASTER DATA DICTIONARY ({filteredItems.length} / {unifiedItems.length} รายการ)
+              {isEn
+                ? `PARTS MASTER DATA DICTIONARY (${filteredItems.length} / ${unifiedItems.length} parts)`
+                : `PARTS MASTER DATA DICTIONARY (${filteredItems.length} / ${unifiedItems.length} รายการ)`}
             </span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-[#00FF00]"></span>
-              <span>หัวตารางล็อกคงที่ (Locked Sticky Header)</span>
+              <span>{isEn ? 'Locked Sticky Header' : 'หัวตารางล็อกคงที่ (Locked Sticky Header)'}</span>
             </span>
-            <span>• คลิกแถวเพื่อดูรายละเอียด</span>
+            <span>{isEn ? '• Click part name for Grind Ladder' : '• คลิกแถวเพื่อดูรายละเอียด'}</span>
           </div>
         </div>
 
@@ -1277,13 +1380,15 @@ export const PartMasterView: React.FC = () => {
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center w-8 border-b border-r border-[#666666] bg-[#555566]">No</th>
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 border-b border-r border-[#666666] bg-[#555566] min-w-[145px] w-36">Stage</th>
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#666666] bg-[#4a4a5a] min-w-[85px] w-24">
-                  <div className="font-bold text-white text-[11px]">รูปชิ้นงาน</div>
+                  <div className="font-bold text-white text-[11px]">{isEn ? 'Part Photo' : 'รูปชิ้นงาน'}</div>
                   <div className="text-[9px] text-slate-300 font-normal">Photo / Spec</div>
                 </th>
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 border-b border-r border-[#666666] bg-[#555566] min-w-[150px]">Part Name & Drawing No.</th>
                 <th className="sticky top-[27px] z-20 py-1 px-1.5 text-center border-b border-r border-[#666666] bg-[#4a4a5a] min-w-[125px]">
                   <div className="font-bold text-cyan-300 text-[11px]">Installed Lines</div>
-                  <div className="text-[9px] text-slate-300 font-normal">ไลน์ที่ติดตั้ง (E1-E5)</div>
+                  <div className="text-[9px] text-slate-300 font-normal">
+                    {isEn ? 'Active Lines (E1–E5)' : 'ไลน์ที่ติดตั้ง (E1-E5)'}
+                  </div>
                 </th>
 
                 {/* 2. Shot Usage Standards */}
@@ -1365,7 +1470,9 @@ export const PartMasterView: React.FC = () => {
                   </td>
                   {/* Photo / Spec Cell */}
                   <td className="py-1 px-1 border-r border-[#444444] text-center min-w-[85px] w-24">
-                    <span className="text-[10px] font-mono text-slate-500">+ แนบหลังเซฟ</span>
+                    <span className="text-[10px] font-mono text-slate-500">
+                      {isEn ? '+ After save' : '+ แนบหลังเซฟ'}
+                    </span>
                   </td>
                   <td className="py-1 px-1 border-r border-[#444444]">
                     <div className="space-y-1">
@@ -1586,16 +1693,16 @@ export const PartMasterView: React.FC = () => {
                         type="button"
                         onClick={handleSaveNewRowInline}
                         className="px-2 py-1 bg-[#00FF00] hover:bg-[#00dd00] text-black font-bold text-[11px] flex items-center gap-0.5 cursor-pointer shadow-sm"
-                        title="บันทึกรายการใหม่ (Save)"
+                        title={isEn ? 'Save new part' : 'บันทึกรายการใหม่ (Save)'}
                       >
                         <Check className="w-3.5 h-3.5" />
-                        <span>บันทึก</span>
+                        <span>{isEn ? 'Save' : 'บันทึก'}</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsAddingInline(false)}
                         className="p-1 bg-[#222222] hover:bg-[#333333] text-slate-400 hover:text-white border border-[#666666] cursor-pointer"
-                        title="ยกเลิก (Cancel)"
+                        title={isEn ? 'Cancel' : 'ยกเลิก (Cancel)'}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -1607,7 +1714,7 @@ export const PartMasterView: React.FC = () => {
               {filteredItems.length === 0 && !isAddingInline ? (
                 <tr>
                   <td colSpan={17} className="py-8 text-center text-slate-500 bg-[#161616] border-b border-[#666666]">
-                    ไม่พบข้อมูลชิ้นส่วนที่ตรงกับคำค้นหาหรือตัวกรอง
+                    {isEn ? 'No parts found matching the search or filter criteria.' : 'ไม่พบข้อมูลชิ้นส่วนที่ตรงกับคำค้นหาหรือตัวกรอง'}
                   </td>
                 </tr>
               ) : (
@@ -1640,10 +1747,10 @@ export const PartMasterView: React.FC = () => {
                         <td className="py-1 px-1 border-r border-[#444444] text-center min-w-[85px] w-24">
                           <label 
                             className="flex flex-col items-center justify-center p-1 rounded bg-[#111111] hover:bg-cyan-950 border border-dashed border-[#444444] text-cyan-300 font-mono cursor-pointer w-14 h-10 mx-auto"
-                            title="แนบรูปถ่ายงานจริง"
+                            title={isEn ? 'Attach workpiece photo' : 'แนบรูปถ่ายงานจริง'}
                           >
                             <Camera className="w-3 h-3 text-cyan-400 mb-0.5" />
-                            <span className="text-[8.5px] font-bold">+ ลงรูป</span>
+                            <span className="text-[8.5px] font-bold">{isEn ? '+ Photo' : '+ ลงรูป'}</span>
                             <input 
                               type="file" 
                               accept="image/*" 
@@ -1871,10 +1978,10 @@ export const PartMasterView: React.FC = () => {
                         <td className="py-1 px-1 border-r border-[#444444] text-center min-w-[85px] w-24">
                           <label 
                             className="flex flex-col items-center justify-center p-1 rounded bg-[#111111] hover:bg-cyan-950 border border-dashed border-[#444444] text-cyan-300 font-mono cursor-pointer w-14 h-10 mx-auto"
-                            title="แนบรูปถ่ายงานจริง"
+                            title={isEn ? 'Attach workpiece photo' : 'แนบรูปถ่ายงานจริง'}
                           >
                             <Camera className="w-3 h-3 text-cyan-400 mb-0.5" />
-                            <span className="text-[8.5px] font-bold">+ ลงรูป</span>
+                            <span className="text-[8.5px] font-bold">{isEn ? '+ Photo' : '+ ลงรูป'}</span>
                             <input 
                               type="file" 
                               accept="image/*" 
@@ -2093,10 +2200,10 @@ export const PartMasterView: React.FC = () => {
                               type="button"
                               onClick={handleSaveInlineEdit}
                               className="px-2 py-1 bg-[#FFCC00] hover:bg-[#e6b800] text-black font-bold text-[11px] flex items-center gap-0.5 cursor-pointer shadow-sm"
-                              title="บันทึกการแก้ไข (Save)"
+                              title={isEn ? 'Save changes' : 'บันทึกการแก้ไข (Save)'}
                             >
                               <Check className="w-3.5 h-3.5" />
-                              <span>บันทึก</span>
+                              <span>{isEn ? 'Save' : 'บันทึก'}</span>
                             </button>
                             <button
                               type="button"
@@ -2105,7 +2212,7 @@ export const PartMasterView: React.FC = () => {
                                 setInlineEditRowData(null);
                               }}
                               className="p-1 bg-[#222222] hover:bg-[#333333] text-slate-400 hover:text-white border border-[#666666] cursor-pointer"
-                              title="ยกเลิก (Cancel)"
+                              title={isEn ? 'Cancel' : 'ยกเลิก (Cancel)'}
                             >
                               <X className="w-3.5 h-3.5" />
                             </button>
@@ -2153,13 +2260,13 @@ export const PartMasterView: React.FC = () => {
                                   setSelectedPartForPhoto(item);
                                 }}
                                 className="flex flex-col items-center justify-center gap-0.5 cursor-pointer group"
-                                title="คลิกเพื่อขยายดูรูปภาพจริง / จัดการรูปแนบ"
+                                title={isEn ? 'Click to view full workpiece photo / manage photo' : 'คลิกเพื่อขยายดูรูปภาพจริง / จัดการรูปแนบ'}
                               >
                                 <div className="w-9 h-9 rounded bg-[#111111] border border-emerald-500/60 overflow-hidden flex items-center justify-center shadow-xs">
                                   <img src={photoUrl} alt={item.partName} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
                                 </div>
                                 <span className="text-[8.5px] px-1 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-600 font-bold font-mono">
-                                  🟢 มีรูปจริง
+                                  {isEn ? '🟢 Photo' : '🟢 มีรูปจริง'}
                                 </span>
                               </div>
                             );
@@ -2169,11 +2276,11 @@ export const PartMasterView: React.FC = () => {
                             <label
                               onClick={(e) => e.stopPropagation()}
                               className="flex flex-col items-center justify-center p-1 rounded bg-[#111111] hover:bg-cyan-950 border border-dashed border-[#444444] hover:border-cyan-400 text-cyan-300 font-mono cursor-pointer transition-colors w-14 h-10 mx-auto"
-                              title="คลิกเพื่อแนบรูปถ่ายงานจริง (Upload Real Workpiece Photo)"
+                              title={isEn ? 'Upload real workpiece photo' : 'คลิกเพื่อแนบรูปถ่ายงานจริง (Upload Real Workpiece Photo)'}
                             >
                               <div className="flex items-center gap-1 text-[9px] font-bold">
                                 <Camera className="w-3 h-3 text-cyan-400" />
-                                <span>+ ลงรูป</span>
+                                <span>{isEn ? '+ Photo' : '+ ลงรูป'}</span>
                               </div>
                               <input
                                 type="file"
@@ -2189,9 +2296,9 @@ export const PartMasterView: React.FC = () => {
                         <div className="flex items-center justify-between gap-1 group">
                           <div>
                             <span 
-                              onClick={() => setSelectedPartFor3D(item)} 
+                              onClick={() => setSelectedPartForLadder(item)} 
                               className="block cursor-pointer hover:text-[#00FF00] transition-colors leading-tight"
-                              title="คลิกเพื่อดู 3D Blueprint และตารางสเปกคำนวณรอบเจียร"
+                              title={isEn ? 'Click to open Regrind Cycle Ladder & Spec Check' : 'คลิกเพื่อเปิดตารางคำนวณรอบเจียรลับคม (Grind Ladder)'}
                             >
                               {item.partName}
                             </span>
@@ -2216,12 +2323,12 @@ export const PartMasterView: React.FC = () => {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedPartFor3D(item);
+                                setSelectedPartForLadder(item);
                               }}
                               className="p-1 rounded bg-[#111111] hover:bg-[#00FF00]/20 text-slate-400 hover:text-[#00FF00] border border-[#444444] transition-all cursor-pointer opacity-80 group-hover:opacity-100"
-                              title="เปิดแบบ 3D Blueprint / คำนวณรอบเจียรอัตโนมัติ"
+                              title={isEn ? 'Open Regrind Cycle Ladder & Spec Audit' : 'เปิดตารางคำนวณรอบเจียรลับคม (Grind Ladder & Spec Audit)'}
                             >
-                              <Box className="w-3.5 h-3.5" />
+                              <Calculator className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
@@ -2230,7 +2337,7 @@ export const PartMasterView: React.FC = () => {
                                 setSelectedPartForQrModal(item);
                               }}
                               className="p-1 rounded bg-[#111111] hover:bg-cyan-950 text-slate-400 hover:text-cyan-300 border border-[#444444] transition-all cursor-pointer opacity-80 group-hover:opacity-100"
-                              title="พิมพ์ฉลาก Tooling QR Code & Barcode (Idea 5 & 7)"
+                              title={isEn ? 'Print Tooling QR Code & Barcode Label' : 'พิมพ์ฉลาก Tooling QR Code & Barcode (Idea 5 & 7)'}
                             >
                               <QrCode className="w-3.5 h-3.5" />
                             </button>
@@ -2316,16 +2423,41 @@ export const PartMasterView: React.FC = () => {
                         )}
                       </td>
                       <td className="py-1 px-2 text-center text-purple-300 border-r border-[#444444]">
-                        {item.regrindStandard?.totalGrindMm !== '-' && item.regrindStandard?.totalGrindMm ? `${item.regrindStandard.totalGrindMm} mm` : '-'}
+                        {(() => {
+                          const totalStr = item.regrindStandard?.totalGrindMm;
+                          if (totalStr === '-' || !totalStr) return '-';
+                          const totalNum = parseFloat(String(totalStr));
+                          const diff = (item.newSpecMm && item.scrapLimitMm) ? Number((item.newSpecMm - item.scrapLimitMm).toFixed(2)) : null;
+                          const mismatch = !isDisposable && diff !== null && Number.isFinite(totalNum) && Math.abs(diff - totalNum) > 0.02;
+                          return (
+                            <span
+                              className={mismatch ? 'inline-flex items-center gap-1 text-amber-300 font-bold' : ''}
+                              title={
+                                mismatch
+                                  ? (isEn
+                                      ? `Warning: L₀ - L_min = ${diff?.toFixed(2)} mm ≠ Total ${totalNum.toFixed(2)} mm`
+                                      : `คำเตือน: L₀ - L_min = ${diff?.toFixed(2)} mm ≠ Total ${totalNum.toFixed(2)} mm`)
+                                  : undefined
+                              }
+                            >
+                              {totalStr} mm
+                              {mismatch && <AlertTriangle className="w-3 h-3 text-amber-400" />}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="py-1 px-2 text-center text-purple-300 font-bold border-r border-[#444444]">
                         {item.regrindStandard?.regrindCycles ?? '-'}
                       </td>
                       <td 
                         className="py-1 px-2 text-slate-300 text-[11px] truncate max-w-[180px] border-r border-[#444444]" 
-                        title={item.regrindStandard?.note}
+                        title={isEn && item.regrindStandard?.note ? item.regrindStandard.note.replace(/\s*\([^)]*[\u0E00-\u0E7F][^)]*\)/g, '').trim() : item.regrindStandard?.note}
                       >
-                        {item.regrindStandard?.note && item.regrindStandard?.note !== '-' ? item.regrindStandard.note : '-'}
+                        {item.regrindStandard?.note && item.regrindStandard?.note !== '-'
+                          ? (isEn
+                              ? item.regrindStandard.note.replace(/\s*\([^)]*[\u0E00-\u0E7F][^)]*\)/g, '').trim() || item.regrindStandard.note
+                              : item.regrindStandard.note)
+                          : '-'}
                       </td>
 
                       <td className="py-1 px-2 text-center text-cyan-300 font-bold border-r border-[#444444]">
@@ -2350,25 +2482,29 @@ export const PartMasterView: React.FC = () => {
                               }}
                               disabled={partMasters.findIndex(p => p.partCode === item.partCode) === 0}
                               className={`p-0.5 rounded ${partMasters.findIndex(p => p.partCode === item.partCode) === 0 ? 'text-slate-800 cursor-not-allowed' : 'text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer'}`}
-                              title="ย้ายไปบนสุด (Move to Top)"
+                              title={isEn ? 'Move to Top' : 'ย้ายไปบนสุด (Move to Top)'}
                             >
                               <ChevronsUp className="w-3 h-3" />
                             </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const targetNoStr = window.prompt(`สลับตำแหน่ง No. ${item.no} กับ No. ? (1-${partMasters.length})`);
+                                const targetNoStr = window.prompt(
+                                  isEn
+                                    ? `Swap No. ${item.no} with No. ? (1-${partMasters.length})`
+                                    : `สลับตำแหน่ง No. ${item.no} กับ No. ? (1-${partMasters.length})`
+                                );
                                 if (targetNoStr) {
                                   const targetNo = parseInt(targetNoStr);
                                   if (!isNaN(targetNo) && targetNo >= 1 && targetNo <= partMasters.length) {
                                     handleMovePart(item.partCode, 'swap', targetNo - 1);
                                   } else {
-                                    showToast('กรุณาระบุลำดับที่ถูกต้อง', 'error');
+                                    showToast(isEn ? 'Please enter a valid row number.' : 'กรุณาระบุลำดับที่ถูกต้อง', 'error');
                                   }
                                 }
                               }}
                               className="p-0.5 rounded text-sky-400 hover:text-sky-300 hover:bg-sky-400/10 cursor-pointer"
-                              title="ย้ายไปยังลำดับที่... (Move to Position)"
+                              title={isEn ? 'Move to Position...' : 'ย้ายไปยังลำดับที่... (Move to Position)'}
                             >
                               <Repeat className="w-3 h-3" />
                             </button>
@@ -2379,7 +2515,7 @@ export const PartMasterView: React.FC = () => {
                               }}
                               disabled={partMasters.findIndex(p => p.partCode === item.partCode) === 0}
                               className={`p-0.5 rounded ${partMasters.findIndex(p => p.partCode === item.partCode) === 0 ? 'text-slate-800 cursor-not-allowed' : 'text-slate-400 hover:text-white hover:bg-slate-700 cursor-pointer'}`}
-                              title="เลื่อนขึ้น (Move Up)"
+                              title={isEn ? 'Move Up' : 'เลื่อนขึ้น (Move Up)'}
                             >
                               <ArrowUp className="w-3 h-3" />
                             </button>
@@ -2390,7 +2526,7 @@ export const PartMasterView: React.FC = () => {
                               }}
                               disabled={partMasters.findIndex(p => p.partCode === item.partCode) === partMasters.length - 1}
                               className={`p-0.5 rounded ${partMasters.findIndex(p => p.partCode === item.partCode) === partMasters.length - 1 ? 'text-slate-800 cursor-not-allowed' : 'text-slate-400 hover:text-white hover:bg-slate-700 cursor-pointer'}`}
-                              title="เลื่อนลง (Move Down)"
+                              title={isEn ? 'Move Down' : 'เลื่อนลง (Move Down)'}
                             >
                               <ArrowDown className="w-3 h-3" />
                             </button>
@@ -2401,7 +2537,7 @@ export const PartMasterView: React.FC = () => {
                               }}
                               disabled={partMasters.findIndex(p => p.partCode === item.partCode) === partMasters.length - 1}
                               className={`p-0.5 rounded ${partMasters.findIndex(p => p.partCode === item.partCode) === partMasters.length - 1 ? 'text-slate-800 cursor-not-allowed' : 'text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer'}`}
-                              title="ย้ายไปล่างสุด (Move to Bottom)"
+                              title={isEn ? 'Move to Bottom' : 'ย้ายไปล่างสุด (Move to Bottom)'}
                             >
                               <ChevronsDown className="w-3 h-3" />
                             </button>
@@ -2414,7 +2550,7 @@ export const PartMasterView: React.FC = () => {
                               setDeleteTargetPart(item);
                             }}
                             className="p-1 bg-[#111111] hover:bg-[#2b000a] text-slate-400 hover:text-[#C40045] border border-[#555555] hover:border-[#C40045] transition-colors cursor-pointer"
-                            title="ลบชิ้นส่วนนี้ (Delete Part)"
+                            title={isEn ? 'Delete Part' : 'ลบชิ้นส่วนนี้ (Delete Part)'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -2437,10 +2573,14 @@ export const PartMasterView: React.FC = () => {
         isOpen={!!deleteTargetPart}
         onClose={() => setDeleteTargetPart(null)}
         onConfirm={handleConfirmDeletePart}
-        title="ยืนยันการลบชิ้นส่วนแม่พิมพ์ (Delete Part Master)"
+        title={isEn ? 'Confirm Delete Part Master' : 'ยืนยันการลบชิ้นส่วนแม่พิมพ์ (Delete Part Master)'}
         itemName={deleteTargetPart ? `${deleteTargetPart.partName} (${deleteTargetPart.partCode})` : ''}
         itemDetails={deleteTargetPart ? `Stage: ${deleteTargetPart.stage} | Total Installed: ${deleteTargetPart.installQty.totalQty} EA` : ''}
-        warningText="การลบชิ้นส่วนนี้จะลบสเปกอายุการใช้งาน (Life Standards) และจำนวนติดตั้งในสายการผลิต (Matrix) ทั้งหมดออกอย่างถาวร"
+        warningText={
+          isEn
+            ? 'Deleting this part will permanently remove its Life Standards and production line installation quantities.'
+            : 'การลบชิ้นส่วนนี้จะลบสเปกอายุการใช้งาน (Life Standards) และจำนวนติดตั้งในสายการผลิต (Matrix) ทั้งหมดออกอย่างถาวร'
+        }
       />
 
       {/* ======================================================== */}
@@ -2453,12 +2593,12 @@ export const PartMasterView: React.FC = () => {
       />
 
       {/* ======================================================== */}
-      {/* 8. 3D BLUEPRINT & REGRIND CALCULATION MODAL */}
+      {/* 8. REGRIND LADDER & SPEC VERIFICATION MODAL */}
       {/* ======================================================== */}
-      <Part3DBlueprintModal
-        isOpen={!!selectedPartFor3D}
-        onClose={() => setSelectedPartFor3D(null)}
-        partRow={selectedPartFor3D}
+      <PartRegrindLadderModal
+        isOpen={!!selectedPartForLadder}
+        onClose={() => setSelectedPartForLadder(null)}
+        partRow={selectedPartForLadder}
       />
 
       {/* ======================================================== */}
@@ -2485,7 +2625,9 @@ export const PartMasterView: React.FC = () => {
             <div className="flex items-center justify-between border-b border-white/10 pb-2">
               <div className="flex items-center gap-2">
                 <Camera className="w-4 h-4 text-cyan-400" />
-                <h3 className="text-xs font-bold text-white">รูปถ่ายงานจริง: {selectedPartForPhoto.partName}</h3>
+                <h3 className="text-xs font-bold text-white">
+                  {isEn ? `Workpiece Photo: ${selectedPartForPhoto.partName}` : `รูปถ่ายงานจริง: ${selectedPartForPhoto.partName}`}
+                </h3>
               </div>
               <button 
                 type="button" 
@@ -2506,7 +2648,7 @@ export const PartMasterView: React.FC = () => {
                   <div className="relative rounded-xl overflow-hidden border border-white/15 bg-slate-950 h-56 flex items-center justify-center">
                     <img src={photoUrl} alt={selectedPartForPhoto.partName} className="max-h-full max-w-full object-contain" />
                     <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40">
-                      🟢 รูปภาพถ่ายชิ้นงานจริง (Workpiece Photo)
+                      {isEn ? '🟢 Actual Workpiece Photo' : '🟢 รูปภาพถ่ายชิ้นงานจริง (Workpiece Photo)'}
                     </span>
                   </div>
 
@@ -2514,7 +2656,7 @@ export const PartMasterView: React.FC = () => {
                     <span className="text-[11px] font-mono text-slate-400">DWG: {selectedPartForPhoto.drawingNo || '-'}</span>
                     <label className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer hover:brightness-110 shadow">
                       <Upload className="w-3.5 h-3.5" />
-                      <span>อัปโหลดรูปใหม่</span>
+                      <span>{isEn ? 'Upload New Photo' : 'อัปโหลดรูปใหม่'}</span>
                       <input 
                         type="file" 
                         accept="image/*" 

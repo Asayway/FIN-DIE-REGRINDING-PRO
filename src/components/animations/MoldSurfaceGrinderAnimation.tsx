@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguage } from '../../i18n';
 
 interface MoldSurfaceGrinderAnimationProps {
   size?: 'xs' | 'sm' | 'md' | 'lg';
@@ -29,6 +30,8 @@ export const MoldSurfaceGrinderAnimation: React.FC<MoldSurfaceGrinderAnimationPr
     lg: { box: 'w-16 h-16', wheel: 48, tableW: 56, sparkSize: 'w-3 h-3' }
   };
 
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const dim = sizeMap[size] || sizeMap.sm;
   const isPurple = theme === 'purple';
 
@@ -141,7 +144,7 @@ export const MoldSurfaceGrinderAnimation: React.FC<MoldSurfaceGrinderAnimationPr
               isPurple ? 'text-purple-300' : 'text-amber-300'
             }`}
           >
-            <span>กำลังเจียรราบ</span>
+            <span>{isEn ? 'Grinding' : 'กำลังเจียรราบ'}</span>
             <span
               className={`w-1.5 h-1.5 rounded-full animate-ping inline-block ${
                 isPurple ? 'bg-purple-400' : 'bg-amber-400'

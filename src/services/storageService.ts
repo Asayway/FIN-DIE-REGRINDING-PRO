@@ -62,6 +62,7 @@ import {
   SEED_DATA_VERSION,
   SEED_SOURCE_LABEL
 } from '../data/seedData';
+import { MOLD_DIE_MASTER_ITEMS_2025 } from '../data/moldDieMasterData';
 
 import { calculatePartMetrics, getPartProgressiveRank } from './calculationService';
 
@@ -148,6 +149,176 @@ class StorageService {
       this.resetToSeedData();
     }
     this.migrateStageNamesToEnglish();
+    this.repairRegrindSpecIntegrity();
+  }
+
+  private repairRegrindSpecIntegrity() {
+    try {
+      const canonicalByCode = new Map(
+        MOLD_DIE_MASTER_ITEMS_2025.map(item => [item.drawingNo, item])
+      );
+
+      // 1. Repair PART_MASTERS where seeded items lacked newSpecMm/scrapLimitMm or had mismatched specs (e.g. 62.50/62.50, 75/72, 28/27)
+      const rawParts = safeStorage.getItem(STORAGE_KEYS.PART_MASTERS);
+      if (rawParts) {
+        const parsedParts = JSON.parse(rawParts);
+        if (Array.isArray(parsedParts)) {
+          let partsChanged = false;
+          parsedParts.forEach((pm: any) => {
+            const canonical = canonicalByCode.get(pm.partCode);
+            if (!canonical) return;
+
+            const isNonRegrind =
+              canonical.regrindStandard.perGrindMm.toLowerCase().includes('dispose') ||
+              canonical.regrindStandard.perGrindMm.trim() === '-' ||
+              String(canonical.regrindStandard.totalGrindMm).trim() === '-';
+            const stdTotalNum = parseFloat(String(canonical.regrindStandard.totalGrindMm));
+
+            const curNewSpec = typeof pm.newSpecMm === 'number' ? pm.newSpecMm : undefined;
+            const curScrap = typeof pm.scrapLimitMm === 'number' ? pm.scrapLimitMm : undefined;
+            const curPerGrind = String(pm.regrindStandard?.perGrindMm ?? '').trim();
+            const curTotalNum = parseFloat(String(pm.regrindStandard?.totalGrindMm ?? ''));
+
+            const missingCanonicalSpecs =
+              canonical.newSpecMm !== undefined && (curNewSpec === undefined || curScrap === undefined);
+            const invalidEqualScrap =
+              curNewSpec !== undefined && curScrap !== undefined && curNewSpec > 0 && curScrap >= curNewSpec;
+            const wrongBurringDispose =
+              pm.partName?.toUpperCase().includes('BURRING') &&
+              (curPerGrind.toLowerCase().includes('dispose') || pm.maintenanceType === 'DISPOSE');
+            const mismatchWithStandardTotal =
+              !isNonRegrind &&
+              Number.isFinite(stdTotalNum) &&
+              curNewSpec !== undefined &&
+              curScrap !== undefined &&
+              Math.abs((curNewSpec - curScrap) - stdTotalNum) > 0.02;
+            const wrongCyclesFromOldBug =
+              !isNonRegrind &&
+              canonical.regrindStandard.regrindCycles &&
+              String(pm.regrindStandard?.regrindCycles ?? '') !== String(canonical.regrindStandard.regrindCycles) &&
+              (mismatchWithStandardTotal || missingCanonicalSpecs || invalidEqualScrap);
+
+            if (
+              missingCanonicalSpecs ||
+              invalidEqualScrap ||
+              wrongBurringDispose ||
+              mismatchWithStandardTotal ||
+              wrongCyclesFromOldBug ||
+              (isNonRegrind && Number.isFinite(curTotalNum) && curTotalNum > 0)
+            ) {
+              if (canonical.newSpecMm !== undefined) pm.newSpecMm = canonical.newSpecMm;
+              if (canonical.scrapLimitMm !== undefined) pm.scrapLimitMm = canonical.scrapLimitMm;
+              pm.maintenanceType = isNonRegrind ? 'DISPOSE' : 'REGRIND';
+              pm.regrindStandard = { ...canonical.regrindStandard };
+              if (pm.shotLifeCycle && canonical.newSpecMm !== undefined && canonical.scrapLimitMm !== undefined) {
+                pm.shotLifeCycle.partsSpec = `${canonical.newSpecMm.toFixed(2)} mm`;
+                pm.shotLifeCycle.lowerSpecScrapLimit = `${canonical.scrapLimitMm.toFixed(2)} mm`;
+              }
+              partsChanged = true;
+            }
+          });
+          if (partsChanged) {
+            safeStorage.setItem(STORAGE_KEYS.PART_MASTERS, JSON.stringify(parsedParts));
+          }
+        }
+      }
+
+      // 2. Repair LIFE_STANDARDS where newSpecMm / scrapLimitMm / regrindStandard were stale or missing
+      const rawLife = safeStorage.getItem(STORAGE_KEYS.LIFE_STANDARDS);
+      if (rawLife) {
+        const parsedLife = JSON.parse(rawLife);
+        if (Array.isArray(parsedLife)) {
+          let lifeChanged = false;
+          parsedLife.forEach((ls: any) => {
+            const rawCode = ls.partCode || ls.configKey?.partCode || '';
+            const drawingCode = rawCode.includes('DWG-') ? rawCode.slice(rawCode.indexOf('DWG-')) : rawCode;
+            const canonical = canonicalByCode.get(drawingCode);
+            if (!canonical) return;
+
+            const isDisposable = canonical.regrindStandard.perGrindMm.toLowerCase().includes('dispose');
+            const isNonRegrind = isDisposable || canonical.regrindStandard.perGrindMm.trim() === '-' || String(canonical.regrindStandard.totalGrindMm).trim() === '-';
+            const stdTotalNum = isNonRegrind ? 0 : (parseFloat(canonical.regrindStandard.totalGrindMm) || 0);
+            const cycleTokens = (String(canonical.regrindStandard.regrindCycles || '').match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(n => Number.isFinite(n) && n > 0);
+            const expectedMaxCycles = isNonRegrind ? 0 : (cycleTokens.length > 0 ? Math.max(...cycleTokens) : 10);
+            const curNew = typeof ls.newSpecMm === 'number' ? ls.newSpecMm : undefined;
+            const curScrap = typeof ls.scrapLimitMm === 'number' ? ls.scrapLimitMm : undefined;
+            const curMaxCycles = ls.regrindStandard?.maxRegrindCount;
+
+            const needsRepair =
+              (canonical.newSpecMm !== undefined && (curNew === undefined || curScrap === undefined)) ||
+              (curNew !== undefined && curScrap !== undefined && curNew > 0 && curScrap >= curNew) ||
+              (!isNonRegrind && curNew !== undefined && curScrap !== undefined && Math.abs((curNew - curScrap) - stdTotalNum) > 0.02) ||
+              (curMaxCycles !== expectedMaxCycles);
+
+            if (needsRepair) {
+              if (canonical.newSpecMm !== undefined) ls.newSpecMm = canonical.newSpecMm;
+              if (canonical.scrapLimitMm !== undefined) {
+                ls.scrapLimitMm = canonical.scrapLimitMm;
+                ls.scrapLimit = `${canonical.scrapLimitMm}`;
+              }
+              ls.regrindStandard = {
+                ...(ls.regrindStandard || {}),
+                oneTimeRegrindMm: isDisposable ? 'Dispose of after 1 use' : canonical.regrindStandard.perGrindMm,
+                totalRegrindMm: stdTotalNum,
+                maxRegrindCount: expectedMaxCycles,
+                disposeAfterUse: isNonRegrind
+              };
+              lifeChanged = true;
+            }
+          });
+          if (lifeChanged) {
+            safeStorage.setItem(STORAGE_KEYS.LIFE_STANDARDS, JSON.stringify(parsedLife));
+          }
+        }
+      }
+
+      // 3. Repair REGRIND_STANDARDS where old hardcoded placeholders or lower-bound cycle counts were used
+      const rawRegrind = safeStorage.getItem(STORAGE_KEYS.REGRIND_STANDARDS);
+      if (rawRegrind) {
+        const parsedRegrind = JSON.parse(rawRegrind);
+        if (Array.isArray(parsedRegrind)) {
+          let regrindChanged = false;
+          parsedRegrind.forEach((std: any) => {
+            const rawCode = std.partCode || '';
+            const drawingCode = rawCode.includes('DWG-') ? rawCode.slice(rawCode.indexOf('DWG-')) : rawCode;
+            const canonical = canonicalByCode.get(drawingCode);
+            if (!canonical) return;
+
+            const isDisposable = canonical.regrindStandard.perGrindMm.toLowerCase().includes('dispose');
+            const isNonRegrind = isDisposable || canonical.regrindStandard.perGrindMm.trim() === '-' || String(canonical.regrindStandard.totalGrindMm).trim() === '-';
+            const stepNums = (canonical.regrindStandard.perGrindMm.match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(n => Number.isFinite(n) && n > 0);
+            const minStep = stepNums.length > 0 ? Math.min(...stepNums) : 0.10;
+            const maxStep = stepNums.length > 0 ? Math.max(...stepNums) : 0.10;
+            const totalNum = isNonRegrind ? 0 : (parseFloat(canonical.regrindStandard.totalGrindMm) || 0);
+            const cycleTokens = (String(canonical.regrindStandard.regrindCycles || '').match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(n => Number.isFinite(n) && n > 0);
+            const expectedMaxCycles = isNonRegrind ? 0 : (cycleTokens.length > 0 ? Math.max(...cycleTokens) : 10);
+
+            if (
+              (canonical.newSpecMm !== undefined && canonical.newSpecMm > 0 && Math.abs((std.nominalLengthMm ?? 0) - canonical.newSpecMm) > 0.02) ||
+              (canonical.scrapLimitMm !== undefined && Math.abs(((std.nominalLengthMm ?? 0) - (std.minAllowedLengthMm ?? 0)) - totalNum) > 0.02) ||
+              (std.maxRegrindCount !== expectedMaxCycles) ||
+              (std.regrindAllowed !== !isNonRegrind)
+            ) {
+              if (canonical.newSpecMm !== undefined) std.nominalLengthMm = canonical.newSpecMm;
+              if (canonical.scrapLimitMm !== undefined) std.minAllowedLengthMm = canonical.scrapLimitMm;
+              std.grindingAmountPerTimeMm = isNonRegrind ? 0 : minStep;
+              std.grindMinMm = isNonRegrind ? 0 : minStep;
+              std.grindMaxMm = isNonRegrind ? 0 : maxStep;
+              std.totalGrindingAllowanceMm = totalNum;
+              std.maxRegrindCount = expectedMaxCycles;
+              std.regrindAllowed = !isNonRegrind;
+              std.disposeAfterOneUse = isDisposable;
+              regrindChanged = true;
+            }
+          });
+          if (regrindChanged) {
+            safeStorage.setItem(STORAGE_KEYS.REGRIND_STANDARDS, JSON.stringify(parsedRegrind));
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error repairing regrind spec integrity:', e);
+    }
   }
 
   private migrateStageNamesToEnglish() {
@@ -2600,16 +2771,26 @@ class StorageService {
 
   public previewRegrind(record: Partial<RegrindingRecord>) {
     const regrindStandards = this.getRegrindMasterStandards();
-    const std = regrindStandards.find(r => r.partCode === record.partCode);
+    const std = regrindStandards.find(r =>
+      r.partCode === record.partCode ||
+      (record.partCode && r.partCode.endsWith(`-${record.partCode}`)) ||
+      (record.partName && r.partName?.toUpperCase() === record.partName.toUpperCase())
+    );
 
     const prevLength = record.previousLength !== undefined ? Number(record.previousLength) : (std ? std.nominalLengthMm : 50.0);
-    const mmRemoved = record.actualGrindingRemovedMm !== undefined ? Number(record.actualGrindingRemovedMm) : (std ? std.grindingAmountPerTimeMm : 0.25);
-    const curLength = record.currentLength !== undefined ? Number(record.currentLength) : Math.max(0, prevLength - mmRemoved);
+    const mmRemoved = record.actualGrindingRemovedMm !== undefined ? Number(record.actualGrindingRemovedMm) : (std ? std.grindingAmountPerTimeMm : 0.10);
+    const curLength = Number((record.currentLength !== undefined ? Number(record.currentLength) : Math.max(0, prevLength - mmRemoved)).toFixed(3));
     const regrindBefore = record.regrindCountBefore !== undefined ? Number(record.regrindCountBefore) : 0;
     const regrindAfter = regrindBefore + 1;
     const maxCycles = std ? std.maxRegrindCount : 4;
     const minLength = std ? std.minAllowedLengthMm : 48.0;
-    const remainingCount = Math.max(0, maxCycles - regrindAfter);
+    const minRate = std?.grindMinMm ?? std?.grindingAmountPerTimeMm ?? 0;
+    const maxRate = std?.grindMaxMm ?? std?.grindingAmountPerTimeMm ?? 0;
+    const isUnderMin = Number(curLength.toFixed(3)) < Number(minLength.toFixed(3)) - 1e-4;
+    const dimRemaining = (isUnderMin || mmRemoved <= 0)
+      ? 0
+      : Math.floor((curLength - minLength) / Math.max(0.01, mmRemoved) + 1e-6);
+    const remainingCount = isUnderMin ? 0 : Math.min(Math.max(0, maxCycles - regrindAfter), dimRemaining);
 
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -2622,13 +2803,19 @@ class StorageService {
       errors.push(`Rule 2 Error: Part ${std.partName} is single-use only (DISPOSE AFTER 1 USE). Regrinding is blocked.`);
     }
 
+    // Standard removal rate check
+    if (std && std.regrindAllowed && maxRate > 0 && (mmRemoved > maxRate + 1e-4 || (minRate > 0 && mmRemoved < minRate - 1e-4))) {
+      const rateText = Math.abs(maxRate - minRate) > 1e-4 ? `${minRate.toFixed(2)}–${maxRate.toFixed(2)}` : minRate.toFixed(2);
+      warnings.push(`Standard Rate Notice: Removal (${mmRemoved.toFixed(2)} mm) differs from Standard Re-Grinding step (${rateText} mm/time).`);
+    }
+
     // Rule 3: Max regrind check
     if (regrindAfter > maxCycles) {
       warnings.push(`Rule 3 Warning: Maximum regrind cycles (${maxCycles}) exceeded. Part will transition to MAXIMUM REGRIND / SCRAP.`);
     }
 
-    // Rule 4: Dimensional minimum check
-    if (curLength < minLength) {
+    // Rule 4: Dimensional minimum check (float safe)
+    if (isUnderMin) {
       warnings.push(`Rule 4 Warning: Current length (${curLength.toFixed(2)} mm) is below minimum allowable limit (${minLength.toFixed(2)} mm). Part is out-of-spec.`);
     }
 
@@ -2652,7 +2839,11 @@ class StorageService {
 
   public recordRegrind(record: Partial<RegrindingRecord>): { success: boolean; record?: RegrindingRecord; error?: string } {
     const regrindStandards = this.getRegrindMasterStandards();
-    const std = regrindStandards.find(r => r.partCode === record.partCode);
+    const std = regrindStandards.find(r =>
+      r.partCode === record.partCode ||
+      (record.partCode && r.partCode.endsWith(`-${record.partCode}`)) ||
+      (record.partName && r.partName?.toUpperCase() === record.partName.toUpperCase())
+    );
     const user = this.getCurrentUser();
 
     // Rule 1 & 2: Block if not allowed or single use
@@ -2678,20 +2869,24 @@ class StorageService {
       newId = `RGD-${new Date().getFullYear()}-${String(nextNum).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
     }
     const prevLength = record.previousLength !== undefined ? Number(record.previousLength) : (std ? std.nominalLengthMm : 50.0);
-    const mmRemoved = record.actualGrindingRemovedMm !== undefined ? Number(record.actualGrindingRemovedMm) : (std ? std.grindingAmountPerTimeMm : 0.25);
-    const curLength = record.currentLength !== undefined ? Number(record.currentLength) : Math.max(0, prevLength - mmRemoved);
+    const mmRemoved = record.actualGrindingRemovedMm !== undefined ? Number(record.actualGrindingRemovedMm) : (std ? std.grindingAmountPerTimeMm : 0.10);
+    const curLength = Number((record.currentLength !== undefined ? Number(record.currentLength) : Math.max(0, prevLength - mmRemoved)).toFixed(3));
     const regrindBefore = record.regrindCountBefore !== undefined ? Number(record.regrindCountBefore) : 0;
     const regrindAfter = regrindBefore + 1;
-    const maxCycles = std ? std.maxRegrindCount : (record.maxAllowedCycles || 4);
-    const minLength = std ? std.minAllowedLengthMm : (prevLength - (std ? std.totalGrindingAllowanceMm : 1.0));
-    const remainingCount = Math.max(0, maxCycles - regrindAfter);
+    const maxCycles = std ? std.maxRegrindCount : (record.maxAllowedCycles ?? 4);
+    const minLength = std ? std.minAllowedLengthMm : (record.scrapLimitMm ?? (prevLength - (std ? std.totalGrindingAllowanceMm : 1.0)));
+    const isUnderMin = Number(curLength.toFixed(3)) < Number(minLength.toFixed(3)) - 1e-4;
+    const dimRemaining = (isUnderMin || mmRemoved <= 0)
+      ? 0
+      : Math.floor((curLength - minLength) / Math.max(0.01, mmRemoved) + 1e-6);
+    const remainingCount = isUnderMin ? 0 : Math.min(Math.max(0, maxCycles - regrindAfter), dimRemaining);
 
     const isInspectionPassed = record.inspectionResult === 'PASSED' || record.isInspectionApproved;
     let computedStatus: RegrindPartStatus = record.status || 'WAITING REGRIND';
 
-    if (curLength < minLength) {
+    if (isUnderMin) {
       computedStatus = 'SCRAP';
-    } else if (regrindAfter >= maxCycles) {
+    } else if (regrindAfter >= maxCycles || dimRemaining === 0) {
       computedStatus = 'MAXIMUM REGRIND';
     } else if (isInspectionPassed) {
       computedStatus = 'READY TO USE';

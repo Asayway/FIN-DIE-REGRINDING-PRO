@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ProductionLineId } from '../../types';
 import { ToolingPartMasterItem, DefectReasonCode, DEFECT_REASON_LABELS } from '../../types/regrind';
 import { ToolingPicThumbnail } from '../../components/regrind/ToolingPicThumbnail';
-import { PlusCircle, Wrench, X, Play } from 'lucide-react';
+import { PlusCircle, Wrench, X, Play, AlertTriangle } from 'lucide-react';
 import { storageService } from '../../services/storageService';
 
 interface NewRegrindOrderModalProps {
@@ -70,6 +70,9 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
   if (!isOpen) return null;
 
   const currentMaster = toolingMasters.find(m => m.partName === selectedPartName) || toolingMasters[0];
+  const isNonRegrindable = Boolean(currentMaster && (!currentMaster.regrindAllowed || currentMaster.disposeAfterOneUse));
+  const stdMinRate = currentMaster?.grindMinMm ?? currentMaster?.grindingAmountPerTimeMm ?? 0;
+  const stdMaxRate = currentMaster?.grindMaxMm ?? stdMinRate;
 
   const handleMasterChange = (name: string) => {
     setSelectedPartName(name);
@@ -80,7 +83,7 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
   };
 
   const executeSubmit = (startImmediately: boolean = false) => {
-    if (!currentMaster) return;
+    if (!currentMaster || isNonRegrindable) return;
 
     onSubmit({
       partName: currentMaster.partName,
@@ -231,7 +234,7 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
                 <span className="absolute right-3 top-1.5 text-slate-400 font-mono">mm</span>
               </div>
               <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
-                สเปคต่ำสุด: {currentMaster?.minAllowedLengthMm.toFixed(2)} mm
+                สเปคต่ำสุด: {currentMaster?.minAllowedLengthMm.toFixed(2)} mm • ใหม่: {currentMaster?.nominalLengthMm.toFixed(2)} mm
               </span>
             </div>
 
@@ -252,8 +255,22 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
                   / Max {currentMaster?.maxRegrindCount} ครั้ง
                 </span>
               </div>
+              {!isNonRegrindable && stdMinRate > 0 && (
+                <span className="text-[10px] text-cyan-600 dark:text-cyan-400 mt-1 block font-mono">
+                  เจียรครั้งละ: {Math.abs(stdMinRate - stdMaxRate) > 1e-4 ? `${stdMinRate.toFixed(2)}–${stdMaxRate.toFixed(2)}` : stdMinRate.toFixed(2)} mm
+                </span>
+              )}
             </div>
           </div>
+
+          {isNonRegrindable && (
+            <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-200 text-[11.5px] font-bold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+              <span>
+                Standard Re-Grinding ระบุชิ้นส่วนนี้ไม่เจียรซ้ำ ({currentMaster?.disposeAfterOneUse ? 'Dispose after 1 use' : '-'}) — ไม่สามารถเปิดคิวเจียรได้
+              </span>
+            </div>
+          )}
 
           {/* Defect Code & Reason */}
           <div>
@@ -311,16 +328,26 @@ export const NewRegrindOrderModal: React.FC<NewRegrindOrderModalProps> = ({
             </button>
             <button
               type="button"
+              disabled={isNonRegrindable}
               onClick={() => executeSubmit(false)}
-              className="px-4 py-2 rounded-xl border border-cyan-500/50 bg-slate-100 dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-slate-700 text-cyan-700 dark:text-cyan-300 font-bold transition-all flex items-center gap-1.5"
+              className={`px-4 py-2 rounded-xl border border-cyan-500/50 font-bold transition-all flex items-center gap-1.5 ${
+                isNonRegrindable
+                  ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
+                  : 'bg-slate-100 dark:bg-slate-800 hover:bg-cyan-50 dark:hover:bg-slate-700 text-cyan-700 dark:text-cyan-300'
+              }`}
             >
               <PlusCircle className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
               <span>บันทึกเข้าคิว</span>
             </button>
             <button
               type="button"
+              disabled={isNonRegrindable}
               onClick={() => executeSubmit(true)}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 text-white font-extrabold shadow-md shadow-emerald-500/25 transition-all flex items-center gap-1.5 ring-2 ring-emerald-500/40 active:scale-95"
+              className={`px-5 py-2 rounded-xl font-extrabold shadow-md transition-all flex items-center gap-1.5 ${
+                isNonRegrindable
+                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-50'
+                  : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:via-teal-500 hover:to-cyan-500 text-white shadow-emerald-500/25 ring-2 ring-emerald-500/40 active:scale-95'
+              }`}
             >
               <Play className="w-4 h-4 fill-white text-white" />
               <span>⚡ เริ่มเจียรทันที</span>

@@ -27,6 +27,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
   public render() {
     const state = (this as any).state as State;
     const props = (this as any).props as Props;
+    let isEn = false;
+    try {
+      const lang = typeof window !== 'undefined' ? window.localStorage.getItem('app_language') : 'TH';
+      isEn = lang === 'EN' || lang === 'DUAL';
+    } catch {
+      isEn = false;
+    }
 
     if (state.hasError) {
       return (
@@ -36,10 +43,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
           </div>
           <div>
             <h3 className="text-base font-bold text-white font-mono uppercase tracking-wide">
-              {props.fallbackTitle || 'เกิดข้อผิดพลาดในการแสดงผลคอมโพเนนต์ (Component Error)'}
+              {props.fallbackTitle || (isEn ? 'Component Display Error' : 'เกิดข้อผิดพลาดในการแสดงผลคอมโพเนนต์ (Component Error)')}
             </h3>
             <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto font-thai">
-              ระบบตรวจพบข้อผิดพลาดขณะเรนเดอร์คอมโพเนนต์นี้ คุณสามารถกดปุ่มรีเฟรชเพื่อโหลดข้อมูลและสถานะใหม่อีกครั้ง
+              {isEn
+                ? 'An unexpected rendering error occurred. Click reload below to restore the application state.'
+                : 'ระบบตรวจพบข้อผิดพลาดขณะเรนเดอร์คอมโพเนนต์นี้ คุณสามารถกดปุ่มรีเฟรชเพื่อโหลดข้อมูลและสถานะใหม่อีกครั้ง'}
             </p>
             {state.error && (
               <div className="mt-3 p-2.5 bg-black/60 border border-slate-800 rounded text-xs font-mono text-rose-300 max-w-lg mx-auto overflow-x-auto text-left">
@@ -55,7 +64,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-mono font-bold flex items-center gap-1.5 mx-auto transition-all shadow-lg"
           >
             <RefreshCw className="w-4 h-4" />
-            <span>รีเฟรชระบบใหม่ (Reload Application)</span>
+            <span>{isEn ? 'Reload Application' : 'รีเฟรชระบบใหม่ (Reload Application)'}</span>
           </button>
         </div>
       );

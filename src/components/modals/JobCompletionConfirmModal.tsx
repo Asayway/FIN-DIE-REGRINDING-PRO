@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { RegrindWorkTicket } from '../../types/regrind';
 import { regrindService } from '../../services/regrindService';
+import { useLanguage } from '../../i18n';
 
 export interface JobCompletionConfirmModalProps {
   isOpen: boolean;
@@ -20,11 +21,18 @@ export interface JobCompletionConfirmModalProps {
   onSuccess: (message: string) => void;
 }
 
-const QC_PRESET_COMMENTS = [
+const QC_PRESET_COMMENTS_TH = [
   '🟢 คุณภาพดี ลับคมเรียบร้อยได้สเปคมาตรฐาน',
   '🟡 ผ่านเกณฑ์แบบมีเงื่อนไข (แนะนำเฝ้าระวังรอบถัดไป)',
   '🔵 ปรับตั้งพิเศษ: รองชิมชดเชยระยะเรียบร้อย',
   '⚡ ยืนยันจบงานผ่าน QC พร้อมส่งมอบเข้าสายการผลิต'
+];
+
+const QC_PRESET_COMMENTS_EN = [
+  '🟢 Good quality — sharpened cleanly within standard spec',
+  '🟡 Conditional pass — monitor closely on next cycle',
+  '🔵 Special setup: shim installed to compensate grind length',
+  '⚡ QC approved — ready for line installation'
 ];
 
 export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps> = ({
@@ -33,13 +41,20 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
   onClose,
   onSuccess
 }) => {
-  if (!isOpen || !ticket) return null;
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
 
   const [qcVerdict, setQcVerdict] = useState<'PASS' | 'PASS_WITH_MONITORING' | 'FAIL'>('PASS');
-  const [technicianName, setTechnicianName] = useState<string>(ticket.assignedTechnician || 'Thanakorn Phonpayung');
-  const [verifierName, setVerifierName] = useState<string>(ticket.verifiedBy || 'QC Inspector (User Confirmation)');
-  const [commentNote, setCommentNote] = useState<string>('คุณภาพดี ลับคมเรียบร้อยได้สเปคมาตรฐาน');
+  const [technicianName, setTechnicianName] = useState<string>(ticket?.assignedTechnician || 'Thanakorn Phonpayung');
+  const [verifierName, setVerifierName] = useState<string>(ticket?.verifiedBy || 'QC Inspector (User Confirmation)');
+  const [commentNote, setCommentNote] = useState<string>(
+    isEn ? 'Good quality — sharpened cleanly within standard spec' : 'คุณภาพดี ลับคมเรียบร้อยได้สเปคมาตรฐาน'
+  );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  if (!isOpen || !ticket) return null;
+
+  const presetComments = isEn ? QC_PRESET_COMMENTS_EN : QC_PRESET_COMMENTS_TH;
 
   const prevMm = ticket.previousLengthMm ?? ticket.nominalLengthMm ?? 70.0;
   const depthMm = ticket.grindDepthMm ?? 0.20;
@@ -68,7 +83,7 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
       }
     } catch (err) {
       console.error('JobCompletionConfirmModal error:', err);
-      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+      alert(isEn ? 'Failed to save QC confirmation. Please try again.' : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsSubmitting(false);
     }
@@ -91,13 +106,16 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
             </div>
             <div>
               <h3 className="text-base font-black text-white leading-tight flex items-center gap-2">
-                <span>ขั้นตอนตรวจรับ QC & ยืนยันจบงาน</span>
+                <span>{isEn ? 'QC Inspection & Job Completion' : 'ขั้นตอนตรวจรับ QC & ยืนยันจบงาน'}</span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30">
                   QC APPROVAL
                 </span>
               </h3>
               <p className="text-[11px] font-mono text-slate-400 mt-0.5">
-                ตรวจรับ {ticket.jobCode} • ปรับสถานะเป็น: <strong className="text-emerald-400">🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)</strong>
+                {isEn ? `Inspect ${ticket.jobCode} • Set status:` : `ตรวจรับ ${ticket.jobCode} • ปรับสถานะเป็น:`}{' '}
+                <strong className="text-emerald-400">
+                  {isEn ? '🟢 QC Passed (Completed)' : '🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)'}
+                </strong>
               </p>
             </div>
           </div>
@@ -124,15 +142,15 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
 
             <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-white/5">
               <div className="bg-slate-900/80 p-1.5 rounded-lg border border-white/5">
-                <span className="text-[10px] text-slate-400 block font-sans">ก่อนเจียร</span>
+                <span className="text-[10px] text-slate-400 block font-sans">{isEn ? 'Before Grind' : 'ก่อนเจียร'}</span>
                 <span className="text-xs text-slate-200 font-bold">{prevMm.toFixed(2)} mm</span>
               </div>
               <div className="bg-slate-900/80 p-1.5 rounded-lg border border-cyan-500/30">
-                <span className="text-[10px] text-cyan-300 block font-sans">ระยะเจียร</span>
+                <span className="text-[10px] text-cyan-300 block font-sans">{isEn ? 'Grind Depth' : 'ระยะเจียร'}</span>
                 <span className="text-xs text-cyan-300 font-bold">-{depthMm.toFixed(3)} mm</span>
               </div>
               <div className="bg-emerald-950/40 p-1.5 rounded-lg border border-emerald-500/40">
-                <span className="text-[10px] text-emerald-300 block font-sans">หลังเจียร (หลัง QC)</span>
+                <span className="text-[10px] text-emerald-300 block font-sans">{isEn ? 'After Grind (QC)' : 'หลังเจียร (หลัง QC)'}</span>
                 <span className="text-xs text-emerald-300 font-black">{afterMm.toFixed(3)} mm</span>
               </div>
             </div>
@@ -143,9 +161,9 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
             <label className="block text-slate-200 font-extrabold text-xs flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>ผลการตรวจสอบคุณภาพ (QC Result)</span>
+                <span>{isEn ? 'QC Inspection Result' : 'ผลการตรวจสอบคุณภาพ (QC Result)'}</span>
               </span>
-              <span className="text-[10px] text-emerald-400 font-mono">บังคับเลือก</span>
+              <span className="text-[10px] text-emerald-400 font-mono">{isEn ? 'Required' : 'บังคับเลือก'}</span>
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -161,7 +179,9 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
                 <div className="font-extrabold text-xs flex items-center gap-1.5 text-emerald-300">
                   <span>🟢 PASS</span>
                 </div>
-                <div className="text-[9.5px] text-slate-400 mt-0.5">ผ่านเกณฑ์มาตรฐาน พร้อมใช้งาน</div>
+                <div className="text-[9.5px] text-slate-400 mt-0.5">
+                  {isEn ? 'Within standard spec, ready for production' : 'ผ่านเกณฑ์มาตรฐาน พร้อมใช้งาน'}
+                </div>
               </button>
 
               <button
@@ -176,7 +196,9 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
                 <div className="font-extrabold text-xs flex items-center gap-1.5 text-amber-300">
                   <span>🟡 MONITOR</span>
                 </div>
-                <div className="text-[9.5px] text-slate-400 mt-0.5">ผ่านแบบเฝ้าระวังพิเศษ</div>
+                <div className="text-[9.5px] text-slate-400 mt-0.5">
+                  {isEn ? 'Conditional pass with next-cycle monitoring' : 'ผ่านแบบเฝ้าระวังพิเศษ'}
+                </div>
               </button>
 
               <button
@@ -191,7 +213,9 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
                 <div className="font-extrabold text-xs flex items-center gap-1.5 text-rose-400">
                   <span>🔴 REWORK</span>
                 </div>
-                <div className="text-[9.5px] text-slate-400 mt-0.5">ส่งแก้ไข / เจียรปาดใหม่</div>
+                <div className="text-[9.5px] text-slate-400 mt-0.5">
+                  {isEn ? 'Send back for rework / re-grinding' : 'ส่งแก้ไข / เจียรปาดใหม่'}
+                </div>
               </button>
             </div>
           </div>
@@ -200,22 +224,24 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
           <div className="space-y-1">
             <label className="block text-slate-200 font-extrabold text-xs flex items-center gap-1.5">
               <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
-              <span>ข้อคิดเห็น / คำแนะนำจากผู้ซ่อมงาน (Comment / Special Advice)</span>
+              <span>{isEn ? 'Inspector / Technician Remarks' : 'ข้อคิดเห็น / คำแนะนำจากผู้ซ่อมงาน (Comment / Special Advice)'}</span>
             </label>
 
             <textarea
               value={commentNote}
               onChange={e => setCommentNote(e.target.value)}
-              placeholder="ระบุข้อคิดเห็น คำแนะนำในการติดตั้ง หรือหมายเหตุกรณีพิเศษ..."
+              placeholder={isEn ? 'Enter installation notes, shim adjustment, or inspection remarks...' : 'ระบุข้อคิดเห็น คำแนะนำในการติดตั้ง หรือหมายเหตุกรณีพิเศษ...'}
               rows={2}
               className="w-full px-2.5 py-1.5 bg-slate-900 border-2 border-slate-700 rounded-xl text-white font-medium text-xs focus:border-emerald-400 focus:outline-none shadow-inner custom-scrollbar"
             />
 
             {/* Quick Preset Buttons */}
             <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-medium block">ข้อความแนะนำด่วน:</span>
+              <span className="text-[10px] text-slate-400 font-medium block">
+                {isEn ? 'Quick Presets:' : 'ข้อความแนะนำด่วน:'}
+              </span>
               <div className="flex items-center gap-1 flex-wrap">
-                {QC_PRESET_COMMENTS.map((preset, idx) => (
+                {presetComments.map((preset, idx) => (
                   <button
                     key={idx}
                     type="button"
@@ -237,7 +263,7 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-white/10">
             <div>
               <label className="block text-slate-300 font-bold text-[11px] mb-1">
-                ช่างผู้ซ่อมงาน (Technician)
+                {isEn ? 'Technician' : 'ช่างผู้ซ่อมงาน (Technician)'}
               </label>
               <input
                 type="text"
@@ -249,7 +275,7 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
 
             <div>
               <label className="block text-slate-300 font-bold text-[11px] mb-1">
-                ผู้ตรวจรับงาน / QC Inspector
+                {isEn ? 'QC Inspector' : 'ผู้ตรวจรับงาน / QC Inspector'}
               </label>
               <input
                 type="text"
@@ -269,17 +295,21 @@ export const JobCompletionConfirmModal: React.FC<JobCompletionConfirmModalProps>
             className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer border border-white/10"
             disabled={isSubmitting}
           >
-            ยกเลิก
+            {isEn ? 'Cancel' : 'ยกเลิก'}
           </button>
 
           <button
             type="button"
             onClick={handleConfirm}
             disabled={isSubmitting}
-            className="px-5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 cursor-pointer shadow-lg bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-400 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-300 text-slate-950 shadow-emerald-500/30 transition-all active:scale-95 ring-2 ring-emerald-400/60"
+            className="px-5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 cursor-pointer shadow-lg bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-400 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-300 text-slate-950 shadow-emerald-500/30 transition-all active:scale-95 ring-2 ring-emerald-400/60 whitespace-nowrap"
           >
             <CheckCircle2 className="w-4 h-4 text-slate-950 fill-emerald-400" />
-            <span>{isSubmitting ? 'กำลังบันทึก...' : '✅ ยืนยันจบงานทันที (Confirm)'}</span>
+            <span>
+              {isSubmitting
+                ? (isEn ? 'Saving...' : 'กำลังบันทึก...')
+                : (isEn ? '✅ Confirm & Complete QC' : '✅ ยืนยันจบงานทันที (Confirm)')}
+            </span>
           </button>
         </div>
       </div>

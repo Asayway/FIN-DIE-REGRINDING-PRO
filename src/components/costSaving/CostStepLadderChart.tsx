@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { TrendingUp, Layers, Zap, Cpu, HardHat, Wrench, ShieldCheck, DollarSign } from 'lucide-react';
 import { TrueJobCostSimulationResult } from '../../types/costSaving';
+import { useLanguage } from '../../i18n';
 
 interface CostStepLadderChartProps {
   results: TrueJobCostSimulationResult;
@@ -22,6 +23,7 @@ interface StepLadderDatum {
   stageKey: string;
   stageName: string;
   stageTh: string;
+  displayLabel: string;
   iconName: string;
   previousBase: number;
   stageCost: number;
@@ -35,36 +37,43 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
   results,
   quantityPieces = 1
 }) => {
-  const machineDep = Number(results.step1MachineDepreciationCost || 0);
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
+
+  const machineDepAndMaint = Number(
+    ((results.step1MachineDepreciationCost || 0) + (results.step1MaintenanceCost || 0)).toFixed(2)
+  );
   const electricity = Number(results.step1ElectricityCost || 0);
   const labor = Number(results.step2TotalLaborCost || 0);
   const consumables = Number(results.step3TotalConsumables || 0);
   const others = Number(results.step4TotalQcAndOverhead || 0);
   const grandTotal = Number(results.step5GrandTotalJobCost || 0);
 
-  // Running accumulation calculations
-  const acc1 = machineDep;
-  const acc2 = acc1 + electricity;
-  const acc3 = acc2 + labor;
-  const acc4 = acc3 + consumables;
-  const acc5 = grandTotal;
+  // Running accumulation calculations (sums identically to grandTotal)
+  const acc1 = machineDepAndMaint;
+  const acc2 = Number((acc1 + electricity).toFixed(2));
+  const acc3 = Number((acc2 + labor).toFixed(2));
+  const acc4 = Number((acc3 + consumables).toFixed(2));
+  const acc5 = Number((acc4 + others).toFixed(2));
 
   const data: StepLadderDatum[] = [
     {
       stageKey: 'depreciation',
-      stageName: 'Machine Depreciation',
-      stageTh: '1. ค่าเสื่อมเครื่องจักร',
+      stageName: 'Machine Depreciation & Maintenance',
+      stageTh: '1. ค่าเสื่อม & ซ่อมบำรุงเครื่อง',
+      displayLabel: isEn ? '1. Depr. & Maint.' : '1. ค่าเสื่อม & บำรุงเครื่อง',
       iconName: 'Cpu',
       previousBase: 0,
-      stageCost: machineDep,
+      stageCost: machineDepAndMaint,
       accumulated: acc1,
       color: '#06b6d4', // Cyan
-      percent: grandTotal > 0 ? Number(((machineDep / grandTotal) * 100).toFixed(1)) : 0
+      percent: grandTotal > 0 ? Number(((machineDepAndMaint / grandTotal) * 100).toFixed(1)) : 0
     },
     {
       stageKey: 'electricity',
-      stageName: 'Electricity',
+      stageName: 'Electricity Power',
       stageTh: '2. ค่าพลังงานไฟฟ้า',
+      displayLabel: isEn ? '2. Electricity' : '2. ค่าพลังงานไฟฟ้า',
       iconName: 'Zap',
       previousBase: acc1,
       stageCost: electricity,
@@ -74,8 +83,9 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
     },
     {
       stageKey: 'labor',
-      stageName: 'Labor & OT & Skill',
+      stageName: 'Labor, OT & Skill',
       stageTh: '3. ค่าแรงช่าง & OT',
+      displayLabel: isEn ? '3. Labor & OT' : '3. ค่าแรงช่าง & OT',
       iconName: 'HardHat',
       previousBase: acc2,
       stageCost: labor,
@@ -87,6 +97,7 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
       stageKey: 'consumables',
       stageName: 'Consumables & Wear',
       stageTh: '4. หินเจียร & สิ้นเปลือง',
+      displayLabel: isEn ? '4. Consumables' : '4. หินเจียร & สิ้นเปลือง',
       iconName: 'Wrench',
       previousBase: acc3,
       stageCost: consumables,
@@ -96,8 +107,9 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
     },
     {
       stageKey: 'others',
-      stageName: 'Others (QC & Overhead)',
-      stageTh: '5. ตรวจสอบ QC & โสหุ้ย',
+      stageName: 'QC & Workshop Utilities',
+      stageTh: '5. ตรวจ QC & ส่วนกลาง',
+      displayLabel: isEn ? '5. QC & Utilities' : '5. ตรวจ QC & ส่วนกลาง',
       iconName: 'ShieldCheck',
       previousBase: acc4,
       stageCost: others,
@@ -109,6 +121,7 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
       stageKey: 'total',
       stageName: 'Total True Cost',
       stageTh: '★ สรุปต้นทุนแท้จริงรวม',
+      displayLabel: isEn ? '★ Total True Cost' : '★ สรุปต้นทุนแท้จริงรวม',
       iconName: 'DollarSign',
       previousBase: 0,
       stageCost: grandTotal,
@@ -131,7 +144,7 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
     return (
       <div className="bg-[#0b101b] border-2 border-white/20 p-3 rounded-2xl shadow-2xl font-mono text-xs text-white space-y-1.5 min-w-[210px]">
         <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
-          <span className="font-bold text-slate-200">{item.stageTh}</span>
+          <span className="font-bold text-slate-200">{item.displayLabel}</span>
           <span
             className="w-2.5 h-2.5 rounded-full"
             style={{ backgroundColor: item.color }}
@@ -141,21 +154,21 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
           {item.stageName}
         </div>
         <div className="flex items-center justify-between pt-1">
-          <span className="text-slate-400">ต้นทุนในขั้นนี้:</span>
+          <span className="text-slate-400">{isEn ? 'Stage Cost:' : 'ต้นทุนในขั้นนี้:'}</span>
           <span className="font-black text-sm" style={{ color: item.color }}>
             ฿{item.stageCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </span>
         </div>
         {!item.isTotal && (
           <div className="flex items-center justify-between text-[11px] text-slate-400 border-t border-white/5 pt-1">
-            <span>สะสมจนถึงขั้นนี้:</span>
+            <span>{isEn ? 'Cumulative Cost:' : 'สะสมจนถึงขั้นนี้:'}</span>
             <span className="font-bold text-white">
               ฿{item.accumulated.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </span>
           </div>
         )}
         <div className="flex items-center justify-between text-[10px] text-slate-400">
-          <span>สัดส่วนในงานทั้งหมด:</span>
+          <span>{isEn ? 'Share of Job Cost:' : 'สัดส่วนในงานทั้งหมด:'}</span>
           <span className="font-bold text-emerald-400">{item.percent}%</span>
         </div>
       </div>
@@ -172,13 +185,19 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
           </div>
           <div>
             <h4 className="text-sm sm:text-base font-black text-white flex items-center gap-2 font-mono">
-              <span>กราฟขั้นบันไดการสะสมต้นทุน (Cost Accumulation Step-Ladder)</span>
+              <span>
+                {isEn
+                  ? 'Cost Accumulation Step-Ladder Chart'
+                  : 'กราฟขั้นบันไดการสะสมต้นทุน (Cost Accumulation Step-Ladder)'}
+              </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                 5 STAGES
               </span>
             </h4>
             <p className="text-[11px] text-slate-400">
-              ติดตามเส้นทางการสะสมต้นทุนทีละขั้น (Step 1 ถึง Step 5) จากค่าเสื่อมราคา ค่าไฟ ค่าแรง สิ้นเปลือง จนถึงต้นทุนรวมแท้จริง
+              {isEn
+                ? 'Step-by-step cost buildup across Step 1 to Step 5: Depreciation & Maintenance, Power, Labor, Consumables, and QC & Utilities.'
+                : 'ติดตามเส้นทางการสะสมต้นทุนทีละขั้นจนถึงต้นทุนรวมแท้จริง: ค่าเสื่อมและบำรุงเครื่อง + ค่าไฟ + ค่าแรง + สิ้นเปลือง + ค่าตรวจ QC และส่วนกลาง'}
             </p>
           </div>
         </div>
@@ -186,8 +205,8 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
         {/* Top Dominant Stage KPI Badge */}
         {dominantStage && (
           <div className="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-white/10 font-mono text-xs">
-            <span className="text-[10.5px] text-slate-400">สัดส่วนสูงสุด:</span>
-            <span className="font-bold text-amber-300">{dominantStage.stageTh}</span>
+            <span className="text-[10.5px] text-slate-400">{isEn ? 'Highest Share:' : 'สัดส่วนสูงสุด:'}</span>
+            <span className="font-bold text-amber-300">{dominantStage.displayLabel}</span>
             <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px] font-black">
               ฿{dominantStage.stageCost.toLocaleString()} ({dominantStage.percent}%)
             </span>
@@ -204,7 +223,7 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#ffffff15" vertical={false} />
             <XAxis
-              dataKey="stageTh"
+              dataKey="displayLabel"
               stroke="#94a3b8"
               tick={{ fill: '#cbd5e1', fontSize: 11, fontFamily: 'monospace' }}
               angle={-15}
@@ -262,7 +281,7 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
 
       {/* Bottom Stage Legend & Proportion Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-2 border-t border-white/10 text-[11px] font-mono">
-        {data.map((item, idx) => (
+        {data.map((item) => (
           <div
             key={item.stageKey}
             className={`p-2 rounded-xl border flex flex-col justify-between ${
@@ -276,7 +295,7 @@ export const CostStepLadderChart: React.FC<CostStepLadderChartProps> = ({
                 className="w-2 h-2 rounded-full shrink-0"
                 style={{ backgroundColor: item.color }}
               />
-              <span className="truncate text-slate-300 font-semibold">{item.stageTh}</span>
+              <span className="truncate text-slate-300 font-semibold">{item.displayLabel}</span>
             </div>
             <div className="mt-1 flex items-baseline justify-between">
               <span className="font-black text-xs" style={{ color: item.color }}>

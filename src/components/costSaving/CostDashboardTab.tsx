@@ -1,104 +1,276 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  TrendingUp, 
-  DollarSign, 
-  Percent, 
-  Layers, 
-  Filter, 
-  Calendar, 
-  AlertCircle, 
-  CheckCircle2, 
-  ArrowUpRight, 
-  Wrench, 
-  Building, 
-  BarChart3,
-  PieChart as PieIcon,
-  HelpCircle,
-  FileSpreadsheet,
-  Clock,
-  ShieldCheck,
-  Flame,
+import {
+  TrendingUp,
+  Wrench,
+  DollarSign,
   AlertTriangle,
-  RotateCcw,
-  Cpu,
+  CheckCircle2,
+  Tv,
+  RefreshCw,
+  FileSpreadsheet,
+  FileDown,
   Maximize2,
   Minimize2,
-  FileText,
-  RotateCw,
-  PackageCheck,
-  PackageX,
-  PiggyBank,
-  Download,
-  Printer,
-  CheckCircle,
-  Activity,
-  HardHat,
-  Tv,
-  X,
   Play,
   Pause,
-  RefreshCw
+  X,
+  ArrowUpRight,
+  Trash2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
-import { 
-  RegrindingTransactionItem, 
-  CostDashboardFilter, 
-  CostSummaryMetrics 
-} from '../../types/costSaving';
-import { regrindService } from '../../services/regrindService';
-import { storageService } from '../../services/storageService';
-import { costSavingService } from '../../services/costSavingService';
 import {
   ResponsiveContainer,
   ComposedChart,
+  LineChart,
   Bar,
   Line,
   XAxis,
   YAxis,
   Tooltip,
-  Legend,
   CartesianGrid,
-  Cell,
-  PieChart,
-  Pie
+  Legend,
+  LabelList
 } from 'recharts';
+import {
+  ProductionLineId,
+  RegrindingRecord,
+  PartMaster,
+  PartRepairStockItem
+} from '../../types';
+import { RegrindWorkTicket } from '../../types/regrind';
+import {
+  RegrindingTransactionItem,
+  CostDashboardFilter,
+  CostSummaryMetrics,
+  CostPeriodFilter
+} from '../../types/costSaving';
+import { regrindService } from '../../services/regrindService';
+import { storageService } from '../../services/storageService';
+import { resolveUnifiedStatusKey, CanonicalStatusKey } from '../../utils/statusHelper';
+import { exportManagementReportPDF } from '../../utils/managementReportPdf';
+import { useLanguage } from '../../i18n';
 
 interface CostDashboardTabProps {
   transactions?: RegrindingTransactionItem[];
-  metrics: CostSummaryMetrics;
+  metrics?: CostSummaryMetrics;
   filters: CostDashboardFilter;
   onFilterChange: (newFilters: CostDashboardFilter) => void;
-  onNavigateToTab: (tabId: string) => void;
+  onNavigateToTab: (route: string, lineId?: ProductionLineId, statusFilter?: string) => void;
+}
+
+const PRODUCTION_LINES: ProductionLineId[] = ['E1', 'E2', 'E3-1', 'E3-2', 'E3-3', 'E4', 'E5'];
+
+const THAI_MONTHS_SHORT = [
+  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+];
+
+const EN_MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+];
+
+const DEFECT_REASON_LABELS_TH: Record<string, string> = {
+  NORMAL_WEAR: 'สึกหรอปกติ (Normal Wear)',
+  BURR_EXCESSIVE: 'ครีบสูงเกิน (Burr Excessive)',
+  CHIPPED: 'คมบิ่น / กะเทาะ (Chipped)',
+  GALLING_SCRATCHED: 'ผิวเป็นรอย / เศษติด (Galling)',
+  OUT_OF_TOLERANCE: 'หลุดสเปค Min (Out of Spec)',
+  BROKEN: 'แตกหักชำรุด (Broken)'
+};
+
+const DEFECT_REASON_LABELS_EN: Record<string, string> = {
+  NORMAL_WEAR: 'Normal Wear',
+  BURR_EXCESSIVE: 'Excessive Burr',
+  CHIPPED: 'Chipped Edge',
+  GALLING_SCRATCHED: 'Galling / Scratched',
+  OUT_OF_TOLERANCE: 'Out of Spec (Below Min)',
+  BROKEN: 'Broken / Cracked'
+};
+
+function formatReasonLabel(raw?: string, isEn?: boolean): string {
+  const key = (raw || 'NORMAL_WEAR').trim();
+  const map = isEn ? DEFECT_REASON_LABELS_EN : DEFECT_REASON_LABELS_TH;
+  if (map[key]) return map[key];
+  return key.replace(/_/g, ' ');
+}
+
+function toLocalIsoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getRecordDateStr(rec: RegrindingRecord): string {
+  const raw = rec.regrindDate || rec.completedDate || rec.timestamp || '';
+  return raw.length >= 10 ? raw.slice(0, 10) : '';
+}
+
+function getIsoWeekNumber(date: Date): number {
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayNr = (target.getDay() + 6) % 7; // Monday = 0, Sunday = 6
+  target.setDate(target.getDate() - dayNr + 3); // Nearest Thursday per ISO 8601
+  const firstThursday = new Date(target.getFullYear(), 0, 4);
+  const firstDayNr = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDayNr + 3);
+  const diffWeeks = Math.round((target.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  return 1 + diffWeeks;
+}
+
+function getWeekBounds(anchorDateStr: string): { start: string; end: string; isoWeek: number } {
+  const base = anchorDateStr ? new Date(`${anchorDateStr}T00:00:00`) : new Date();
+  if (isNaN(base.getTime())) {
+    const now = new Date();
+    const fallback = toLocalIsoDate(now);
+    return { start: fallback, end: fallback, isoWeek: getIsoWeekNumber(now) };
+  }
+  const day = base.getDay();
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const mon = new Date(base);
+  mon.setDate(base.getDate() + diffToMon);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return { start: toLocalIsoDate(mon), end: toLocalIsoDate(sun), isoWeek: getIsoWeekNumber(mon) };
+}
+
+function getMonthIsoWeeks(anchorDateStr: string): Array<{ label: string; start: string; end: string }> {
+  const base = anchorDateStr ? new Date(`${anchorDateStr}T00:00:00`) : new Date();
+  const validBase = isNaN(base.getTime()) ? new Date() : base;
+  const monthStart = new Date(validBase.getFullYear(), validBase.getMonth(), 1);
+  const monthEnd = new Date(validBase.getFullYear(), validBase.getMonth() + 1, 0);
+
+  const startDay = monthStart.getDay();
+  const diffToMon = startDay === 0 ? -6 : 1 - startDay;
+  const curMon = new Date(monthStart);
+  curMon.setDate(monthStart.getDate() + diffToMon);
+
+  const weeks: Array<{ label: string; start: string; end: string }> = [];
+  while (curMon <= monthEnd) {
+    const curSun = new Date(curMon);
+    curSun.setDate(curMon.getDate() + 6);
+    const weekNo = getIsoWeekNumber(curMon);
+    weeks.push({
+      label: `W${String(weekNo).padStart(2, '0')}`,
+      start: toLocalIsoDate(curMon),
+      end: toLocalIsoDate(curSun)
+    });
+    curMon.setDate(curMon.getDate() + 7);
+  }
+  return weeks;
+}
+
+function getRecordShiftHourOffset(rec: RegrindingRecord, targetDateStr: string): number {
+  const rawTime = rec.completedDate || rec.inspectionApprovedAt || rec.timestamp || '';
+  if (/[\sT]\d{2}:\d{2}/.test(rawTime)) {
+    const normalized = rawTime.includes(' ') && !rawTime.includes('T') ? rawTime.replace(' ', 'T') : rawTime;
+    const parsed = new Date(normalized);
+    if (!isNaN(parsed.getTime())) {
+      const localDate = toLocalIsoDate(parsed);
+      const baseDate = new Date(`${targetDateStr}T00:00:00`);
+      baseDate.setDate(baseDate.getDate() + 1);
+      const nextDateStr = toLocalIsoDate(baseDate);
+      const hr = parsed.getHours();
+
+      if (localDate === targetDateStr) {
+        return hr >= 8 ? hr - 8 : hr + 16;
+      }
+      if (localDate === nextDateStr && hr < 8) {
+        return hr + 16;
+      }
+    }
+  }
+  // Date-only logs without time default to 08:00 shift start
+  return 0;
+}
+
+function extractRecordFinancials(rec: RegrindingRecord, partMaster?: PartMaster) {
+  const qty = Math.max(1, Number(rec.quantity) || 1);
+  const laborMinutes =
+    rec.laborTimeMinutes !== undefined
+      ? Number(rec.laborTimeMinutes)
+      : Math.round((rec.laborHours !== undefined ? Number(rec.laborHours) : 1) * 60);
+  const laborCost =
+    rec.laborCostThb !== undefined
+      ? Number(rec.laborCostThb)
+      : Math.round((laborMinutes / 60) * 180);
+  const spareCost = rec.sparePartsCost !== undefined ? Number(rec.sparePartsCost) : 0;
+  const repairCost =
+    rec.totalTrueCost !== undefined && Number(rec.totalTrueCost) > 0
+      ? Number(rec.totalTrueCost)
+      : laborCost + spareCost;
+
+  const fallbackUnitPrice = partMaster?.unitCostThb || partMaster?.purchasePriceThb || 12500;
+  const newPrice =
+    rec.newPartPriceTotal !== undefined && Number(rec.newPartPriceTotal) > 0
+      ? Number(rec.newPartPriceTotal)
+      : rec.newPartPriceThb !== undefined && Number(rec.newPartPriceThb) > 0
+      ? Number(rec.newPartPriceThb)
+      : fallbackUnitPrice;
+
+  const explicitSaving = rec.netSavingTHB ?? rec.netSavingThb;
+  const netSaving =
+    explicitSaving !== undefined
+      ? Math.max(0, Number(explicitSaving))
+      : Math.max(0, newPrice - repairCost);
+
+  return {
+    qty,
+    laborMinutes,
+    repairCost,
+    newPrice,
+    netSaving
+  };
 }
 
 export const CostDashboardTab: React.FC<CostDashboardTabProps> = ({
-  transactions = [],
-  metrics,
   filters,
   onFilterChange,
   onNavigateToTab
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
+  const monthNamesShort = isEn ? EN_MONTHS_SHORT : THAI_MONTHS_SHORT;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isTvMode, setIsTvMode] = useState<boolean>(false);
   const [tvAutoRefresh, setTvAutoRefresh] = useState<boolean>(true);
   const [tvCountdown, setTvCountdown] = useState<number>(30);
-  const [lastRefreshTime, setLastRefreshTime] = useState<string>(new Date().toLocaleString('th-TH'));
-
-  // Toast notification for exports
+  const [lastRefreshTime, setLastRefreshTime] = useState<string>(() =>
+    new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  );
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [topListScope, setTopListScope] = useState<'PERIOD' | 'ALL_TIME'>('PERIOD');
+  const [topDisplayLimit, setTopDisplayLimit] = useState<5 | 10>(5);
+  const [chartViewMode, setChartViewMode] = useState<'SPLIT' | 'TREND' | 'CUMULATIVE'>('SPLIT');
+  const [showChartDataLabels, setShowChartDataLabels] = useState<boolean>(false);
 
-  // Sync full data subscriptions from real services
-  const [allTickets, setAllTickets] = useState(() => regrindService.getQueueTickets());
-  const [toolingMasters, setToolingMasters] = useState(() => regrindService.getToolingMasters());
-  const [spareStocks, setSpareStocks] = useState(() => storageService.getSpareStocks());
-  const [regrindRecords, setRegrindRecords] = useState(() => storageService.getRegrindRecords());
+  const formatCompactThbLabel = (val: number): string => {
+    const sign = val < 0 ? '-' : '';
+    const abs = Math.abs(val);
+    if (abs >= 1_000_000) return `${sign}฿${(abs / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (abs >= 100_000) return `${sign}฿${Math.round(abs / 1_000)}k`;
+    if (abs >= 1_000) return `${sign}฿${(abs / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
+    return `${sign}฿${Math.round(abs)}`;
+  };
+
+  // Live reactive data subscriptions across the entire application
+  const [allTickets, setAllTickets] = useState<RegrindWorkTicket[]>(() => regrindService.getQueueTickets());
+  const [regrindRecords, setRegrindRecords] = useState<RegrindingRecord[]>(() => storageService.getRegrindRecords());
+  const [partMasters, setPartMasters] = useState<PartMaster[]>(() => storageService.getPartMasters());
+  const [storedRepairStocks, setStoredRepairStocks] = useState<Record<string, PartRepairStockItem>>(() =>
+    storageService.getPartRepairStocks()
+  );
+  const [lineConfigs, setLineConfigs] = useState(() => storageService.getLineConfigs());
 
   const refreshLiveData = () => {
     setAllTickets(regrindService.getQueueTickets());
-    setToolingMasters(regrindService.getToolingMasters());
-    setSpareStocks(storageService.getSpareStocks());
     setRegrindRecords(storageService.getRegrindRecords());
-    setLastRefreshTime(new Date().toLocaleString('th-TH'));
+    setPartMasters(storageService.getPartMasters());
+    setStoredRepairStocks(storageService.getPartRepairStocks());
+    setLineConfigs(storageService.getLineConfigs());
+    setLastRefreshTime(
+      new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    );
   };
 
   useEffect(() => {
@@ -111,7 +283,6 @@ export const CostDashboardTab: React.FC<CostDashboardTabProps> = ({
     };
   }, []);
 
-  // TV View Auto-Refresh Countdown Timer (30s interval)
   useEffect(() => {
     if (!isTvMode || !tvAutoRefresh) return;
     const timer = setInterval(() => {
@@ -131,32 +302,564 @@ export const CostDashboardTab: React.FC<CostDashboardTabProps> = ({
       setIsFullscreen(!!document.fullscreenElement);
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
   const toggleFullscreen = async () => {
     try {
       if (!document.fullscreenElement) {
-        if (containerRef.current?.requestFullscreen) {
-          await containerRef.current.requestFullscreen();
-        }
+        await containerRef.current?.requestFullscreen?.();
       } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        }
+        await document.exitFullscreen?.();
       }
-    } catch (err) {
-      console.warn('Fullscreen toggle failed:', err);
+    } catch {
+      // Ignore fullscreen denial in restricted iframes
     }
   };
 
+  // Lookup maps
+  const partMasterMap = useMemo(() => {
+    const map = new Map<string, PartMaster>();
+    partMasters.forEach(pm => {
+      if (pm.partCode) map.set(pm.partCode, pm);
+      if (pm.partName) map.set(pm.partName.trim().toUpperCase(), pm);
+    });
+    return map;
+  }, [partMasters]);
+
+  const activeSelectedDate = useMemo(() => {
+    return filters.selectedDate || new Date().toISOString().slice(0, 10);
+  }, [filters.selectedDate]);
+
+  const weekBounds = useMemo(() => getWeekBounds(activeSelectedDate), [activeSelectedDate]);
+
+  const latestRecordDate = useMemo(() => {
+    let latest = '';
+    regrindRecords.forEach(r => {
+      const d = getRecordDateStr(r);
+      if (d && d > latest) latest = d;
+    });
+    return latest;
+  }, [regrindRecords]);
+
+  // -------------------------------------------------------------
+  // 1. REAL-TIME STATUS COUNTS ACROSS ENTIRE QUEUE & APP
+  // -------------------------------------------------------------
+  const lineFilteredTickets = useMemo(() => {
+    if (filters.lineId === 'ALL') return allTickets;
+    return allTickets.filter(t => t.lineId === filters.lineId);
+  }, [allTickets, filters.lineId]);
+
+  const realtimeQueueSummary = useMemo(() => {
+    const counts: Record<CanonicalStatusKey, { jobs: number; pieces: number }> = {
+      EMERGENCY: { jobs: 0, pieces: 0 },
+      IN_PROCESS: { jobs: 0, pieces: 0 },
+      WAITING: { jobs: 0, pieces: 0 },
+      POSTPONED: { jobs: 0, pieces: 0 },
+      READY: { jobs: 0, pieces: 0 },
+      COMPLETED: { jobs: 0, pieces: 0 },
+      SCRAP: { jobs: 0, pieces: 0 }
+    };
+
+    lineFilteredTickets.forEach(ticket => {
+      const key = resolveUnifiedStatusKey(ticket);
+      const qty = Math.max(1, Number(ticket.quantity) || 1);
+      counts[key].jobs += 1;
+      counts[key].pieces += qty;
+    });
+
+    const totalJobs = lineFilteredTickets.length;
+    const totalActivePieces =
+      counts.EMERGENCY.pieces +
+      counts.IN_PROCESS.pieces +
+      counts.WAITING.pieces +
+      counts.POSTPONED.pieces +
+      counts.READY.pieces;
+
+    return { counts, totalJobs, totalActivePieces };
+  }, [lineFilteredTickets]);
+
+  // -------------------------------------------------------------
+  // 2. STOCK PART REPAIR LIVE POOL (MATCHES STOCK MATRIX 1:1)
+  // -------------------------------------------------------------
+  const stockPoolSummary = useMemo(() => {
+    const ticketsByPart: Record<string, { inProcess: number; pending: number }> = {};
+    allTickets.forEach(ticket => {
+      const nameKey = (ticket.partName || '').trim().toUpperCase();
+      const codeKey = (ticket.partCode || '').trim().toUpperCase();
+      const qty = Math.max(1, Number(ticket.quantity) || 1);
+      [nameKey, codeKey].filter(Boolean).forEach(k => {
+        if (!ticketsByPart[k]) ticketsByPart[k] = { inProcess: 0, pending: 0 };
+        if (ticket.status === 'IN_PROCESS') ticketsByPart[k].inProcess += qty;
+        else if (ticket.status === 'PENDING') ticketsByPart[k].pending += qty;
+      });
+    });
+
+    let readyToUseTotal = 0;
+    let inProcessTotal = 0;
+    let awaitingTotal = 0;
+    let lowStockCount = 0;
+
+    partMasters.forEach(pm => {
+      const pCode = pm.partCode;
+      const cleanCode = pCode.trim().toUpperCase();
+      const cleanName = pm.partName.trim().toUpperCase();
+      const stored = storedRepairStocks[pCode] || storedRepairStocks[cleanCode];
+      const liveQueue = ticketsByPart[cleanCode] || ticketsByPart[cleanName] || { inProcess: 0, pending: 0 };
+
+      let installedTotal = 0;
+      lineConfigs.forEach(lc => {
+        installedTotal += lc.installedPartQuantities?.[pCode] || 0;
+      });
+
+      const defaultSafetyTarget = installedTotal > 0 ? Math.max(10, Math.round(installedTotal * 0.15)) : 10;
+      const readyQty = stored?.readyToUseQty ?? 0;
+      const inProcQty = liveQueue.inProcess;
+      const awaitQty = stored ? stored.awaitingRepairQty ?? liveQueue.pending : liveQueue.pending;
+      const safetyTarget = stored ? stored.safetyStockTarget ?? defaultSafetyTarget : defaultSafetyTarget;
+
+      readyToUseTotal += readyQty;
+      inProcessTotal += inProcQty;
+      awaitingTotal += awaitQty;
+      if (readyQty < safetyTarget) lowStockCount += 1;
+    });
+
+    return {
+      readyToUseTotal,
+      inProcessTotal,
+      awaitingTotal,
+      lowStockCount
+    };
+  }, [partMasters, storedRepairStocks, allTickets, lineConfigs]);
+
+  // -------------------------------------------------------------
+  // 3. FILTERED REPAIR HISTORY RECORDS (BY PERIOD & LINE)
+  // -------------------------------------------------------------
+  const lineFilteredRecords = useMemo(() => {
+    if (filters.lineId === 'ALL') return regrindRecords;
+    return regrindRecords.filter(r => (r.lineId || r.lineLastUsed) === filters.lineId);
+  }, [regrindRecords, filters.lineId]);
+
+  const periodFilteredRecords = useMemo(() => {
+    return lineFilteredRecords.filter(rec => {
+      const dateStr = getRecordDateStr(rec);
+      if (filters.periodType === 'ALL') return true;
+      if (!dateStr) return false;
+
+      if (filters.periodType === 'DAILY') return dateStr === activeSelectedDate;
+      if (filters.periodType === 'WEEKLY') return dateStr >= weekBounds.start && dateStr <= weekBounds.end;
+      if (filters.periodType === 'MONTHLY') {
+        return Number(dateStr.slice(0, 4)) === filters.year && Number(dateStr.slice(5, 7)) === (filters.month || 1);
+      }
+      if (filters.periodType === 'YEARLY') return Number(dateStr.slice(0, 4)) === filters.year;
+      if (filters.periodType === 'QUARTERLY') {
+        const yr = Number(dateStr.slice(0, 4));
+        const mo = Number(dateStr.slice(5, 7));
+        const q = Math.floor((mo - 1) / 3) + 1;
+        return yr === filters.year && q === (filters.quarter || 1);
+      }
+      return true;
+    });
+  }, [lineFilteredRecords, filters.periodType, filters.year, filters.month, filters.quarter, activeSelectedDate, weekBounds]);
+
+  // -------------------------------------------------------------
+  // 4. FINANCIAL SAVING KPI AGGREGATES (100% FROM MASTER LOGS)
+  // -------------------------------------------------------------
+  const savingSummary = useMemo(() => {
+    let validJobs = 0;
+    let validPieces = 0;
+    let totalNewPurchaseAvoided = 0;
+    let totalRepairCost = 0;
+    let totalNetSaving = 0;
+
+    let realizedNewPurchase = 0;
+    let realizedNetSaving = 0;
+
+    let scrapJobs = 0;
+    let scrapPieces = 0;
+    let scrapNewValueLoss = 0;
+
+    periodFilteredRecords.forEach(rec => {
+      const pm = partMasterMap.get(rec.partCode) || partMasterMap.get((rec.partName || '').trim().toUpperCase());
+      const fin = extractRecordFinancials(rec, pm);
+      const statusKey = resolveUnifiedStatusKey(rec);
+
+      if (statusKey === 'SCRAP') {
+        scrapJobs += 1;
+        scrapPieces += fin.qty;
+        scrapNewValueLoss += fin.newPrice;
+      } else {
+        validJobs += 1;
+        validPieces += fin.qty;
+        totalNewPurchaseAvoided += fin.newPrice;
+        totalRepairCost += fin.repairCost;
+        totalNetSaving += fin.netSaving;
+
+        if (statusKey === 'COMPLETED' || statusKey === 'READY') {
+          realizedNewPurchase += fin.newPrice;
+          realizedNetSaving += fin.netSaving;
+        }
+      }
+    });
+
+    const totalLogs = periodFilteredRecords.length;
+    const savingPct = totalNewPurchaseAvoided > 0 ? (totalNetSaving / totalNewPurchaseAvoided) * 100 : 0;
+    const repairCostPct = totalNewPurchaseAvoided > 0 ? (totalRepairCost / totalNewPurchaseAvoided) * 100 : 0;
+    const scrapRatePct = totalLogs > 0 ? (scrapJobs / totalLogs) * 100 : 0;
+
+    return {
+      totalLogs,
+      validJobs,
+      validPieces,
+      totalNewPurchaseAvoided,
+      totalRepairCost,
+      totalNetSaving,
+      savingPct,
+      repairCostPct,
+      realizedNetSaving,
+      scrapJobs,
+      scrapPieces,
+      scrapNewValueLoss,
+      scrapRatePct
+    };
+  }, [periodFilteredRecords, partMasterMap]);
+
+  // -------------------------------------------------------------
+  // 5. FULL-WIDTH ADAPTIVE TREND CHART SERIES
+  // -------------------------------------------------------------
+  const { trendChartData, dailyHasNightShift } = useMemo(() => {
+    const buildPoint = (label: string, records: RegrindingRecord[], tooltipLabel?: string) => {
+      let avoided = 0;
+      let repair = 0;
+      let saving = 0;
+      let count = 0;
+
+      records.forEach(rec => {
+        if (resolveUnifiedStatusKey(rec) === 'SCRAP') return;
+        const pm = partMasterMap.get(rec.partCode) || partMasterMap.get((rec.partName || '').trim().toUpperCase());
+        const fin = extractRecordFinancials(rec, pm);
+        avoided += fin.newPrice;
+        repair += fin.repairCost;
+        saving += fin.netSaving;
+        count += 1;
+      });
+
+      const savingPct = avoided > 0 ? Number(((saving / avoided) * 100).toFixed(1)) : 0;
+      return {
+        label,
+        tooltipLabel: tooltipLabel || label,
+        avoided: Math.round(avoided),
+        repair: Math.round(repair),
+        saving: Math.round(saving),
+        savingPct,
+        count
+      };
+    };
+
+    let rawPoints: ReturnType<typeof buildPoint>[] = [];
+    let hasNightShift = false;
+
+    if (filters.periodType === 'DAILY') {
+      const hourBuckets = new Map<number, RegrindingRecord[]>();
+      periodFilteredRecords.forEach(rec => {
+        const offset = getRecordShiftHourOffset(rec, activeSelectedDate);
+        if (offset > 12) hasNightShift = true;
+        const list = hourBuckets.get(offset) || [];
+        list.push(rec);
+        hourBuckets.set(offset, list);
+      });
+
+      const maxOffset = hasNightShift ? 23 : 12; // 08:00-20:00 by default, 08:00-07:00 (24h) if night shift exists
+      const points: ReturnType<typeof buildPoint>[] = [];
+      for (let offset = 0; offset <= maxOffset; offset++) {
+        const hour24 = (8 + offset) % 24;
+        const label = `${String(hour24).padStart(2, '0')}:00`;
+        const tooltipLabel =
+          offset >= 16
+            ? `${label} (${isEn ? 'Night Shift +1d' : 'กะดึก +1 วัน'})`
+            : label;
+        points.push(buildPoint(label, hourBuckets.get(offset) || [], tooltipLabel));
+      }
+      rawPoints = points;
+    } else if (filters.periodType === 'WEEKLY') {
+      const monthWeeks = getMonthIsoWeeks(activeSelectedDate);
+      rawPoints = monthWeeks.map(wk => {
+        const recs = lineFilteredRecords.filter(r => {
+          const d = getRecordDateStr(r);
+          return d >= wk.start && d <= wk.end;
+        });
+        return buildPoint(wk.label, recs, `${wk.label} (${wk.start.slice(5)} – ${wk.end.slice(5)})`);
+      });
+    } else if (filters.periodType === 'MONTHLY') {
+      const yr = filters.year;
+      const mo = filters.month || 11;
+      const daysInMonth = new Date(yr, mo, 0).getDate();
+      const points: ReturnType<typeof buildPoint>[] = [];
+      for (let day = 1; day <= daysInMonth; day++) {
+        const iso = `${yr}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const recs = periodFilteredRecords.filter(r => getRecordDateStr(r) === iso);
+        points.push(buildPoint(String(day), recs));
+      }
+      rawPoints = points;
+    } else if (filters.periodType === 'YEARLY') {
+      rawPoints = monthNamesShort.map((mLabel, mIdx) => {
+        const monthPrefix = `${filters.year}-${String(mIdx + 1).padStart(2, '0')}`;
+        const recs = periodFilteredRecords.filter(r => getRecordDateStr(r).startsWith(monthPrefix));
+        return buildPoint(mLabel, recs);
+      });
+    } else {
+      const bucketMap = new Map<string, RegrindingRecord[]>();
+      periodFilteredRecords.forEach(r => {
+        const ym = getRecordDateStr(r).slice(0, 7);
+        if (!ym) return;
+        const list = bucketMap.get(ym) || [];
+        list.push(r);
+        bucketMap.set(ym, list);
+      });
+      rawPoints = Array.from(bucketMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([ym, recs]) => {
+          const [y, m] = ym.split('-');
+          const label = `${monthNamesShort[Math.max(0, Number(m) - 1)]} ${y.slice(2)}`;
+          return buildPoint(label, recs);
+        });
+    }
+
+    let runningSaving = 0;
+    let runningRepair = 0;
+    let runningAvoided = 0;
+    const series = rawPoints.map(pt => {
+      runningSaving += pt.saving;
+      runningRepair += pt.repair;
+      runningAvoided += pt.avoided;
+      return {
+        ...pt,
+        cumulativeSaving: runningSaving,
+        cumulativeRepair: runningRepair,
+        cumulativeAvoided: runningAvoided
+      };
+    });
+
+    return {
+      trendChartData: series,
+      dailyHasNightShift: hasNightShift
+    };
+  }, [filters.periodType, filters.year, filters.month, activeSelectedDate, lineFilteredRecords, periodFilteredRecords, partMasterMap, isEn, monthNamesShort]);
+
+  // Compact Line Chips for quick click-filter inside the Full-Width Chart header
+  const lineQuickChips = useMemo(() => {
+    const map = new Map<ProductionLineId, { jobs: number; saving: number; newPrice: number }>();
+    PRODUCTION_LINES.forEach(l => map.set(l, { jobs: 0, saving: 0, newPrice: 0 }));
+
+    regrindRecords.forEach(rec => {
+      const dateStr = getRecordDateStr(rec);
+      if (filters.periodType === 'DAILY' && dateStr !== activeSelectedDate) return;
+      if (filters.periodType === 'WEEKLY' && (dateStr < weekBounds.start || dateStr > weekBounds.end)) return;
+      if (
+        filters.periodType === 'MONTHLY' &&
+        (Number(dateStr.slice(0, 4)) !== filters.year || Number(dateStr.slice(5, 7)) !== (filters.month || 1))
+      ) {
+        return;
+      }
+      if (filters.periodType === 'YEARLY' && Number(dateStr.slice(0, 4)) !== filters.year) return;
+
+      if (resolveUnifiedStatusKey(rec) === 'SCRAP') return;
+      const line = (rec.lineId || rec.lineLastUsed || 'E1') as ProductionLineId;
+      const entry = map.get(line);
+      if (!entry) return;
+      const pm = partMasterMap.get(rec.partCode) || partMasterMap.get((rec.partName || '').trim().toUpperCase());
+      const fin = extractRecordFinancials(rec, pm);
+      entry.jobs += 1;
+      entry.saving += fin.netSaving;
+      entry.newPrice += fin.newPrice;
+    });
+
+    return Array.from(map.entries()).map(([lineId, val]) => ({
+      lineId,
+      jobs: val.jobs,
+      saving: val.saving,
+      savingPct: val.newPrice > 0 ? (val.saving / val.newPrice) * 100 : 0
+    }));
+  }, [regrindRecords, filters.periodType, filters.year, filters.month, activeSelectedDate, weekBounds, partMasterMap]);
+
+  // -------------------------------------------------------------
+  // 6. TOP 10 ANALYTICS (COMPUTED TOP 10, DEFAULT COLLAPSED TO TOP 5)
+  // -------------------------------------------------------------
+  const topAnalyticsSourceRecords = useMemo(() => {
+    return topListScope === 'PERIOD' ? periodFilteredRecords : lineFilteredRecords;
+  }, [topListScope, periodFilteredRecords, lineFilteredRecords]);
+
+  // Top 10 Repaired Parts
+  const top10RepairedParts = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        partCode: string;
+        partName: string;
+        jobs: number;
+        pieces: number;
+        totalSaving: number;
+        lines: Set<string>;
+      }
+    >();
+
+    topAnalyticsSourceRecords.forEach(rec => {
+      if (resolveUnifiedStatusKey(rec) === 'SCRAP') return;
+      const partName = (rec.partName || rec.partCode || 'Unknown Part').trim();
+      const partCode = (rec.partCode || '').trim();
+      const mapKey = partName.toUpperCase();
+      const pm = partMasterMap.get(partCode) || partMasterMap.get(mapKey);
+      const fin = extractRecordFinancials(rec, pm);
+
+      const cur = map.get(mapKey) || {
+        key: mapKey,
+        partCode,
+        partName,
+        jobs: 0,
+        pieces: 0,
+        totalSaving: 0,
+        lines: new Set<string>()
+      };
+      cur.jobs += 1;
+      cur.pieces += fin.qty;
+      cur.totalSaving += fin.netSaving;
+      if (rec.lineId || rec.lineLastUsed) cur.lines.add(rec.lineId || rec.lineLastUsed);
+      map.set(mapKey, cur);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => b.jobs - a.jobs || b.pieces - a.pieces || b.totalSaving - a.totalSaving)
+      .slice(0, 10)
+      .map(item => ({ ...item, lineList: Array.from(item.lines).join(', ') }));
+  }, [topAnalyticsSourceRecords, partMasterMap]);
+
+  // Top 10 Scrapped Parts
+  const top10ScrappedParts = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        partCode: string;
+        partName: string;
+        scrapJobs: number;
+        scrapPieces: number;
+        lostValueThb: number;
+        reasons: Map<string, number>;
+      }
+    >();
+
+    topAnalyticsSourceRecords.forEach(rec => {
+      if (resolveUnifiedStatusKey(rec) !== 'SCRAP') return;
+      const partName = (rec.partName || rec.partCode || 'Unknown Part').trim();
+      const partCode = (rec.partCode || '').trim();
+      const mapKey = partName.toUpperCase();
+      const pm = partMasterMap.get(partCode) || partMasterMap.get(mapKey);
+      const fin = extractRecordFinancials(rec, pm);
+      const reason = formatReasonLabel(rec.defectReason, isEn);
+
+      const cur = map.get(mapKey) || {
+        key: mapKey,
+        partCode,
+        partName,
+        scrapJobs: 0,
+        scrapPieces: 0,
+        lostValueThb: 0,
+        reasons: new Map<string, number>()
+      };
+      cur.scrapJobs += 1;
+      cur.scrapPieces += fin.qty;
+      cur.lostValueThb += fin.newPrice;
+      cur.reasons.set(reason, (cur.reasons.get(reason) || 0) + 1);
+      map.set(mapKey, cur);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => b.scrapJobs - a.scrapJobs || b.scrapPieces - a.scrapPieces || b.lostValueThb - a.lostValueThb)
+      .slice(0, 10)
+      .map(item => {
+        const topReason = Array.from(item.reasons.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
+        return { ...item, topReason };
+      });
+  }, [topAnalyticsSourceRecords, partMasterMap, isEn]);
+
+  // Top 10 Repair & Defect Reasons
+  const top10DefectReasons = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        reasonCode: string;
+        label: string;
+        count: number;
+        pieces: number;
+        scrapCount: number;
+        repairCost: number;
+      }
+    >();
+
+    const total = topAnalyticsSourceRecords.length;
+    topAnalyticsSourceRecords.forEach(rec => {
+      const code = (rec.defectReason || 'NORMAL_WEAR').trim();
+      const pm = partMasterMap.get(rec.partCode) || partMasterMap.get((rec.partName || '').trim().toUpperCase());
+      const fin = extractRecordFinancials(rec, pm);
+      const isScrap = resolveUnifiedStatusKey(rec) === 'SCRAP';
+
+      const cur = map.get(code) || {
+        reasonCode: code,
+        label: formatReasonLabel(code, isEn),
+        count: 0,
+        pieces: 0,
+        scrapCount: 0,
+        repairCost: 0
+      };
+      cur.count += 1;
+      cur.pieces += fin.qty;
+      if (isScrap) cur.scrapCount += 1;
+      cur.repairCost += fin.repairCost;
+      map.set(code, cur);
+    });
+
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count || b.pieces - a.pieces)
+      .slice(0, 10)
+      .map(item => ({
+        ...item,
+        pct: total > 0 ? (item.count / total) * 100 : 0
+      }));
+  }, [topAnalyticsSourceRecords, partMasterMap, isEn]);
+
+  // Visible slices based on compact Top 5 vs expanded Top 10 toggle
+  const visibleRepairedParts = useMemo(
+    () => top10RepairedParts.slice(0, topDisplayLimit),
+    [top10RepairedParts, topDisplayLimit]
+  );
+  const visibleScrappedParts = useMemo(
+    () => top10ScrappedParts.slice(0, topDisplayLimit),
+    [top10ScrappedParts, topDisplayLimit]
+  );
+  const visibleDefectReasons = useMemo(
+    () => top10DefectReasons.slice(0, topDisplayLimit),
+    [top10DefectReasons, topDisplayLimit]
+  );
+
+  // -------------------------------------------------------------
+  // ACTIONS: EXPORT CSV & PRINT PDF & FILTER HELPERS
+  // -------------------------------------------------------------
+  const handleSetPeriod = (periodType: CostPeriodFilter) => {
+    onFilterChange({
+      ...filters,
+      periodType,
+      selectedDate: filters.selectedDate || new Date().toISOString().slice(0, 10)
+    });
+  };
+
   const handleResetFilters = () => {
+    const now = new Date();
     onFilterChange({
       periodType: 'MONTHLY',
-      year: 2026,
-      month: 11,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      selectedDate: now.toISOString().slice(0, 10),
       lineId: 'ALL',
       partNo: 'ALL',
       partType: 'ALL',
@@ -166,1095 +869,1260 @@ export const CostDashboardTab: React.FC<CostDashboardTabProps> = ({
     refreshLiveData();
   };
 
-  const handleExportExcel = () => {
-    setExportNotice('ส่งออกข้อมูลเป็นไฟล์ Excel (Executive_Cost_Saving_Report_2026.xlsx) เรียบร้อยแล้ว');
-    setTimeout(() => setExportNotice(null), 4000);
-    
-    const headers = ['Metric', 'Value'];
-    const rows = [
-      ['Gross Saving MTD', metrics.grossSaving],
-      ['Net Saving MTD', metrics.netSaving],
-      ['Total Repair Cost MTD', metrics.totalRegrindingCost],
-      ['New Purchase Avoided Cost', metrics.newPurchaseEquivalentCost],
-      ['Total Queue Jobs', allTickets.length],
-      ['Open Jobs', openJobsCount],
-      ['Overdue Jobs', overdueJobsCount],
-      ['Critical Stock Items', criticalStockItems.length]
-    ];
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+  const handleExportCSV = () => {
+    const lines: string[] = [];
+    lines.push('FinDie Regrind Pro - Executive Dashboard Export');
+    lines.push(`Period,${filters.periodType},Line,${filters.lineId},Generated,${new Date().toISOString()}`);
+    lines.push('');
+    lines.push('=== SUMMARY SAVING (FROM REPAIR LOGS) ===');
+    lines.push(`Net Cost Saving (THB),${savingSummary.totalNetSaving.toFixed(2)}`);
+    lines.push(`Saving Percentage (%),${savingSummary.savingPct.toFixed(2)}%`);
+    lines.push(`New Part Equivalent Value (THB),${savingSummary.totalNewPurchaseAvoided.toFixed(2)}`);
+    lines.push(`Total Repair Cost (THB),${savingSummary.totalRepairCost.toFixed(2)}`);
+    lines.push(`Valid Repair Jobs,${savingSummary.validJobs}`);
+    lines.push(`Scrapped Jobs,${savingSummary.scrapJobs}`);
+    lines.push(`Scrap Value Loss (THB),${savingSummary.scrapNewValueLoss.toFixed(2)}`);
+    lines.push('');
+    lines.push('=== TOP 10 FREQUENTLY REPAIRED PARTS ===');
+    lines.push('Rank,PartCode,PartName,RepairJobs,Pieces,TotalSavingTHB');
+    top10RepairedParts.forEach((p, i) => {
+      lines.push(`${i + 1},"${p.partCode}","${p.partName}",${p.jobs},${p.pieces},${p.totalSaving.toFixed(2)}`);
+    });
+    lines.push('');
+    lines.push('=== TOP 10 FREQUENTLY SCRAPPED PARTS ===');
+    lines.push('Rank,PartCode,PartName,ScrapJobs,ScrapPieces,LostValueTHB,TopReason');
+    top10ScrappedParts.forEach((p, i) => {
+      lines.push(`${i + 1},"${p.partCode}","${p.partName}",${p.scrapJobs},${p.scrapPieces},${p.lostValueThb.toFixed(2)},"${p.topReason}"`);
+    });
+    lines.push('');
+    lines.push('=== TOP 10 DEFECT REASONS ===');
+    lines.push('Rank,ReasonCode,Label,Count,Percent');
+    top10DefectReasons.forEach((r, i) => {
+      lines.push(`${i + 1},"${r.reasonCode}","${r.label}",${r.count},${r.pct.toFixed(1)}%`);
+    });
+
+    const csv = '\uFEFF' + lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `FinDie_Executive_Dashboard_${new Date().toISOString().slice(0,10)}.csv`);
+    link.href = url;
+    link.download = `FinDie_Dashboard_Summary_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setExportNotice(
+      isEn
+        ? 'Exported Cost Saving & Top 10 Summary (CSV) successfully.'
+        : 'ส่งออกรายงานสรุปผลประหยัดและ Top 10 (CSV) เรียบร้อยแล้ว'
+    );
+    setTimeout(() => setExportNotice(null), 3500);
   };
 
-  const handleExportPDF = () => {
-    setExportNotice('กำลังจัดเตรียมรายงาน PDF สำหรับผู้บริหาร...');
-    setTimeout(() => {
-      setExportNotice(null);
-      window.print();
-    }, 1200);
-  };
+  const periodScopeDescription = useMemo(() => {
+    if (filters.periodType === 'DAILY') {
+      return isEn ? `Daily (${activeSelectedDate})` : `รายวัน (${activeSelectedDate})`;
+    }
+    if (filters.periodType === 'WEEKLY') {
+      const wkTag = `W${String(weekBounds.isoWeek).padStart(2, '0')}`;
+      return isEn
+        ? `Weekly (${wkTag} · ${weekBounds.start} to ${weekBounds.end})`
+        : `รายสัปดาห์ (${wkTag} · ${weekBounds.start} ถึง ${weekBounds.end})`;
+    }
+    if (filters.periodType === 'MONTHLY') {
+      const mName = monthNamesShort[Math.max(0, (filters.month || 1) - 1)];
+      return isEn ? `Monthly (${mName} ${filters.year})` : `รายเดือน (${mName} ${filters.year})`;
+    }
+    if (filters.periodType === 'YEARLY') {
+      return isEn ? `Yearly (${filters.year})` : `รายปี (${filters.year})`;
+    }
+    return isEn ? 'All Time' : 'สะสมทั้งหมด (All Time)';
+  }, [filters.periodType, filters.year, filters.month, activeSelectedDate, weekBounds, isEn, monthNamesShort]);
 
-  // -------------------------------------------------------------
-  // 100% REAL DYNAMIC COMPUTATIONS FROM LIVE DATA SERVICES
-  // -------------------------------------------------------------
+  const cumulativeEndSaving = useMemo(() => {
+    return trendChartData.length > 0 ? trendChartData[trendChartData.length - 1].cumulativeSaving : 0;
+  }, [trendChartData]);
 
-  // 1. Dynamic Monthly Trend Data (12 Months Jan - Dec for filters.year)
-  const monthlyChartData = useMemo(() => {
-    const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const targetYear = filters.year || 2026;
-
-    const monthMap = monthLabels.map((m, idx) => ({
-      name: m,
-      monthIndex: idx + 1,
-      regrind: 0,
-      avoided: 0,
-      saving: 0,
-      count: 0
-    }));
-
-    // Sum up real transactions
-    transactions.forEach(tx => {
-      if (!tx.repairDate) return;
-      const d = new Date(tx.repairDate);
-      if (d.getFullYear() === targetYear) {
-        const mIdx = d.getMonth();
-        if (mIdx >= 0 && mIdx < 12) {
-          monthMap[mIdx].regrind += tx.totalRepairCost || 0;
-          monthMap[mIdx].avoided += tx.newPurchaseEquivalentCost || 0;
-          monthMap[mIdx].saving += tx.netSaving || 0;
-          monthMap[mIdx].count += 1;
-        }
-      }
-    });
-
-    // Provide default smooth data points for months with 0 logged items to maintain high executive presentation
-    const baselineDefaults = [
-      { regrind: 410000, avoided: 580000, saving: 170000 },
-      { regrind: 450000, avoided: 680000, saving: 230000 },
-      { regrind: 420000, avoided: 610000, saving: 190000 },
-      { regrind: 520000, avoided: 790000, saving: 270000 },
-      { regrind: 480000, avoided: 840000, saving: 360000 },
-      { regrind: 530000, avoided: 920000, saving: 390000 },
-      { regrind: 490000, avoided: 890000, saving: 400000 },
-      { regrind: 510000, avoided: 950000, saving: 440000 },
-      { regrind: 560000, avoided: 1020000, saving: 460000 },
-      { regrind: 590000, avoided: 1080000, saving: 490000 },
-      { regrind: 612350, avoided: 1144800, saving: 532450 },
-      { regrind: 540000, avoided: 980000, saving: 440000 }
-    ];
-
-    return monthMap.map((item, idx) => {
-      if (item.count > 0) {
-        return {
-          name: item.name,
-          regrind: Math.round(item.regrind),
-          avoided: Math.round(item.avoided),
-          saving: Math.round(item.saving)
-        };
-      }
-      return {
-        name: item.name,
-        regrind: baselineDefaults[idx].regrind,
-        avoided: baselineDefaults[idx].avoided,
-        saving: baselineDefaults[idx].saving
-      };
-    });
-  }, [transactions, filters.year]);
-
-  // 2. Dynamic Cost Breakdown (Donut Chart)
-  const costBreakdownData = useMemo(() => {
-    let machineCost = metrics.totalMachineCost || 0;
-    let laborCost = metrics.totalLaborCost || 0;
-    let consumables = metrics.consumablesCost || 0;
-    let qcCost = metrics.qcCost || 0;
-    let replacement = metrics.sparePartsCost || 0;
-    let otherCost = metrics.transportationCost + metrics.otherCost;
-
-    if (machineCost === 0 && laborCost === 0 && transactions.length > 0) {
-      transactions.forEach(t => {
-        machineCost += t.machineCost || 0;
-        laborCost += t.laborCost || 0;
-        consumables += t.consumablesCost || 0;
-        qcCost += t.qcCost || 0;
-        replacement += t.sparePartsCost || 0;
-        otherCost += (t.transportationCost || 0) + (t.otherCost || 0);
+  const handleExportReportPDF = () => {
+    try {
+      const filename = exportManagementReportPDF({
+        lang: isEn ? 'EN' : 'TH',
+        kpi: {
+          periodLabel: periodScopeDescription,
+          lineLabel:
+            filters.lineId === 'ALL'
+              ? isEn
+                ? 'All Lines (E1–E5)'
+                : 'ทุกลายน์ (E1–E5)'
+              : `LINE ${filters.lineId}`,
+          generatedAt: new Date().toLocaleString(isEn ? 'en-GB' : 'th-TH'),
+          totalNetSaving: savingSummary.totalNetSaving,
+          savingPct: savingSummary.savingPct,
+          realizedNetSaving: savingSummary.realizedNetSaving,
+          totalNewPurchaseAvoided: savingSummary.totalNewPurchaseAvoided,
+          totalRepairCost: savingSummary.totalRepairCost,
+          repairCostPct: savingSummary.repairCostPct,
+          validJobs: savingSummary.validJobs,
+          validPieces: savingSummary.validPieces,
+          totalLogs: savingSummary.totalLogs,
+          scrapJobs: savingSummary.scrapJobs,
+          scrapPieces: savingSummary.scrapPieces,
+          scrapRatePct: savingSummary.scrapRatePct,
+          scrapNewValueLoss: savingSummary.scrapNewValueLoss
+        },
+        status: {
+          queueTotalJobs: realtimeQueueSummary.totalJobs,
+          queueCounts: statusTiles.map(tile => ({
+            label: tile.label,
+            jobs: realtimeQueueSummary.counts[tile.key].jobs,
+            pieces: realtimeQueueSummary.counts[tile.key].pieces
+          })),
+          stockReady: stockPoolSummary.readyToUseTotal,
+          stockInProcess: stockPoolSummary.inProcessTotal,
+          stockAwaiting: stockPoolSummary.awaitingTotal,
+          stockLowCount: stockPoolSummary.lowStockCount
+        },
+        trend: trendChartData.map(pt => ({
+          label: pt.label,
+          saving: pt.saving,
+          cumulativeSaving: pt.cumulativeSaving,
+          repair: pt.repair
+        })),
+        lines: lineQuickChips,
+        topRepaired: top10RepairedParts,
+        topScrapped: top10ScrappedParts,
+        topReasons: top10DefectReasons
       });
+      setExportNotice(
+        isEn
+          ? `Exported Management PDF Report (${filename}) successfully.`
+          : `ส่งออกรายงานผู้บริหาร (${filename}) เรียบร้อยแล้ว`
+      );
+      setTimeout(() => setExportNotice(null), 4000);
+    } catch {
+      setExportNotice(
+        isEn
+          ? 'Unable to generate PDF report. Please try again.'
+          : 'ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง'
+      );
+      setTimeout(() => setExportNotice(null), 4000);
     }
+  };
 
-    // Default reference totals if zero
-    const total = (machineCost + laborCost + consumables + qcCost + replacement + otherCost) || 612350;
-    if (machineCost === 0) {
-      machineCost = Math.round(total * 0.42);
-      laborCost = Math.round(total * 0.22);
-      consumables = Math.round(total * 0.18);
-      qcCost = Math.round(total * 0.06);
-      replacement = Math.round(total * 0.08);
-      otherCost = Math.round(total * 0.04);
-    }
-
-    const grandTotal = machineCost + laborCost + consumables + qcCost + replacement + otherCost;
-
-    return [
-      { name: 'Machine Cost', labelTh: 'ค่าเครื่องจักร', value: machineCost, pct: Math.round((machineCost / grandTotal) * 100), color: '#3b82f6' },
-      { name: 'Labor Cost', labelTh: 'ค่าแรงช่าง', value: laborCost, pct: Math.round((laborCost / grandTotal) * 100), color: '#10b981' },
-      { name: 'Consumables', labelTh: 'วัสดุสิ้นเปลือง', value: consumables, pct: Math.round((consumables / grandTotal) * 100), color: '#f59e0b' },
-      { name: 'QC Cost', labelTh: 'ค่าตรวจสอบ QC', value: qcCost, pct: Math.round((qcCost / grandTotal) * 100), color: '#8b5cf6' },
-      { name: 'Replacement', labelTh: 'ค่าเปลี่ยนอะไหล่', value: replacement, pct: Math.round((replacement / grandTotal) * 100), color: '#ec4899' },
-      { name: 'Other', labelTh: 'อื่นๆ', value: otherCost, pct: Math.round((otherCost / grandTotal) * 100), color: '#64748b' }
-    ];
-  }, [metrics, transactions]);
-
-  const totalCostCompositionThb = useMemo(() => {
-    return costBreakdownData.reduce((acc, c) => acc + c.value, 0);
-  }, [costBreakdownData]);
-
-  // 3. Dynamic Top 10 Cost-Saving Toolings List
-  const top10SavingParts = useMemo(() => {
-    const partMap = new Map<string, { name: string; value: number }>();
-
-    transactions.forEach(t => {
-      const pName = t.partName || t.partNo || 'UNKNOWN';
-      const existing = partMap.get(pName) || { name: pName, value: 0 };
-      existing.value += t.netSaving || 0;
-      partMap.set(pName, existing);
-    });
-
-    let sorted = Array.from(partMap.values())
-      .filter(p => p.value > 0)
-      .sort((a, b) => b.value - a.value);
-
-    // Baseline factory defaults matching real specs if transactions are light
-    if (sorted.length < 5) {
-      sorted = [
-        { name: 'BURRING (WIDE LOWER)', value: 532450 },
-        { name: 'CORNER CUT DIE C', value: 412300 },
-        { name: 'TRIM PUNCH', value: 365800 },
-        { name: 'PIERCE PUNCH', value: 298600 },
-        { name: 'FORMING DIE', value: 254900 },
-        { name: 'GUIDE PIN', value: 196400 },
-        { name: 'EJECTOR PIN', value: 162300 },
-        { name: 'RIB CUTTER', value: 138700 },
-        { name: 'CAM BLOCK', value: 120600 },
-        { name: 'OTHER', value: 98450 }
-      ];
-    }
-
-    const maxVal = sorted[0]?.value || 1;
-    return sorted.slice(0, 10).map(p => ({
-      name: p.name,
-      value: Math.round(p.value),
-      pct: Math.round((p.value / maxVal) * 100)
-    }));
-  }, [transactions]);
-
-  // 4. Dynamic Queue Work Tickets Metrics & Status Breakdown
-  const openJobsCount = useMemo(() => {
-    return allTickets.filter(t => t.status === 'PENDING' || t.status === 'IN_PROCESS' || t.status === 'PAUSED').length;
-  }, [allTickets]);
-
-  const overdueJobsCount = useMemo(() => {
-    const now = new Date();
-    return allTickets.filter(t => {
-      if (t.status === 'COMPLETED' || t.status === 'SCRAP' || t.status === 'CANCELLED') return false;
-      if (!t.targetCompletionDate) return false;
-      return new Date(t.targetCompletionDate) < now;
-    }).length;
-  }, [allTickets]);
-
-  const completedJobsCount = useMemo(() => {
-    const fromTickets = allTickets.filter(t => t.status === 'COMPLETED').length;
-    return Math.max(fromTickets, 128);
-  }, [allTickets]);
-
-  const jobStatusData = useMemo(() => {
-    let completed = 0;
-    let inProcess = 0;
-    let qc = 0;
-    let waitingParts = 0;
-    let overdue = 0;
-    let cancelled = 0;
-
-    allTickets.forEach(t => {
-      if (t.status === 'COMPLETED') completed++;
-      else if (t.status === 'IN_PROCESS') inProcess++;
-      else if (t.status === 'POST_REPAIR_INSPECTION') qc++;
-      else if (t.status === 'PAUSED') waitingParts++;
-      else if (t.status === 'CANCELLED' || t.status === 'SCRAP') cancelled++;
-      
-      if (t.targetCompletionDate && new Date(t.targetCompletionDate) < new Date() && t.status !== 'COMPLETED') {
-        overdue++;
-      }
-    });
-
-    const total = (completed + inProcess + qc + waitingParts + overdue + cancelled) || 176;
-    if (completed === 0 && inProcess === 0) {
-      completed = 128;
-      inProcess = 18;
-      qc = 8;
-      waitingParts = 6;
-      overdue = 6;
-      cancelled = 10;
-    }
-
-    const grandTotal = completed + inProcess + qc + waitingParts + overdue + cancelled;
-
-    return [
-      { name: 'เสร็จสิ้น', count: completed, pct: `${((completed / grandTotal) * 100).toFixed(1)}%`, color: '#10b981' },
-      { name: 'กำลังซ่อม', count: inProcess, pct: `${((inProcess / grandTotal) * 100).toFixed(1)}%`, color: '#06b6d4' },
-      { name: 'รอ QC', count: qc, pct: `${((qc / grandTotal) * 100).toFixed(1)}%`, color: '#eab308' },
-      { name: 'รอยอะไหล่', count: waitingParts, pct: `${((waitingParts / grandTotal) * 100).toFixed(1)}%`, color: '#94a3b8' },
-      { name: 'เกินกำหนด', count: overdue, pct: `${((overdue / grandTotal) * 100).toFixed(1)}%`, color: '#f43f5e' },
-      { name: 'ยกเลิก/พัก', count: cancelled, pct: `${((cancelled / grandTotal) * 100).toFixed(1)}%`, color: '#a855f7' }
-    ];
-  }, [allTickets]);
-
-  const totalJobStatusCount = useMemo(() => {
-    return jobStatusData.reduce((sum, item) => sum + item.count, 0);
-  }, [jobStatusData]);
-
-  // 5. Dynamic Spare Parts Stock & Risk Analysis
-  const criticalStockItems = useMemo(() => {
-    return toolingMasters.filter(m => {
-      const isLow = (m.currentSpareStock ?? 0) <= (m.minSpareStock ?? 1);
-      const isGrindLimitNear = (m.maxRegrindCount ?? 5) - 2 <= 1;
-      return isLow || isGrindLimitNear;
-    });
-  }, [toolingMasters]);
-
-  const stockRiskData = useMemo(() => {
-    let critical = 0;
-    let low = 0;
-    let warning = 0;
-    let normal = 0;
-
-    toolingMasters.forEach(m => {
-      const stock = m.currentSpareStock ?? 0;
-      const minStock = m.minSpareStock ?? 1;
-      if (stock === 0) critical++;
-      else if (stock <= minStock) low++;
-      else if (stock <= minStock + 2) warning++;
-      else normal++;
-    });
-
-    const grandTotal = critical + low + warning + normal;
-    if (grandTotal === 0) {
-      return [
-        { name: 'เสี่ยงสูง (Critical)', count: 5, pct: '4.2%', color: '#f43f5e' },
-        { name: 'เสี่ยง (Low Stock)', count: 12, pct: '10.0%', color: '#f59e0b' },
-        { name: 'ใกล้หมดรอบเจียร', count: 18, pct: '15.0%', color: '#eab308' },
-        { name: 'ปกติ', count: 85, pct: '70.8%', color: '#10b981' }
-      ];
-    }
-
-    return [
-      { name: 'เสี่ยงสูง (Critical)', count: critical, pct: `${((critical / grandTotal) * 100).toFixed(1)}%`, color: '#f43f5e' },
-      { name: 'เสี่ยง (Low Stock)', count: low, pct: `${((low / grandTotal) * 100).toFixed(1)}%`, color: '#f59e0b' },
-      { name: 'ใกล้หมดรอบเจียร', count: warning, pct: `${((warning / grandTotal) * 100).toFixed(1)}%`, color: '#eab308' },
-      { name: 'ปกติ', count: normal, pct: `${((normal / grandTotal) * 100).toFixed(1)}%`, color: '#10b981' }
-    ];
-  }, [toolingMasters]);
-
-  const urgentFollowUpItems = useMemo(() => {
-    const list = toolingMasters.map(m => {
-      const remaining = Math.max(0, (m.maxRegrindCount ?? 5) - 3);
-      return {
-        name: m.partName || m.partCode,
-        remainingGrinds: `${remaining} รอบ`,
-        color: remaining === 0 ? 'text-rose-400 bg-rose-500/20 border-rose-500/40' : remaining === 1 ? 'text-amber-400 bg-amber-500/20 border-amber-500/40' : 'text-cyan-300 bg-cyan-500/20 border-cyan-500/40'
-      };
-    });
-    if (list.length >= 5) return list.slice(0, 5);
-
-    return [
-      { name: 'BURRING (WIDE LOWER)', remainingGrinds: '0 รอบ', color: 'text-rose-400 bg-rose-500/20 border-rose-500/40' },
-      { name: 'CORNER CUT DIE C', remainingGrinds: '1 รอบ', color: 'text-amber-400 bg-amber-500/20 border-amber-500/40' },
-      { name: 'TRIM PUNCH', remainingGrinds: '1 รอบ', color: 'text-amber-400 bg-amber-500/20 border-amber-500/40' },
-      { name: 'PIERCE PUNCH', remainingGrinds: '2 รอบ', color: 'text-cyan-300 bg-cyan-500/20 border-cyan-500/40' },
-      { name: 'GUIDE PIN', remainingGrinds: '2 รอบ', color: 'text-cyan-300 bg-cyan-500/20 border-cyan-500/40' }
-    ];
-  }, [toolingMasters]);
-
-  // 6. Dynamic Queue Table Items from Live Active Tickets
-  const queueTableItems = useMemo(() => {
-    if (allTickets.length > 0) {
-      return allTickets.slice(0, 5).map((t, idx) => ({
-        id: idx + 1,
-        jobCode: t.jobCode || `JOB-RGD-2026-0${idx + 10}`,
-        partName: t.partName || 'PIERCE PUNCH',
-        line: t.lineId || 'E1',
-        receiveDate: t.receivedDate || '06/11/2026',
-        dueDate: t.targetCompletionDate || '07/11/2026',
-        status: t.status === 'PENDING' ? 'รอเริ่มงาน' : t.status === 'IN_PROCESS' ? 'กำลังซ่อม' : t.status === 'PAUSED' ? 'รออะไหล่' : 'รอ QC',
-        statusColor: t.status === 'PENDING' ? 'bg-slate-800 text-slate-300 border-slate-700' : t.status === 'IN_PROCESS' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-        waitDays: Math.floor(Math.random() * 3),
-        operator: t.technicianName || 'Anan K.'
-      }));
-    }
-    return [
-      { id: 1, jobCode: 'JOB-RGD-2026-010', partName: 'PIERCE PUNCH', line: 'E1', receiveDate: '06/11/2026', dueDate: '07/11/2026', status: 'เกินกำหนด', statusColor: 'bg-rose-500/20 text-rose-300 border-rose-500/40', waitDays: 2, operator: 'Anan K.' },
-      { id: 2, jobCode: 'JOB-RGD-2026-011', partName: 'TRIM DIE', line: 'E2', receiveDate: '05/11/2026', dueDate: '07/11/2026', status: 'รอ QC', statusColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40', waitDays: 1, operator: 'Krit S.' },
-      { id: 3, jobCode: 'JOB-RGD-2026-012', partName: 'GUIDE PIN', line: 'E3-1', receiveDate: '05/11/2026', dueDate: '10/11/2026', status: 'กำลังซ่อม', statusColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40', waitDays: 0, operator: 'Thanakorn P.' },
-      { id: 4, jobCode: 'JOB-RGD-2026-013', partName: 'BURRING (WIDE LOWER)', line: 'E1', receiveDate: '06/11/2026', dueDate: '10/11/2026', status: 'รออะไหล่', statusColor: 'bg-slate-800 text-slate-300 border-slate-700', waitDays: 1, operator: 'Somsak T.' },
-      { id: 5, jobCode: 'JOB-RGD-2026-014', partName: 'FORMING DIE', line: 'E3-1', receiveDate: '06/11/2026', dueDate: '11/11/2026', status: 'รอเริ่มงาน', statusColor: 'bg-slate-900 text-slate-400 border-slate-800', waitDays: 0, operator: 'Prasit L.' }
-    ];
-  }, [allTickets]);
-
-  // 7. Dynamic Machine Utilization Items
-  const machineUtilizationItems = [
-    { id: 'GRIND-01', name: 'OKAMOTO Surface Grinder #1', utilPct: 78, hours: 124.5, jobCount: 62, status: 'ใช้งานปกติ', statusBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
-    { id: 'GRIND-02', name: 'Surface Grinder #2', utilPct: 65, hours: 98.0, jobCount: 48, status: 'ใช้งานปกติ', statusBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
-    { id: 'JIG-01', name: 'Jig Grinder', utilPct: 52, hours: 78.5, jobCount: 36, status: 'พร้อมใช้งาน', statusBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
-    { id: 'LATHE-01', name: 'CNC Lathe', utilPct: 40, hours: 60.0, jobCount: 22, status: 'รอซ่อมบำรุง', statusBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-    { id: 'EDM-01', name: 'EDM Machine', utilPct: 35, hours: 48.5, jobCount: 18, status: 'ใช้งานปกติ', statusBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' }
+  const statusTiles: Array<{
+    key: CanonicalStatusKey;
+    label: string;
+    accentText: string;
+    borderClass: string;
+    route: string;
+  }> = [
+    { key: 'EMERGENCY', label: isEn ? 'Urgent #1' : 'งานด่วน #1', accentText: 'text-rose-400', borderClass: 'border-rose-500/40', route: 'smart-queue-schedule' },
+    { key: 'IN_PROCESS', label: isEn ? 'Grinding' : 'กำลังเจียร', accentText: 'text-purple-300', borderClass: 'border-purple-500/40', route: 'smart-queue-schedule' },
+    { key: 'WAITING', label: isEn ? 'Waiting' : 'รอคิวเจียร', accentText: 'text-cyan-300', borderClass: 'border-cyan-500/35', route: 'smart-queue-schedule' },
+    { key: 'POSTPONED', label: isEn ? 'Postponed' : 'งานเลื่อน', accentText: 'text-amber-300', borderClass: 'border-amber-500/35', route: 'smart-queue-schedule' },
+    { key: 'READY', label: isEn ? 'Ready for QC' : 'เจียรเสร็จ / รอ QC', accentText: 'text-sky-300', borderClass: 'border-sky-500/35', route: 'smart-queue-schedule' },
+    { key: 'COMPLETED', label: isEn ? 'QC Passed' : 'QC ผ่าน', accentText: 'text-emerald-300', borderClass: 'border-emerald-500/35', route: 'unified-logs-view' },
+    { key: 'SCRAP', label: isEn ? 'Scrapped' : 'ยกเลิก / คัดทิ้ง', accentText: 'text-rose-300', borderClass: 'border-rose-900/60', route: 'unified-logs-view' }
   ];
 
-  // Helper render for complete dashboard view layout (used both in standard view and TV Kiosk Mode)
-  const renderDashboardCoreContent = () => (
-    <div className="space-y-3">
-      {/* SECTION 2: EXECUTIVE KPI SUMMARY CARDS (8 IMPACTFUL METRIC CARDS) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
-        
-        {/* Card 1: MTD Savings */}
-        <div className="bg-[#0b101b] border border-emerald-500/40 rounded-2xl p-2.5 shadow-xl relative overflow-hidden group">
-          <div className="flex items-center justify-between text-slate-400 text-[10px]">
-            <span className="font-bold text-emerald-400 font-mono">ประหยัดได้ (MTD)</span>
-            <PiggyBank className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-emerald-300 font-mono mt-0.5 tracking-tight">
-            ฿ {metrics.netSaving > 0 ? metrics.netSaving.toLocaleString() : '532,450'}
-          </div>
-          <div className="text-[9.5px] text-emerald-400 font-mono mt-0.5 font-bold flex items-center gap-0.5">
-            <span>▲ +12%</span>
-            <span className="text-slate-400 font-normal">จากเดือนก่อน</span>
-          </div>
-        </div>
-
-        {/* Card 2: YTD Savings */}
-        <div className="bg-[#0b101b] border border-cyan-500/40 rounded-2xl p-2.5 shadow-xl relative overflow-hidden group">
-          <div className="flex items-center justify-between text-slate-400 text-[10px]">
-            <span className="font-bold text-cyan-400 font-mono">ประหยัดได้ (YTD)</span>
-            <TrendingUp className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-cyan-300 font-mono mt-0.5 tracking-tight">
-            ฿ 3,845,200
-          </div>
-          <div className="text-[9.5px] text-cyan-400 font-mono mt-0.5 font-bold flex items-center gap-0.5">
-            <span>▲ +18%</span>
-            <span className="text-slate-400 font-normal">จากปีก่อน</span>
-          </div>
-        </div>
-
-        {/* Card 3: Repair Cost MTD */}
-        <div className="bg-[#0b101b] border border-blue-500/40 rounded-2xl p-2.5 shadow-xl relative overflow-hidden group">
-          <div className="flex items-center justify-between text-slate-400 text-[10px]">
-            <span className="font-bold text-blue-400 font-mono">ต้นทุนซ่อม (MTD)</span>
-            <Wrench className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-white font-mono mt-0.5 tracking-tight">
-            ฿ {metrics.totalRegrindingCost > 0 ? metrics.totalRegrindingCost.toLocaleString() : '612,350'}
-          </div>
-          <div className="text-[9.5px] text-blue-400 font-mono mt-0.5 font-bold flex items-center gap-0.5">
-            <span>▲ +5%</span>
-            <span className="text-slate-400 font-normal">จากเดือนก่อน</span>
-          </div>
-        </div>
-
-        {/* Card 4: Avoided New Purchase */}
-        <div className="bg-[#0b101b] border border-purple-500/40 rounded-2xl p-2.5 shadow-xl relative overflow-hidden group">
-          <div className="flex items-center justify-between text-slate-400 text-[10px]">
-            <span className="font-bold text-purple-300 font-mono">มูลค่าซื้อใหม่ที่หลีกเลี่ยง</span>
-            <DollarSign className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-purple-300 font-mono mt-0.5 tracking-tight">
-            ฿ {metrics.newPurchaseEquivalentCost > 0 ? metrics.newPurchaseEquivalentCost.toLocaleString() : '4,457,550'}
-          </div>
-          <div className="text-[9.5px] text-slate-400 mt-0.5">
-            มูลค่าจัดซื้อใหม่สะสม
-          </div>
-        </div>
-
-        {/* Card 5: Completed Jobs MTD */}
-        <div className="bg-[#0b101b] border border-teal-500/40 rounded-2xl p-2.5 shadow-xl relative overflow-hidden group">
-          <div className="flex items-center justify-between text-slate-400 text-[10px]">
-            <span className="font-bold text-teal-300 font-mono">งานซ่อมเสร็จ (MTD)</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-teal-300 font-mono mt-0.5 tracking-tight">
-            {completedJobsCount} <span className="text-xs font-normal text-slate-400">งาน</span>
-          </div>
-          <div className="text-[9.5px] text-teal-400 font-mono mt-0.5 font-bold flex items-center gap-0.5">
-            <span>▲ +8%</span>
-          </div>
-        </div>
-
-        {/* Card 6: Outstanding Queue */}
-        <div className="bg-[#0b101b] border border-amber-500/40 rounded-2xl p-2.5 shadow-xl relative overflow-hidden group">
-          <div className="flex items-center justify-between text-slate-400 text-[10px]">
-            <span className="font-bold text-amber-300 font-mono">งานค้าง</span>
-            <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-amber-300 font-mono mt-0.5 tracking-tight">
-            {openJobsCount || 24} <span className="text-xs font-normal text-slate-400">งาน</span>
-          </div>
-          <div className="text-[9.5px] text-amber-400 font-mono mt-0.5 font-bold flex items-center gap-0.5">
-            <span>▲ +3 งาน</span>
-          </div>
-        </div>
-
-        {/* Card 7: Overdue Jobs */}
-        <div className="bg-[#0b101b] border border-rose-500/40 rounded-2xl p-2.5 shadow-xl relative overflow-hidden group">
-          <div className="flex items-center justify-between text-slate-400 text-[10px]">
-            <span className="font-bold text-rose-400 font-mono">งานเกินกำหนด</span>
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-rose-400 font-mono mt-0.5 tracking-tight">
-            {overdueJobsCount || 6} <span className="text-xs font-normal text-slate-400">งาน</span>
-          </div>
-          <div className="text-[9.5px] text-rose-400 font-mono mt-0.5 font-bold flex items-center gap-0.5">
-            <span>▲ +2 งาน</span>
-          </div>
-        </div>
-
-        {/* Card 8: High Risk Stock Items */}
-        <div className="bg-[#0b101b] border border-cyan-400/40 rounded-2xl p-2.5 shadow-xl relative overflow-hidden group">
-          <div className="flex items-center justify-between text-slate-400 text-[10px]">
-            <span className="font-bold text-cyan-300 font-mono">สต็อกเสี่ยงสูง</span>
-            <PackageX className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          </div>
-          <div className="text-base sm:text-lg font-black text-cyan-300 font-mono mt-0.5 tracking-tight">
-            {criticalStockItems.length || 5} <span className="text-xs font-normal text-slate-400">รายการ</span>
-          </div>
-          <div className="text-[9.5px] text-rose-400 font-mono mt-0.5 font-bold">
-            🚨 ต้องติดตามด่วน
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 3: FINANCIAL ANALYSIS (GRID OF 3 CHARTS/LISTS) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        
-        {/* Chart 1: Monthly Cost & Saving Trend (Spans 5 cols) */}
-        <div className="lg:col-span-5 bg-[#0b101b] border border-white/10 rounded-2xl p-3.5 shadow-xl flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>แนวโน้มการประหยัด (รายเดือน)</span>
-              </h3>
-              <p className="text-[10px] text-slate-400">
-                เปรียบเทียบต้นทุนซ่อม มูลค่าจัดซื้อใหม่ที่หลีกเลี่ยงได้ และยอดประหยัดสุทธิ
-              </p>
+  const renderCoreDashboard = () => (
+    <div className="flex-1 min-h-0 flex flex-col gap-2">
+      {/* TIER 1: REAL-TIME QUEUE (7 STATUSES) & STOCK POOL */}
+      <div className="shrink-0 grid grid-cols-1 xl:grid-cols-12 gap-2">
+        {/* Real-time 7-Status Queue Monitor */}
+        <div className="xl:col-span-8 bg-[#0b101b] border border-white/10 rounded-xl px-2.5 py-2">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-2 text-[11px] text-slate-300">
+              <span className="font-bold text-white">
+                {isEn ? 'Real-Time Grinding Queue Status' : 'สถานะคิวงานเจียร Real-Time'}
+              </span>
+              <span className="text-slate-600" aria-hidden="true">·</span>
+              <span className="font-mono tabular-nums text-slate-400">
+                {isEn
+                  ? `${realtimeQueueSummary.totalJobs} Total Jobs (${realtimeQueueSummary.totalActivePieces.toLocaleString()} Active EA)`
+                  : `ทั้งหมด ${realtimeQueueSummary.totalJobs} คิว (${realtimeQueueSummary.totalActivePieces.toLocaleString()} EA คงค้าง)`}
+              </span>
             </div>
+            <button
+              type="button"
+              onClick={() =>
+                onNavigateToTab(
+                  'smart-queue-schedule',
+                  filters.lineId !== 'ALL' ? (filters.lineId as ProductionLineId) : undefined
+                )
+              }
+              className="text-[11px] font-medium text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <span>{isEn ? 'Open Queue Schedule' : 'เปิดตารางคิวงาน'}</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
           </div>
 
-          {/* Chart Legend indicators */}
-          <div className="flex items-center gap-3 text-[10px] font-mono mb-1">
-            <span className="flex items-center gap-1 text-cyan-400">
-              <span className="w-2 h-2 rounded bg-cyan-500"></span>
-              <span>ต้นทุนซ่อม</span>
-            </span>
-            <span className="flex items-center gap-1 text-emerald-400">
-              <span className="w-2 h-2 rounded bg-emerald-500"></span>
-              <span>มูลค่าซื้อใหม่ที่หลีกเลี่ยง</span>
-            </span>
-            <span className="flex items-center gap-1 text-yellow-400">
-              <span className="w-2 h-2 rounded-full bg-yellow-400"></span>
-              <span>Saving</span>
-            </span>
-          </div>
-
-          <div className="h-56 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={monthlyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#060911',
-                    borderColor: '#ffffff20',
-                    borderRadius: '0.75rem',
-                    fontSize: '11px',
-                    fontFamily: 'monospace'
-                  }}
-                  formatter={(val: any) => [`฿ ${Number(val).toLocaleString()}`, '']}
-                />
-                <Bar dataKey="regrind" fill="#06b6d4" radius={[3, 3, 0, 0]} barSize={9} />
-                <Bar dataKey="avoided" fill="#10b981" radius={[3, 3, 0, 0]} barSize={9} />
-                <Line type="monotone" dataKey="saving" stroke="#eab308" strokeWidth={2.5} dot={{ r: 3, fill: '#eab308' }} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Chart 2: Cost Breakdown Donut (Spans 3 cols) */}
-        <div className="lg:col-span-3 bg-[#0b101b] border border-white/10 rounded-2xl p-3.5 shadow-xl flex flex-col justify-between">
-          <div>
-            <h3 className="text-xs font-bold text-white mb-0.5">สัดส่วนต้นทุนซ่อม (MTD)</h3>
-            <p className="text-[10px] text-slate-400 mb-1.5">โครงสร้างค่าใช้จ่ายซ่อมเจียรรวม</p>
-
-            <div className="h-40 w-full relative flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={costBreakdownData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={62}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {costBreakdownData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#060911',
-                      borderColor: '#ffffff20',
-                      borderRadius: '0.75rem',
-                      fontSize: '11px',
-                      fontFamily: 'monospace'
-                    }}
-                    formatter={(val: any) => [`฿ ${Number(val).toLocaleString()}`, '']}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute text-center pointer-events-none">
-                <div className="text-[9px] text-slate-400 font-mono font-bold">Total</div>
-                <div className="text-xs font-black text-white font-mono">฿ {totalCostCompositionThb.toLocaleString()}</div>
-              </div>
-            </div>
-
-            {/* Legend list */}
-            <div className="grid grid-cols-2 gap-1 text-[10px] font-mono mt-1">
-              {costBreakdownData.map(item => (
-                <div key={item.name} className="flex items-center gap-1 truncate">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                  <span className="text-slate-300 truncate">{item.name}</span>
-                  <span className="text-slate-400 font-bold ml-auto">{item.pct}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Chart 3: Top 10 Cost-Saving Toolings List (Spans 4 cols) */}
-        <div className="lg:col-span-4 bg-[#0b101b] border border-white/10 rounded-2xl p-3.5 shadow-xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <h3 className="text-xs font-bold text-white">Top 10 ชิ้นงานที่ประหยัดได้มากที่สุด (MTD)</h3>
-              <span className="text-[10px] text-emerald-400 font-mono">สุทธิ</span>
-            </div>
-
-            <div className="space-y-1.5">
-              {top10SavingParts.map(part => (
-                <div key={part.name} className="space-y-0.5">
-                  <div className="flex items-center justify-between text-[10.5px] font-mono">
-                    <span className="text-slate-200 font-semibold truncate max-w-[170px] sm:max-w-[190px]">{part.name}</span>
-                    <span className="text-emerald-400 font-black">฿ {part.value.toLocaleString()}</span>
-                  </div>
-                  <div className="w-full h-1 bg-slate-900 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-500"
-                      style={{ width: `${part.pct}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 4: QUEUE, WORKLOAD & STOCK RISK (GRID OF 3 WIDGETS) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        
-        {/* Widget 1: Work Status Breakdown (Spans 4 cols) */}
-        <div className="lg:col-span-4 bg-[#0b101b] border border-white/10 rounded-2xl p-3.5 shadow-xl">
-          <h3 className="text-xs font-bold text-white mb-0.5">สถานะงาน (ทั้งหมด)</h3>
-          <p className="text-[10px] text-slate-400 mb-2">สัดส่วนสถานะงานซ่อมแม่พิมพ์ในคิวระบบ</p>
-
-          <div className="flex items-center gap-3">
-            <div className="w-32 h-32 relative flex items-center justify-center shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={jobStatusData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={38}
-                    outerRadius={56}
-                    paddingAngle={3}
-                    dataKey="count"
-                  >
-                    {jobStatusData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute text-center pointer-events-none">
-                <div className="text-sm font-black text-white font-mono">{totalJobStatusCount}</div>
-                <div className="text-[8px] text-slate-400 font-mono">งาน</div>
-              </div>
-            </div>
-
-            <div className="space-y-1 text-[10.5px] font-mono flex-1">
-              {jobStatusData.map(st => (
-                <div key={st.name} className="flex items-center justify-between">
-                  <span className="flex items-center gap-1 text-slate-300">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: st.color }} />
-                    <span>{st.name}</span>
-                  </span>
-                  <span className="text-white font-bold">{st.count} <span className="text-slate-400 font-normal">({st.pct})</span></span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Widget 2: Turnaround Time Average & Micro Trend (Spans 4 cols) */}
-        <div className="lg:col-span-4 bg-[#0b101b] border border-white/10 rounded-2xl p-3.5 shadow-xl flex flex-col justify-between">
-          <div>
-            <h3 className="text-xs font-bold text-white mb-0.5">ระยะเวลาการซ่อม (Turnaround Time)</h3>
-            <p className="text-[10px] text-slate-400 mb-2">เวลาเฉลี่ยตั้งแต่รับงานจนเสร็จสิ้น QC</p>
-
-            <div className="flex items-center justify-around bg-slate-950/80 p-2.5 rounded-xl border border-white/5 mb-2">
-              <div className="text-center">
-                <div className="text-[9px] text-slate-400 uppercase font-mono font-bold">เฉลี่ย</div>
-                <div className="text-xl font-black text-cyan-300 font-mono mt-0.5">2.8 <span className="text-xs font-normal text-slate-400">วัน</span></div>
-              </div>
-
-              <div className="h-7 w-[1px] bg-white/10" />
-
-              <div className="text-center">
-                <div className="text-[9px] text-slate-400 uppercase font-mono font-bold">เป้าหมาย</div>
-                <div className="text-xl font-black text-white font-mono mt-0.5 flex items-center justify-center gap-1">
-                  <span>≤ 3</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                </div>
-              </div>
-            </div>
-
-            {/* Micro Line Chart */}
-            <div className="h-16 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={[
-                  { date: '1/11', value: 3.2 },
-                  { date: '8/11', value: 2.9 },
-                  { date: '15/11', value: 3.1 },
-                  { date: '22/11', value: 2.7 },
-                  { date: '30/11', value: 2.8 }
-                ]} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-                  <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} tickLine={false} />
-                  <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} domain={[0, 8]} />
-                  <Line type="monotone" dataKey="value" stroke="#00FF7F" strokeWidth={2} dot={{ r: 3, fill: '#00FF7F' }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* Widget 3: Spare Stock & Risk Status (Spans 4 cols) */}
-        <div className="lg:col-span-4 bg-[#0b101b] border border-white/10 rounded-2xl p-3.5 shadow-xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-0.5">
-              <h3 className="text-xs font-bold text-white">สภาพสต็อกอะไหล่ & ความเสี่ยง</h3>
-              <span className="text-[10px] text-cyan-400 font-mono">100% Sync</span>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              <div className="w-24 h-24 relative flex items-center justify-center shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stockRiskData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={28}
-                      outerRadius={42}
-                      paddingAngle={3}
-                      dataKey="count"
-                    >
-                      {stockRiskData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute text-center pointer-events-none">
-                  <div className="text-xs font-black text-white font-mono">{toolingMasters.length || 120}</div>
-                  <div className="text-[7.5px] text-slate-400 font-mono">รายการ</div>
-                </div>
-              </div>
-
-              {/* Side Alert Panel: Items requiring urgent follow up */}
-              <div className="bg-slate-950/80 border border-rose-500/30 rounded-xl p-2 flex-1 space-y-1 text-[10px]">
-                <div className="text-rose-400 font-bold font-mono text-[9.5px] uppercase flex items-center gap-1 mb-0.5">
-                  <AlertTriangle className="w-3 h-3 text-rose-400" />
-                  <span>รายการที่ต้องติดตามด่วน</span>
-                </div>
-                {urgentFollowUpItems.map(item => (
-                  <div key={item.name} className="flex items-center justify-between font-mono">
-                    <span className="text-slate-300 truncate max-w-[100px] text-[9.5px]">{item.name}</span>
-                    <span className={`px-1 py-0.2 rounded font-bold text-[9px] border ${item.color}`}>
-                      {item.remainingGrinds}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5">
+            {statusTiles.map(tile => {
+              const stat = realtimeQueueSummary.counts[tile.key];
+              return (
+                <button
+                  key={tile.key}
+                  type="button"
+                  onClick={() =>
+                    onNavigateToTab(
+                      tile.route,
+                      filters.lineId !== 'ALL' ? (filters.lineId as ProductionLineId) : undefined,
+                      tile.key
+                    )
+                  }
+                  className={`text-left bg-[#080c15] hover:bg-white/[0.04] border ${tile.borderClass} rounded-lg px-2 py-1.5 transition-colors cursor-pointer`}
+                >
+                  <div className="text-[10px] text-slate-400 truncate">{tile.label}</div>
+                  <div className="flex items-baseline justify-between gap-1 mt-0.5">
+                    <span className={`text-lg font-bold font-mono tabular-nums leading-none ${tile.accentText}`}>
+                      {stat.jobs}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono tabular-nums">
+                      {stat.pieces.toLocaleString()} EA
                     </span>
                   </div>
-                ))}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Real-time Stock Part Repair Pool */}
+        <div className="xl:col-span-4 bg-[#0b101b] border border-white/10 rounded-xl px-2.5 py-2 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="font-bold text-white">
+                {isEn ? 'Spare Part Repair Stock' : 'สต็อกอะไหล่หมุนเวียนงานซ่อม'}
+              </span>
+              <span className="text-slate-600" aria-hidden="true">·</span>
+              <span className="text-slate-400 font-mono tabular-nums">
+                {isEn ? `${partMasters.length} Parts` : `${partMasters.length} พาร์ท`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('tooling-specs')}
+              className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <span>{isEn ? 'Manage Stock' : 'จัดการสต็อก'}</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            <div className="bg-[#080c15] border border-emerald-500/30 rounded-lg px-2 py-1.5">
+              <div className="text-[10px] text-slate-400 truncate">{isEn ? 'Ready to Issue' : 'พร้อมเบิก'}</div>
+              <div className="text-sm font-bold font-mono tabular-nums text-emerald-300 leading-tight mt-0.5">
+                {stockPoolSummary.readyToUseTotal.toLocaleString()}
+              </div>
+            </div>
+            <div className="bg-[#080c15] border border-purple-500/30 rounded-lg px-2 py-1.5">
+              <div className="text-[10px] text-slate-400 truncate">{isEn ? 'Grinding' : 'กำลังเจียร'}</div>
+              <div className="text-sm font-bold font-mono tabular-nums text-purple-300 leading-tight mt-0.5">
+                {stockPoolSummary.inProcessTotal.toLocaleString()}
+              </div>
+            </div>
+            <div className="bg-[#080c15] border border-amber-500/30 rounded-lg px-2 py-1.5">
+              <div className="text-[10px] text-slate-400 truncate">{isEn ? 'Awaiting Repair' : 'รอซ่อม'}</div>
+              <div className="text-sm font-bold font-mono tabular-nums text-amber-300 leading-tight mt-0.5">
+                {stockPoolSummary.awaitingTotal.toLocaleString()}
+              </div>
+            </div>
+            <div className="bg-[#080c15] border border-white/10 rounded-lg px-2 py-1.5">
+              <div className="text-[10px] text-slate-400 truncate">{isEn ? 'Below Safety' : 'ต่ำกว่าเกณฑ์'}</div>
+              <div
+                className={`text-sm font-bold font-mono tabular-nums leading-tight mt-0.5 ${
+                  stockPoolSummary.lowStockCount > 0 ? 'text-rose-400' : 'text-slate-200'
+                }`}
+              >
+                {isEn ? `${stockPoolSummary.lowStockCount} Parts` : `${stockPoolSummary.lowStockCount} พาร์ท`}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* SECTION 5 & 6: CURRENT QUEUE TABLE & MACHINE UTILIZATION TABLE */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        
-        {/* Table 1: Current Queue Jobs (Spans 6 cols) */}
-        <div className="lg:col-span-6 bg-[#0b101b] border border-white/10 rounded-2xl p-3.5 shadow-xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>คิวงาปัจจุบัน (Waiting & In Process)</span>
-              </h3>
-              <span className="text-[10px] text-cyan-400 font-mono">{allTickets.length} Jobs</span>
+      {/* TIER 2: COST SAVING HERO METRICS (FROM UNIFIED REPAIR LOGS) */}
+      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="bg-[#0b101b] border border-emerald-500/35 rounded-xl px-3 py-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span className="font-semibold text-emerald-300">
+              {isEn ? 'Net Cost Saving' : 'ยอดเงินที่ Saving ได้สุทธิ'}
+            </span>
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          </div>
+          <div className="flex items-baseline justify-between gap-2 mt-1">
+            <div className="text-xl font-bold text-white font-mono tabular-nums tracking-tight leading-none">
+              ฿{Math.round(savingSummary.totalNetSaving).toLocaleString()}
             </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-sans">
-                <thead>
-                  <tr className="border-b border-white/10 text-[10px] text-slate-400 uppercase font-mono">
-                    <th className="py-1.5 px-1.5">#</th>
-                    <th className="py-1.5 px-1.5">Job Code</th>
-                    <th className="py-1.5 px-1.5">ชื่อชิ้นงาน</th>
-                    <th className="py-1.5 px-1.5 text-center">ไลน์</th>
-                    <th className="py-1.5 px-1.5 text-center">วันรับ</th>
-                    <th className="py-1.5 px-1.5 text-center">Due Date</th>
-                    <th className="py-1.5 px-1.5 text-center">สถานะ</th>
-                    <th className="py-1.5 px-1.5 text-center">รอ (วัน)</th>
-                    <th className="py-1.5 px-1.5">ผู้รับผิดชอบ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 font-mono text-[10.5px]">
-                  {queueTableItems.map(row => (
-                    <tr key={row.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-1.5 px-1.5 font-bold text-slate-400">{row.id}</td>
-                      <td className="py-1.5 px-1.5 font-bold text-cyan-300">{row.jobCode}</td>
-                      <td className="py-1.5 px-1.5 font-sans font-semibold text-white truncate max-w-[110px]">{row.partName}</td>
-                      <td className="py-1.5 px-1.5 text-center">
-                        <span className="px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 font-bold text-[9.5px]">
-                          {row.line}
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-1.5 text-center text-slate-400 text-[9.5px]">{row.receiveDate}</td>
-                      <td className="py-1.5 px-1.5 text-center text-rose-300 font-bold text-[9.5px]">{row.dueDate}</td>
-                      <td className="py-1.5 px-1.5 text-center">
-                        <span className={`px-1.5 py-0.2 rounded-full font-bold text-[9.5px] border ${row.statusColor}`}>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-1.5 text-center text-slate-300 font-bold">{row.waitDays}</td>
-                      <td className="py-1.5 px-1.5 font-sans text-slate-300 text-[10px] truncate max-w-[80px]">{row.operator}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="text-base font-bold text-emerald-400 font-mono tabular-nums leading-none">
+              {savingSummary.savingPct.toFixed(1)}%
             </div>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between font-mono tabular-nums">
+            <span>
+              {isEn
+                ? `Done / QC: ฿${Math.round(savingSummary.realizedNetSaving).toLocaleString()}`
+                : `ซ่อมเสร็จ/รอ QC: ฿${Math.round(savingSummary.realizedNetSaving).toLocaleString()}`}
+            </span>
+            <span>{isEn ? `${savingSummary.validJobs} Jobs` : `${savingSummary.validJobs} ใบงาน`}</span>
           </div>
         </div>
 
-        {/* Table 2: Machine Utilization (Spans 6 cols) */}
-        <div className="lg:col-span-6 bg-[#0b101b] border border-white/10 rounded-2xl p-3.5 shadow-xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>ประสิทธิภาพเครื่องจักร (Machine Utilization)</span>
-              </h3>
-              <span className="text-[10px] text-emerald-400 font-mono">5 Machines</span>
+        <div className="bg-[#0b101b] border border-white/10 rounded-xl px-3 py-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span className="font-semibold text-cyan-300">
+              {isEn ? 'New Purchase Cost Avoided' : 'มูลค่าซื้อชิ้นใหม่ที่ทดแทนได้'}
+            </span>
+            <DollarSign className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          </div>
+          <div className="text-xl font-bold text-white font-mono tabular-nums tracking-tight mt-1 leading-none">
+            ฿{Math.round(savingSummary.totalNewPurchaseAvoided).toLocaleString()}
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 font-mono tabular-nums truncate">
+            {isEn
+              ? `${periodScopeDescription} · ${savingSummary.validPieces.toLocaleString()} Pcs Reused`
+              : `${periodScopeDescription} · ${savingSummary.validPieces.toLocaleString()} ชิ้นซ่อมใช้ต่อ`}
+          </div>
+        </div>
+
+        <div className="bg-[#0b101b] border border-white/10 rounded-xl px-3 py-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span className="font-semibold text-amber-300">
+              {isEn ? 'Actual Regrind Repair Cost' : 'ต้นทุนงานซ่อมเจียรจริง'}
+            </span>
+            <Wrench className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          </div>
+          <div className="flex items-baseline justify-between gap-2 mt-1">
+            <div className="text-xl font-bold text-white font-mono tabular-nums tracking-tight leading-none">
+              ฿{Math.round(savingSummary.totalRepairCost).toLocaleString()}
+            </div>
+            <div className="text-xs font-semibold text-amber-300 font-mono tabular-nums leading-none">
+              {isEn
+                ? `${savingSummary.repairCostPct.toFixed(1)}% of New Cost`
+                : `${savingSummary.repairCostPct.toFixed(1)}% ของราคาใหม่`}
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 font-mono tabular-nums">
+            {isEn ? 'Based on actual labor & machine logs' : 'อ้างอิงค่าแรง + อะไหล่/ต้นทุนเครื่องจาก Log จริง'}
+          </div>
+        </div>
+
+        <div className="bg-[#0b101b] border border-white/10 rounded-xl px-3 py-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span className="font-semibold text-rose-300">
+              {isEn ? 'Job Volume & Scrap Rate' : 'ปริมาณงานซ่อม & อัตราคัดทิ้ง'}
+            </span>
+            <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          </div>
+          <div className="flex items-baseline justify-between gap-2 mt-1">
+            <div className="text-xl font-bold text-white font-mono tabular-nums tracking-tight leading-none">
+              {savingSummary.totalLogs}{' '}
+              <span className="text-[11px] font-normal text-slate-400">{isEn ? 'Jobs' : 'ใบงาน'}</span>
+            </div>
+            <div className="text-xs font-semibold text-rose-400 font-mono tabular-nums leading-none">
+              {isEn
+                ? `Scrap ${savingSummary.scrapJobs} (${savingSummary.scrapRatePct.toFixed(1)}%)`
+                : `คัดทิ้ง ${savingSummary.scrapJobs} (${savingSummary.scrapRatePct.toFixed(1)}%)`}
+            </div>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between font-mono tabular-nums">
+            <span>
+              {isEn
+                ? `Scrap Loss: ฿${Math.round(savingSummary.scrapNewValueLoss).toLocaleString()}`
+                : `มูลค่าคัดทิ้ง: ฿${Math.round(savingSummary.scrapNewValueLoss).toLocaleString()}`}
+            </span>
+            <span>{isEn ? `${savingSummary.scrapPieces} pcs` : `${savingSummary.scrapPieces} ชิ้น`}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Empty Period Hint Banner */}
+      {periodFilteredRecords.length === 0 && (
+        <div className="shrink-0 bg-[#0b101b] border border-amber-500/35 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 text-amber-200">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              {isEn ? 'No regrind repair logs found for ' : 'ไม่พบประวัติงานซ่อมในช่วงเวลา '}
+              <strong className="font-mono">{periodScopeDescription}</strong>
+              {filters.lineId !== 'ALL' ? ` (LINE ${filters.lineId})` : ''}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {filters.periodType === 'DAILY' && latestRecordDate && (
+              <button
+                type="button"
+                onClick={() => onFilterChange({ ...filters, selectedDate: latestRecordDate })}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 font-mono text-[11px] cursor-pointer"
+              >
+                {isEn ? `Go to Latest Job Date (${latestRecordDate})` : `ไปยังวันที่มีงานล่าสุด (${latestRecordDate})`}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleSetPeriod('ALL')}
+              className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 font-mono text-[11px] cursor-pointer"
+            >
+              {isEn
+                ? `View All-Time Logs (${regrindRecords.length} entries)`
+                : `ดูประวัติสะสมทั้งหมด (${regrindRecords.length} รายการ)`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TIER 3: FULL-WIDTH PERIOD COMPARISON + CUMULATIVE SAVINGS TREND (RECHARTS LINECHART) */}
+      <div className="flex-[1.15] min-h-[210px] bg-[#0b101b] border border-white/10 rounded-xl px-3 py-2 flex flex-col">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 mb-1.5">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <h2 className="font-bold text-white">
+              {isEn
+                ? `Savings & Cumulative Trend (${periodScopeDescription})`
+                : `แนวโน้มยอดประหยัด & สะสม (${periodScopeDescription})`}
+            </h2>
+            <span className="text-slate-600 hidden sm:inline" aria-hidden="true">·</span>
+            {/* Interactive Per-Line Summary Chips */}
+            <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono tabular-nums">
+              {lineQuickChips.map(chip => {
+                const isSelected = filters.lineId === chip.lineId;
+                return (
+                  <button
+                    key={chip.lineId}
+                    type="button"
+                    onClick={() =>
+                      onFilterChange({
+                        ...filters,
+                        lineId: isSelected ? 'ALL' : chip.lineId
+                      })
+                    }
+                    className={`px-1.5 py-0.5 rounded border transition-colors cursor-pointer whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold'
+                        : 'bg-[#080c15] text-slate-300 border-white/10 hover:border-cyan-400/50'
+                    }`}
+                    title={isEn ? `Click to filter LINE ${chip.lineId}` : `คลิกเพื่อกรองเฉพาะ LINE ${chip.lineId}`}
+                  >
+                    {chip.lineId}: ฿{Math.round(chip.saving).toLocaleString()} ({chip.jobs})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowChartDataLabels(prev => !prev)}
+              aria-pressed={showChartDataLabels}
+              className={`px-2.5 py-1 rounded-lg border text-[10.5px] font-medium flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
+                showChartDataLabels
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold'
+                  : 'bg-slate-900 text-slate-300 border-white/10 hover:text-white hover:border-cyan-400/50'
+              }`}
+              title={isEn ? 'Toggle data point numbers on charts' : 'กดเปิด/ปิดการแสดงตัวเลขแต่ละจุดบนกราฟ'}
+            >
+              {showChartDataLabels ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+              <span>
+                {isEn
+                  ? showChartDataLabels
+                    ? 'Labels: ON'
+                    : 'Labels: OFF'
+                  : showChartDataLabels
+                  ? 'ตัวเลขกราฟ: เปิด'
+                  : 'ตัวเลขกราฟ: ปิด'}
+              </span>
+            </button>
+
+            <div className="flex items-center gap-0.5 p-0.5 bg-slate-900 border border-white/10 rounded-lg text-[10.5px]">
+              <button
+                type="button"
+                onClick={() => setChartViewMode('SPLIT')}
+                className={`px-2 py-0.5 rounded font-medium cursor-pointer whitespace-nowrap ${
+                  chartViewMode === 'SPLIT' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {isEn ? 'Split View' : '2 กราฟ'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartViewMode('TREND')}
+                className={`px-2 py-0.5 rounded font-medium cursor-pointer whitespace-nowrap ${
+                  chartViewMode === 'TREND' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {isEn ? 'Period Comparison' : 'เปรียบเทียบรายช่วง'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartViewMode('CUMULATIVE')}
+                className={`px-2 py-0.5 rounded font-medium cursor-pointer whitespace-nowrap ${
+                  chartViewMode === 'CUMULATIVE' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {isEn ? 'Cumulative (Line)' : 'แนวโน้มสะสม (Line)'}
+              </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-sans">
-                <thead>
-                  <tr className="border-b border-white/10 text-[10px] text-slate-400 uppercase font-mono">
-                    <th className="py-1.5 px-1.5">Machine ID</th>
-                    <th className="py-1.5 px-1.5">ชื่อเครื่องจักร</th>
-                    <th className="py-1.5 px-1.5">Utilization</th>
-                    <th className="py-1.5 px-1.5 text-center">ชั่วโมงใช้งาน</th>
-                    <th className="py-1.5 px-1.5 text-center">จำนวนงาน</th>
-                    <th className="py-1.5 px-1.5 text-center">สถานะ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 font-mono text-[10.5px]">
-                  {machineUtilizationItems.map(m => (
-                    <tr key={m.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-2 px-1.5 font-bold text-cyan-300">{m.id}</td>
-                      <td className="py-2 px-1.5 font-sans font-semibold text-white truncate max-w-[130px]">{m.name}</td>
-                      <td className="py-2 px-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-white w-7 text-[10px]">{m.utilPct}%</span>
-                          <div className="w-16 sm:w-20 h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full"
-                              style={{ width: `${m.utilPct}%` }}
+            <button
+              type="button"
+              onClick={() =>
+                onNavigateToTab(
+                  'unified-logs-view',
+                  filters.lineId !== 'ALL' ? (filters.lineId as ProductionLineId) : undefined
+                )
+              }
+              className="text-[11px] font-medium text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <span>{isEn ? 'View All Logs' : 'ดูประวัติ Log ทั้งหมด'}</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 w-full">
+          {trendChartData.some(p => p.count > 0) ? (
+            <div className="h-full min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-2.5">
+              {chartViewMode !== 'CUMULATIVE' && (
+                <div
+                  className={`${
+                    chartViewMode === 'SPLIT' ? 'lg:col-span-6' : 'lg:col-span-12'
+                  } h-full min-h-[160px] lg:min-h-0 bg-[#080c15] border border-white/10 rounded-lg px-2 py-1.5 flex flex-col`}
+                >
+                  <div className="shrink-0 flex items-center justify-between text-[10.5px] mb-0.5 px-1">
+                    <span className="font-semibold text-slate-200 truncate">
+                      {isEn
+                        ? 'New Cost Avoided vs. Net Saving vs. Repair Cost'
+                        : 'เปรียบเทียบมูลค่าซื้อใหม่ / ยอดประหยัด / ต้นทุนซ่อม'}
+                      {filters.periodType === 'DAILY' && (
+                        <span className="ml-1.5 font-mono text-[10px] text-cyan-400">
+                          {dailyHasNightShift
+                            ? isEn
+                              ? '(08:00–07:00 · 24h Shift)'
+                              : '(08:00–07:00 · กะดึก 24 ชม.)'
+                            : '(08:00–20:00)'}
+                        </span>
+                      )}
+                      {filters.periodType === 'WEEKLY' && trendChartData.length > 0 && (
+                        <span className="ml-1.5 font-mono text-[10px] text-cyan-400">
+                          ({trendChartData[0].label}–{trendChartData[trendChartData.length - 1].label})
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-mono tabular-nums text-cyan-300 shrink-0">
+                      Saving {savingSummary.savingPct.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex-1 min-h-0 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart
+                        data={trendChartData}
+                        margin={{ top: showChartDataLabels ? 20 : 4, right: 6, left: -12, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff12" vertical={false} />
+                        <XAxis dataKey="label" stroke="#94a3b8" fontSize={10} tickLine={false} />
+                        <YAxis
+                          yAxisId="left"
+                          stroke="#94a3b8"
+                          fontSize={10}
+                          tickLine={false}
+                          tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          stroke="#38bdf8"
+                          fontSize={10}
+                          tickLine={false}
+                          domain={[0, 100]}
+                          tickFormatter={(v: number) => `${v}%`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#090d16',
+                            borderColor: 'rgba(255,255,255,0.12)',
+                            borderRadius: '0.5rem',
+                            fontSize: '11px',
+                            color: '#f8fafc'
+                          }}
+                          labelFormatter={(label, payload) => payload?.[0]?.payload?.tooltipLabel || label}
+                          formatter={(value: any, name: string) => {
+                            if (name === 'Saving %') return [`${value}%`, name];
+                            return [`฿${Number(value).toLocaleString()}`, name];
+                          }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '2px' }} />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="avoided"
+                          name={isEn ? 'New Part Value' : 'มูลค่าซื้อใหม่'}
+                          fill="#334155"
+                          radius={[3, 3, 0, 0]}
+                          maxBarSize={28}
+                        />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="saving"
+                          name={isEn ? 'Net Saving' : 'ยอดประหยัดสุทธิ'}
+                          fill="#10b981"
+                          radius={[3, 3, 0, 0]}
+                          maxBarSize={28}
+                        >
+                          {showChartDataLabels && (
+                            <LabelList
+                              dataKey="saving"
+                              content={(props: any) => {
+                                const idx = typeof props.index === 'number' ? props.index : -1;
+                                const pt = idx >= 0 ? trendChartData[idx] : undefined;
+                                if (!pt || pt.count <= 0) return null;
+                                const cx = Number(props.x || 0) + Number(props.width || 0) / 2;
+                                const cy = Math.max(12, Number(props.y || 0) - 5);
+                                return (
+                                  <text
+                                    x={cx}
+                                    y={cy}
+                                    textAnchor="middle"
+                                    fill="#34d399"
+                                    stroke="#080c15"
+                                    strokeWidth={3}
+                                    paintOrder="stroke"
+                                    fontSize={9}
+                                    fontWeight={700}
+                                    className="font-mono tabular-nums pointer-events-none"
+                                  >
+                                    {formatCompactThbLabel(Number(props.value || 0))}
+                                  </text>
+                                );
+                              }}
                             />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-2 px-1.5 text-center text-slate-300 font-bold">{m.hours}</td>
-                      <td className="py-2 px-1.5 text-center text-slate-300">{m.jobCount}</td>
-                      <td className="py-2 px-1.5 text-center">
-                        <span className={`px-2 py-0.2 rounded-full font-bold text-[9.5px] border ${m.statusBg}`}>
-                          {m.status}
+                          )}
+                        </Bar>
+                        <Bar
+                          yAxisId="left"
+                          dataKey="repair"
+                          name={isEn ? 'Repair Cost' : 'ต้นทุนซ่อม'}
+                          fill="#f59e0b"
+                          radius={[3, 3, 0, 0]}
+                          maxBarSize={28}
+                        />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="savingPct"
+                          name="Saving %"
+                          stroke="#38bdf8"
+                          strokeWidth={2}
+                          dot={{ r: 2, fill: '#38bdf8' }}
+                        >
+                          {showChartDataLabels && (
+                            <LabelList
+                              dataKey="savingPct"
+                              content={(props: any) => {
+                                const idx = typeof props.index === 'number' ? props.index : -1;
+                                const pt = idx >= 0 ? trendChartData[idx] : undefined;
+                                if (!pt || pt.count <= 0) return null;
+                                const cx = Number(props.x || 0);
+                                const rawY = Number(props.y || 0);
+                                const cy = rawY < 18 ? rawY + 13 : rawY - 7;
+                                return (
+                                  <text
+                                    x={cx}
+                                    y={cy}
+                                    textAnchor="middle"
+                                    fill="#38bdf8"
+                                    stroke="#080c15"
+                                    strokeWidth={3}
+                                    paintOrder="stroke"
+                                    fontSize={8.5}
+                                    fontWeight={700}
+                                    className="font-mono tabular-nums pointer-events-none"
+                                  >
+                                    {`${Number(props.value || 0).toFixed(1).replace(/\.0$/, '')}%`}
+                                  </text>
+                                );
+                              }}
+                            />
+                          )}
+                        </Line>
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {chartViewMode !== 'TREND' && (
+                <div
+                  className={`${
+                    chartViewMode === 'SPLIT' ? 'lg:col-span-6' : 'lg:col-span-12'
+                  } h-full min-h-[160px] lg:min-h-0 bg-[#080c15] border border-emerald-500/25 rounded-lg px-2 py-1.5 flex flex-col`}
+                >
+                  <div className="shrink-0 flex items-center justify-between text-[10.5px] mb-0.5 px-1">
+                    <span className="font-semibold text-emerald-300 truncate">
+                      {isEn
+                        ? 'Cumulative Cost Savings Trend'
+                        : 'กราฟเส้นแนวโน้มยอดประหยัดสะสม (Cumulative Savings Trend)'}
+                      {filters.periodType === 'DAILY' && (
+                        <span className="ml-1.5 font-mono text-[10px] text-emerald-400/80">
+                          {dailyHasNightShift ? '(08:00–07:00 · 24h)' : '(08:00–20:00)'}
                         </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      )}
+                      {filters.periodType === 'WEEKLY' && trendChartData.length > 0 && (
+                        <span className="ml-1.5 font-mono text-[10px] text-emerald-400/80">
+                          ({trendChartData[0].label}–{trendChartData[trendChartData.length - 1].label})
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-mono tabular-nums font-bold text-emerald-400 shrink-0">
+                      {isEn
+                        ? `Cumulative: ฿${Math.round(cumulativeEndSaving).toLocaleString()}`
+                        : `สะสม: ฿${Math.round(cumulativeEndSaving).toLocaleString()}`}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-h-0 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={trendChartData}
+                        margin={{ top: showChartDataLabels ? 20 : 4, right: 14, left: -8, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff12" vertical={false} />
+                        <XAxis dataKey="label" stroke="#94a3b8" fontSize={10} tickLine={false} />
+                        <YAxis
+                          stroke="#94a3b8"
+                          fontSize={10}
+                          tickLine={false}
+                          tickFormatter={(v: number) =>
+                            v >= 1000000
+                              ? `${(v / 1000000).toFixed(1)}M`
+                              : v >= 1000
+                              ? `${Math.round(v / 1000)}k`
+                              : String(v)
+                          }
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#090d16',
+                            borderColor: 'rgba(16,185,129,0.35)',
+                            borderRadius: '0.5rem',
+                            fontSize: '11px',
+                            color: '#f8fafc'
+                          }}
+                          labelFormatter={(label, payload) => payload?.[0]?.payload?.tooltipLabel || label}
+                          formatter={(value: any, name: string) => [`฿${Number(value).toLocaleString()}`, name]}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '2px' }} />
+                        <Line
+                          type="monotone"
+                          dataKey="cumulativeSaving"
+                          name={isEn ? 'Cumulative Saving (฿)' : 'ยอดประหยัดสะสม (฿)'}
+                          stroke="#10b981"
+                          strokeWidth={2.5}
+                          dot={{ r: 2.5, fill: '#10b981', strokeWidth: 0 }}
+                          activeDot={{ r: 4.5, fill: '#34d399' }}
+                        >
+                          {showChartDataLabels && (
+                            <LabelList
+                              dataKey="cumulativeSaving"
+                              content={(props: any) => {
+                                const idx = typeof props.index === 'number' ? props.index : -1;
+                                const pt = idx >= 0 ? trendChartData[idx] : undefined;
+                                if (!pt || pt.count <= 0) return null;
+                                const cx = Number(props.x || 0);
+                                const rawY = Number(props.y || 0);
+                                const cy = rawY < 18 ? rawY + 13 : rawY - 8;
+                                return (
+                                  <text
+                                    x={cx}
+                                    y={cy}
+                                    textAnchor="middle"
+                                    fill="#34d399"
+                                    stroke="#080c15"
+                                    strokeWidth={3}
+                                    paintOrder="stroke"
+                                    fontSize={9}
+                                    fontWeight={700}
+                                    className="font-mono tabular-nums pointer-events-none"
+                                  >
+                                    {formatCompactThbLabel(Number(props.value || 0))}
+                                  </text>
+                                );
+                              }}
+                            />
+                          )}
+                        </Line>
+                        <Line
+                          type="monotone"
+                          dataKey="cumulativeRepair"
+                          name={isEn ? 'Cumulative Repair Cost (฿)' : 'ต้นทุนซ่อมสะสม (฿)'}
+                          stroke="#f59e0b"
+                          strokeWidth={1.75}
+                          strokeDasharray="4 3"
+                          dot={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-500 text-xs border border-dashed border-white/10 rounded-lg">
+              {isEn
+                ? 'No repair logs recorded in this timeframe for trend analysis'
+                : 'ยังไม่มีรายการบันทึกในกรอบเวลาที่เลือกสำหรับกราฟแนวโน้ม'}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* TIER 4: TOP 10 RANKINGS (COMPACT TOP 5 DEFAULT + EXPAND TO TOP 10) */}
+      <div className="flex-1 min-h-[210px] bg-[#0b101b] border border-white/10 rounded-xl px-3 py-2 flex flex-col">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-1.5 mb-2">
+          <div className="flex items-center gap-2 text-xs">
+            <h2 className="font-bold text-white">
+              {isEn ? 'Top 10 Analytics from Live Repair Logs' : 'จัดอันดับ Top 10 จากประวัติงานซ่อมจริง'}
+            </h2>
+            <span className="text-slate-600" aria-hidden="true">·</span>
+            <span className="text-[11px] text-slate-400">
+              {topDisplayLimit === 5
+                ? isEn
+                  ? 'Compact Top 5'
+                  : 'ย่อแสดง 5 อันดับแรก'
+                : isEn
+                ? 'Full Top 10'
+                : 'แสดงครบ 10 อันดับ'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Compact Top 5 vs Top 10 Switch */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-slate-900 border border-white/10 rounded-lg text-[10.5px]">
+              <button
+                type="button"
+                onClick={() => setTopDisplayLimit(5)}
+                className={`px-2 py-0.5 rounded font-medium cursor-pointer whitespace-nowrap ${
+                  topDisplayLimit === 5 ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {isEn ? 'Top 5' : 'ย่อ Top 5'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTopDisplayLimit(10)}
+                className={`px-2 py-0.5 rounded font-medium cursor-pointer whitespace-nowrap ${
+                  topDisplayLimit === 10 ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {isEn ? 'Full Top 10' : 'ดูครบ Top 10'}
+              </button>
+            </div>
+
+            {/* Period vs All-Time Switch */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-slate-900 border border-white/10 rounded-lg text-[10.5px]">
+              <button
+                type="button"
+                onClick={() => setTopListScope('PERIOD')}
+                className={`px-2 py-0.5 rounded font-medium cursor-pointer whitespace-nowrap ${
+                  topListScope === 'PERIOD' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {isEn ? 'Selected Period' : 'ช่วงเวลาที่เลือก'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTopListScope('ALL_TIME')}
+                className={`px-2 py-0.5 rounded font-medium cursor-pointer whitespace-nowrap ${
+                  topListScope === 'ALL_TIME' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {isEn ? `All Time (${lineFilteredRecords.length})` : `สะสมทั้งหมด (${lineFilteredRecords.length})`}
+              </button>
             </div>
           </div>
         </div>
 
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {/* 1. Top 10 Frequently Repaired Parts (Shows Top 5 default) */}
+          <div className="min-h-0 flex flex-col">
+            <div className="shrink-0 flex items-center justify-between mb-1">
+              <h3 className="text-[11px] font-bold text-cyan-300">
+                {isEn ? 'Most Repaired Parts (Top 10)' : 'ชิ้นงานที่ซ่อมบ่อยที่สุด (Top 10)'}
+              </h3>
+              <span className="text-[10px] font-mono tabular-nums text-slate-400">
+                {isEn
+                  ? `Showing ${visibleRepairedParts.length}/${top10RepairedParts.length}`
+                  : `แสดง ${visibleRepairedParts.length}/${top10RepairedParts.length}`}
+              </span>
+            </div>
+
+            {visibleRepairedParts.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center p-4 border border-dashed border-white/10 rounded-lg text-xs text-slate-500">
+                {isEn ? 'No repair history in this period' : 'ไม่มีรายการซ่อมในช่วงเวลานี้'}
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar divide-y divide-white/5 border border-white/10 rounded-lg bg-[#080c15]">
+                {visibleRepairedParts.map((item, idx) => {
+                  const maxJobs = top10RepairedParts[0]?.jobs || 1;
+                  const barPct = Math.round((item.jobs / maxJobs) * 100);
+                  return (
+                    <div key={item.key} className="px-2 py-1.5 hover:bg-white/[0.03] transition-colors">
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono tabular-nums text-slate-400 w-5 shrink-0">#{idx + 1}</span>
+                          <span className="font-semibold text-white truncate" title={`${item.partName} (${item.partCode})`}>
+                            {item.partName}
+                          </span>
+                        </div>
+                        <div className="font-mono tabular-nums shrink-0 flex items-center gap-2 text-[10.5px]">
+                          <span className="font-bold text-cyan-300">
+                            {isEn ? `${item.jobs} jobs (${item.pieces} pcs)` : `${item.jobs} ครั้ง (${item.pieces} ชิ้น)`}
+                          </span>
+                          <span className="text-emerald-400">฿{Math.round(item.totalSaving).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div className="mt-1 h-1 w-full bg-slate-900 rounded-full overflow-hidden">
+                        <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${barPct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 2. Top 10 Frequently Scrapped Parts (Shows Top 5 default) */}
+          <div className="min-h-0 flex flex-col">
+            <div className="shrink-0 flex items-center justify-between mb-1">
+              <h3 className="text-[11px] font-bold text-rose-300">
+                {isEn ? 'Most Scrapped Parts (Top 10)' : 'ชิ้นงานที่ทิ้งบ่อยที่สุด (Scrap Top 10)'}
+              </h3>
+              <span className="text-[10px] font-mono tabular-nums text-slate-400">
+                {isEn
+                  ? `Showing ${visibleScrappedParts.length}/${top10ScrappedParts.length}`
+                  : `แสดง ${visibleScrappedParts.length}/${top10ScrappedParts.length}`}
+              </span>
+            </div>
+
+            {visibleScrappedParts.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-white/10 rounded-lg text-xs text-slate-500 text-center gap-1">
+                <span>{isEn ? 'No scrapped parts in selected period' : 'ไม่มีรายการคัดทิ้งในช่วงเวลาที่เลือก'}</span>
+                {topListScope === 'PERIOD' && (
+                  <button
+                    type="button"
+                    onClick={() => setTopListScope('ALL_TIME')}
+                    className="text-cyan-400 hover:text-cyan-300 text-[11px] cursor-pointer underline"
+                  >
+                    {isEn ? 'View All-Time Scrap History' : 'ดูยอดคัดทิ้งสะสมทั้งหมด'}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar divide-y divide-white/5 border border-white/10 rounded-lg bg-[#080c15]">
+                {visibleScrappedParts.map((item, idx) => {
+                  const maxScrap = top10ScrappedParts[0]?.scrapJobs || 1;
+                  const barPct = Math.round((item.scrapJobs / maxScrap) * 100);
+                  return (
+                    <div key={item.key} className="px-2 py-1.5 hover:bg-white/[0.03] transition-colors">
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono tabular-nums text-slate-400 w-5 shrink-0">#{idx + 1}</span>
+                          <span className="font-semibold text-white truncate" title={`${item.partName} (${item.topReason})`}>
+                            {item.partName}
+                          </span>
+                        </div>
+                        <div className="font-mono tabular-nums shrink-0 flex items-center gap-2 text-[10.5px]">
+                          <span className="font-bold text-rose-400">
+                            {isEn
+                              ? `${item.scrapJobs} jobs (${item.scrapPieces} pcs)`
+                              : `${item.scrapJobs} ครั้ง (${item.scrapPieces} ชิ้น)`}
+                          </span>
+                          <span className="text-slate-400">฿{Math.round(item.lostValueThb).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div className="mt-1 h-1 w-full bg-slate-900 rounded-full overflow-hidden">
+                        <div className="h-full bg-rose-500 rounded-full" style={{ width: `${barPct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Top 10 Repair & Defect Reasons (Shows Top 5 default) */}
+          <div className="min-h-0 flex flex-col">
+            <div className="shrink-0 flex items-center justify-between mb-1">
+              <h3 className="text-[11px] font-bold text-amber-300">
+                {isEn ? 'Common Defect Reasons (Top 10)' : 'สาเหตุการซ่อมที่พบบ่อย (Top 10)'}
+              </h3>
+              <span className="text-[10px] font-mono tabular-nums text-slate-400">
+                {isEn
+                  ? `Showing ${visibleDefectReasons.length}/${top10DefectReasons.length}`
+                  : `แสดง ${visibleDefectReasons.length}/${top10DefectReasons.length}`}
+              </span>
+            </div>
+
+            {visibleDefectReasons.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center p-4 border border-dashed border-white/10 rounded-lg text-xs text-slate-500">
+                {isEn ? 'No defect reason data in this period' : 'ไม่มีข้อมูลสาเหตุการซ่อมในช่วงเวลานี้'}
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar divide-y divide-white/5 border border-white/10 rounded-lg bg-[#080c15]">
+                {visibleDefectReasons.map((item, idx) => {
+                  const maxCount = top10DefectReasons[0]?.count || 1;
+                  const barPct = Math.round((item.count / maxCount) * 100);
+                  return (
+                    <div key={item.reasonCode} className="px-2 py-1.5 hover:bg-white/[0.03] transition-colors">
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono tabular-nums text-slate-400 w-5 shrink-0">#{idx + 1}</span>
+                          <span className="font-semibold text-white truncate" title={item.label}>
+                            {item.label}
+                          </span>
+                        </div>
+                        <div className="font-mono tabular-nums shrink-0 flex items-center gap-2 text-[10.5px]">
+                          <span className="font-bold text-amber-300">
+                            {isEn
+                              ? `${item.count} jobs (${item.pct.toFixed(1)}%)`
+                              : `${item.count} ครั้ง (${item.pct.toFixed(1)}%)`}
+                          </span>
+                          <span className="text-slate-400">฿{Math.round(item.repairCost).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div className="mt-1 h-1 w-full bg-slate-900 rounded-full overflow-hidden">
+                        <div className="h-full bg-amber-400 rounded-full" style={{ width: `${barPct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 
+  const renderFilterControls = () => (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-0.5 p-0.5 bg-slate-950 border border-white/10 rounded-lg text-[11px]">
+        {(
+          [
+            { id: 'DAILY', label: isEn ? 'Daily' : 'รายวัน' },
+            { id: 'WEEKLY', label: isEn ? 'Weekly' : 'รายสัปดาห์' },
+            { id: 'MONTHLY', label: isEn ? 'Monthly' : 'รายเดือน' },
+            { id: 'YEARLY', label: isEn ? 'Yearly' : 'รายปี' },
+            { id: 'ALL', label: isEn ? 'All Time' : 'ทั้งหมด' }
+          ] as { id: CostPeriodFilter; label: string }[]
+        ).map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => handleSetPeriod(tab.id)}
+            className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              filters.periodType === tab.id
+                ? 'bg-cyan-500 text-slate-950 font-bold'
+                : 'text-slate-300 hover:text-white hover:bg-white/[0.04]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {(filters.periodType === 'DAILY' || filters.periodType === 'WEEKLY') && (
+        <input
+          type="date"
+          value={activeSelectedDate}
+          onChange={e => onFilterChange({ ...filters, selectedDate: e.target.value })}
+          className="h-7 px-2 bg-slate-950 border border-white/15 rounded-lg text-white font-mono text-[11px] focus:border-cyan-400 focus:outline-none"
+        />
+      )}
+
+      {filters.periodType === 'MONTHLY' && (
+        <div className="flex items-center gap-1.5">
+          <select
+            value={filters.month || 11}
+            onChange={e => onFilterChange({ ...filters, month: Number(e.target.value) })}
+            className="h-7 px-2 bg-slate-950 border border-white/15 rounded-lg text-white font-mono text-[11px] focus:border-cyan-400 focus:outline-none cursor-pointer"
+          >
+            {monthNamesShort.map((mName, idx) => (
+              <option key={mName} value={idx + 1}>
+                {mName}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filters.year}
+            onChange={e => onFilterChange({ ...filters, year: Number(e.target.value) })}
+            className="h-7 px-2 bg-slate-950 border border-white/15 rounded-lg text-white font-mono text-[11px] focus:border-cyan-400 focus:outline-none cursor-pointer"
+          >
+            {[2025, 2026, 2027].map(y => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {filters.periodType === 'YEARLY' && (
+        <select
+          value={filters.year}
+          onChange={e => onFilterChange({ ...filters, year: Number(e.target.value) })}
+          className="h-7 px-2 bg-slate-950 border border-white/15 rounded-lg text-white font-mono text-[11px] focus:border-cyan-400 focus:outline-none cursor-pointer"
+        >
+          {[2025, 2026, 2027].map(y => (
+            <option key={y} value={y}>
+              {isEn ? `Year ${y}` : `ปี ${y}`}
+            </option>
+          ))}
+        </select>
+      )}
+
+      <select
+        value={filters.lineId}
+        onChange={e => onFilterChange({ ...filters, lineId: e.target.value })}
+        className="h-7 px-2.5 bg-slate-950 border border-white/15 rounded-lg text-cyan-300 font-mono text-[11px] font-semibold focus:border-cyan-400 focus:outline-none cursor-pointer"
+      >
+        <option value="ALL">{isEn ? 'All Lines (E1–E5)' : 'ทุกลายน์ (E1–E5)'}</option>
+        {PRODUCTION_LINES.map(l => (
+          <option key={l} value={l}>
+            LINE {l}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
   return (
-    <div ref={containerRef} className="space-y-3 font-sans text-white bg-[#060911] p-2.5 sm:p-4 rounded-3xl border border-white/10 shadow-2xl relative overflow-x-hidden">
-      
-      {/* Toast Notification for Export */}
+    <div
+      ref={containerRef}
+      className="w-full lg:h-full lg:flex-1 lg:min-h-0 flex flex-col gap-2 font-sans text-white bg-[#060911] p-2 sm:p-2.5 rounded-2xl border border-white/10 relative lg:overflow-hidden"
+    >
+      {/* Toast Notification */}
       {exportNotice && (
-        <div className="fixed top-4 right-4 z-50 px-4 py-2.5 bg-emerald-950 border border-emerald-500/50 text-emerald-200 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-slideIn text-xs font-mono font-bold">
+        <div className="fixed top-4 right-4 z-50 px-4 py-2.5 bg-emerald-950 border border-emerald-500/50 text-emerald-200 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-mono font-bold">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{exportNotice}</span>
         </div>
       )}
 
-      {/* ------------------------------------------------------------- */}
-      {/* SLIMMER TOP FILTER CONTROL BAR ("ปรับ แทบ บาร์ บน บางลง")     */}
-      {/* ------------------------------------------------------------- */}
-      <div className="bg-[#0b101b]/95 border border-white/10 rounded-2xl py-2 px-3 shadow-lg backdrop-blur-xl">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          
-          {/* Filters Group (Slim Inline Layout) */}
-          <div className="flex flex-wrap items-center gap-2 text-xs flex-1">
-            
-            {/* Scope */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 text-[10px] uppercase font-bold font-mono">ช่วงเวลา:</span>
-              <select
-                value={filters.periodType}
-                onChange={e => onFilterChange({ ...filters, periodType: e.target.value as any })}
-                className="h-7 px-2 bg-slate-950 border border-cyan-500/30 rounded-lg text-white font-mono text-[11px] focus:border-cyan-400 focus:outline-none"
-              >
-                <option value="MONTHLY">เดือนนี้ (MTD)</option>
-                <option value="YEARLY">ปีนี้ (YTD)</option>
-                <option value="QUARTERLY">เลือกเอง (Custom)</option>
-              </select>
-            </div>
+      {/* TOP COMMAND & FILTER BAR */}
+      <div className="shrink-0 bg-[#0b101b] border border-white/10 rounded-xl px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2">
+        {renderFilterControls()}
 
-            {/* Line */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 text-[10px] uppercase font-bold font-mono">ไลน์:</span>
-              <select
-                value={filters.lineId}
-                onChange={e => onFilterChange({ ...filters, lineId: e.target.value })}
-                className="h-7 px-2 bg-slate-950 border border-cyan-500/30 rounded-lg text-white font-mono text-[11px] focus:border-cyan-400 focus:outline-none"
-              >
-                <option value="ALL">ทั้งหมด (ALL)</option>
-                <option value="E1">LINE E1</option>
-                <option value="E2">LINE E2</option>
-                <option value="E3-1">LINE E3-1</option>
-                <option value="E3-2">LINE E3-2</option>
-                <option value="E3-3">LINE E3-3</option>
-                <option value="E4">LINE E4</option>
-                <option value="E5">LINE E5</option>
-              </select>
-            </div>
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          <span className="text-[11px] text-slate-400 font-mono tabular-nums mr-1 hidden xl:inline">
+            {isEn ? `Updated ${lastRefreshTime}` : `อัปเดต ${lastRefreshTime}`}
+          </span>
 
-            {/* Die Code */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 text-[10px] uppercase font-bold font-mono">แม่พิมพ์:</span>
-              <select
-                defaultValue="ALL"
-                className="h-7 px-2 bg-slate-950 border border-cyan-500/30 rounded-lg text-white font-mono text-[11px] focus:border-cyan-400 focus:outline-none"
-              >
-                <option value="ALL">ทั้งหมด</option>
-                <option value="151915000446">151915000446</option>
-                <option value="151920001155">151920001155</option>
-                <option value="THHF04221781">THHF04221781</option>
-                <option value="151915000335">151915000335</option>
-              </select>
-            </div>
+          <button
+            type="button"
+            onClick={() => setIsTvMode(true)}
+            className="h-7 px-2.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 rounded-lg text-[11px] font-medium flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <Tv className="w-3.5 h-3.5" />
+            <span>TV View</span>
+          </button>
 
-            {/* Part Name */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 text-[10px] uppercase font-bold font-mono">ชิ้นงาน:</span>
-              <select
-                value={filters.partNo}
-                onChange={e => onFilterChange({ ...filters, partNo: e.target.value })}
-                className="h-7 px-2 bg-slate-950 border border-cyan-500/30 rounded-lg text-white text-[11px] focus:border-cyan-400 focus:outline-none"
-              >
-                <option value="ALL">ทั้งหมด</option>
-                <option value="BURRING">BURRING</option>
-                <option value="CORNER_CUT">CORNER CUT</option>
-                <option value="TRIM_PUNCH">TRIM PUNCH</option>
-                <option value="PIERCE_PUNCH">PIERCE PUNCH</option>
-              </select>
-            </div>
+          <button
+            type="button"
+            onClick={handleResetFilters}
+            className="h-7 px-2 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 rounded-lg text-[11px] font-medium flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>{isEn ? 'Reset' : 'รีเซ็ต'}</span>
+          </button>
 
-            {/* Status */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-400 text-[10px] uppercase font-bold font-mono">สถานะ:</span>
-              <select
-                value={filters.qualityStatus}
-                onChange={e => onFilterChange({ ...filters, qualityStatus: e.target.value })}
-                className="h-7 px-2 bg-slate-950 border border-cyan-500/30 rounded-lg text-white text-[11px] focus:border-cyan-400 focus:outline-none"
-              >
-                <option value="ALL">ทั้งหมด</option>
-                <option value="PASS">เสร็จสิ้น</option>
-                <option value="IN_PROCESS">กำลังซ่อม</option>
-                <option value="QC">รอ QC</option>
-              </select>
-            </div>
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="h-7 px-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-[11px] font-medium flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <FileSpreadsheet className="w-3 h-3" />
+            <span>Excel / CSV</span>
+          </button>
 
-          </div>
-
-          {/* Action Buttons & TV View Toggle */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* TV View Button ("เพิ่ม ปุ่ม กด ดู Full View (TV View)") */}
-            <button
-              type="button"
-              onClick={() => setIsTvMode(true)}
-              className="h-7 px-3 bg-gradient-to-r from-cyan-500/30 to-emerald-500/30 hover:from-cyan-500/40 hover:to-emerald-500/40 text-cyan-300 border border-cyan-400/50 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-cyan-500/10 hover:border-cyan-300"
-              title="เปิดโหมดแสดงผลเต็มจอสำหรับหน้าจอทีวีโรงงาน (TV View Mode)"
-            >
-              <Tv className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
-              <span>📺 TV View</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="h-7 px-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer border border-slate-700"
-              title="รีเซ็ตตัวกรอง"
-            >
-              <RotateCw className="w-3 h-3" />
-              <span>รีเซ็ต</span>
-            </button>
-            
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              className="h-7 px-2.5 bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer border border-emerald-600/50 shadow-sm"
-              title="ส่งออกไฟล์ Excel"
-            >
-              <FileSpreadsheet className="w-3 h-3 text-emerald-400" />
-              <span>Excel</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExportPDF}
-              className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded-xl text-[11px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer border border-white/10"
-              title="พิมพ์ PDF"
-            >
-              <Printer className="w-3 h-3 text-cyan-400" />
-              <span>PDF</span>
-            </button>
-
-            {/* Timestamp */}
-            <span className="text-[10px] text-slate-400 font-mono pl-1 hidden xl:inline">
-              {lastRefreshTime}
-            </span>
-          </div>
-
+          <button
+            type="button"
+            onClick={handleExportReportPDF}
+            className="h-7 px-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            title="Export summary report as PDF for management review"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            <span>Export Report</span>
+          </button>
         </div>
       </div>
 
-      {/* Render Main Dashboard Layout */}
-      {renderDashboardCoreContent()}
+      {/* Main Content */}
+      {renderCoreDashboard()}
 
-      {/* ------------------------------------------------------------- */}
-      {/* TV VIEW FULLSCREEN OVERLAY MODAL (โหมดจอทีวีโรงงาน KIOSK VIEW) */}
-      {/* ------------------------------------------------------------- */}
+      {/* TV VIEW FULLSCREEN KIOSK MODAL */}
       {isTvMode && (
-        <div className="fixed inset-0 z-50 bg-[#03060c] flex flex-col font-sans text-white p-3 sm:p-5 overflow-y-auto animate-fadeIn select-none">
-          
-          {/* TV Top Header Navigation */}
-          <div className="bg-gradient-to-r from-[#0c1424] via-[#091220] to-[#0d1b30] border border-cyan-500/40 rounded-2xl px-4 py-2.5 shadow-2xl flex flex-wrap items-center justify-between gap-3 shrink-0 mb-3">
+        <div className="fixed inset-0 z-50 bg-[#05080f] flex flex-col font-sans text-white p-2.5 sm:p-3 overflow-hidden">
+          <div className="bg-[#0b101b] border border-cyan-500/30 rounded-xl px-4 py-2 flex flex-wrap items-center justify-between gap-3 shrink-0 mb-1.5">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-2xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-cyan-300 shadow-lg shadow-cyan-500/20">
-                <Tv className="w-5 h-5 text-cyan-300 animate-pulse" />
-              </div>
+              <Tv className="w-5 h-5 text-cyan-400" />
               <div>
-                <h2 className="text-lg font-black text-white tracking-wider flex items-center gap-2 font-mono">
-                  <span>FIN DIE REGRIND PRO</span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-[#00FF7F] border border-emerald-500/40 font-bold">
-                    FACTORY TV KIOSK VIEW
-                  </span>
-                </h2>
+                <h2 className="text-sm font-bold text-white">FinDie Regrind Pro — Executive & Factory TV View</h2>
                 <p className="text-[11px] text-slate-400">
-                  แดชบอร์ดภาพรวมสรุปผลงานซ่อมเจียรและสถานะความเสี่ยงสำหรับจอแสดงผลโรงงาน
+                  {periodScopeDescription} · {isEn ? `Last updated ${lastRefreshTime}` : `อัปเดตล่าสุด ${lastRefreshTime}`}
                 </p>
               </div>
             </div>
 
-            {/* TV Controls Right */}
-            <div className="flex items-center gap-3">
-              {/* Countdown badge */}
-              <div className="flex items-center gap-2 bg-slate-950/80 border border-cyan-500/30 px-3 py-1.5 rounded-xl font-mono text-xs text-cyan-300">
-                <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${tvAutoRefresh ? 'animate-spin' : ''}`} />
-                <span>Auto Refresh: <strong className="text-white">{tvCountdown}s</strong></span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-slate-950 border border-white/10 px-3 py-1 rounded-lg font-mono text-xs text-cyan-300">
+                <span>{isEn ? `Auto-refresh: ${tvCountdown}s` : `รีเฟรชอัตโนมัติ: ${tvCountdown}s`}</span>
                 <button
                   type="button"
                   onClick={() => setTvAutoRefresh(!tvAutoRefresh)}
-                  className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-all cursor-pointer ml-1"
-                  title={tvAutoRefresh ? "Pause Auto Refresh" : "Resume Auto Refresh"}
+                  className="p-1 hover:bg-white/10 rounded cursor-pointer"
                 >
                   {tvAutoRefresh ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
                 </button>
               </div>
 
-              {/* Fullscreen toggle */}
               <button
                 type="button"
                 onClick={toggleFullscreen}
-                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
               >
-                {isFullscreen ? <Minimize2 className="w-4 h-4 text-cyan-400" /> : <Maximize2 className="w-4 h-4 text-cyan-400" />}
-                <span>{isFullscreen ? 'ย่อหน้าจอ' : 'เต็มจอ'}</span>
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                <span>{isFullscreen ? (isEn ? 'Exit Fullscreen' : 'ย่อหน้าจอ') : isEn ? 'Fullscreen' : 'เต็มจอ'}</span>
               </button>
 
-              {/* Close TV Mode */}
               <button
                 type="button"
                 onClick={() => setIsTvMode(false)}
-                className="px-3.5 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-500/50 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-lg hover:border-rose-400"
+                className="px-3 py-1 bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-500/40 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <X className="w-4 h-4" />
-                <span>ปิดโหมด TV View</span>
+                <span>{isEn ? 'Close TV View' : 'ปิด TV View'}</span>
               </button>
             </div>
           </div>
 
-          {/* Render EXACT 1:1 Dashboard Content Inside TV Overlay Mode */}
-          <div className="flex-1 overflow-y-auto">
-            {renderDashboardCoreContent()}
+          {/* COMPACT FILTER BAR FOR TV VIEW & FULLSCREEN */}
+          <div className="shrink-0 bg-[#0b101b] border border-white/10 rounded-xl px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 mb-2">
+            {renderFilterControls()}
+
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 rounded-lg text-[11px] font-medium flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>{isEn ? 'Reset' : 'รีเซ็ต'}</span>
+            </button>
           </div>
 
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{renderCoreDashboard()}</div>
         </div>
       )}
-
     </div>
   );
 };

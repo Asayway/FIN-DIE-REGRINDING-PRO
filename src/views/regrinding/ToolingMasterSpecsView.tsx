@@ -152,21 +152,27 @@ export const ToolingMasterSpecsView: React.FC<ToolingMasterSpecsViewProps> = () 
 
   const getNominalLength = (partCode: string, partName: string): number => {
     const pm = partMasterMap.get(partCode.toUpperCase()) || partMasterMap.get(partName.toLowerCase());
-    if (pm && pm.nominalLengthMm) return pm.nominalLengthMm;
+    if (pm) {
+      if (typeof pm.newSpecMm === 'number' && pm.newSpecMm >= 0) return pm.newSpecMm;
+      if (typeof pm.nominalLengthMm === 'number' && pm.nominalLengthMm > 0) return pm.nominalLengthMm;
+    }
     const lower = partName.toLowerCase();
-    if (lower.includes('burr')) return 70.00;
-    if (lower.includes('pierce')) return 68.00;
+    if (lower.includes('burr')) return 62.50;
+    if (lower.includes('pierce')) return 46.20;
     if (lower.includes('slit')) return 120.00;
     if (lower.includes('cut off') || lower.includes('cutoff')) return 85.00;
-    if (lower.includes('side cut')) return 90.00;
+    if (lower.includes('side cut')) return 28.00;
     return 70.00;
   };
 
   const getMinAllowedLength = (partCode: string, partName: string, maxRegrind: number): number => {
     const pm = partMasterMap.get(partCode.toUpperCase()) || partMasterMap.get(partName.toLowerCase());
-    if (pm && pm.minAllowedLengthMm) return toNum(pm.minAllowedLengthMm, 65.0);
+    if (pm) {
+      if (typeof pm.scrapLimitMm === 'number' && pm.scrapLimitMm >= 0) return pm.scrapLimitMm;
+      if (typeof pm.minAllowedLengthMm === 'number' && pm.minAllowedLengthMm > 0) return pm.minAllowedLengthMm;
+    }
     const nominal = getNominalLength(partCode, partName);
-    return Math.max(0, nominal - toNum(maxRegrind, 3.0));
+    return Math.max(0, Number((nominal - toNum(maxRegrind, 1.5)).toFixed(3)));
   };
 
   const handleEditClick = () => {

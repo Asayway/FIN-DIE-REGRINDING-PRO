@@ -93,8 +93,11 @@ export interface ToolingPartMasterItem {
   nominalLengthMm: number;
   minAllowedLengthMm: number;
   grindingAmountPerTimeMm: number;
+  grindMinMm?: number;
+  grindMaxMm?: number;
   totalGrindingAllowanceMm: number;
   maxRegrindCount: number;
+  regrindCyclesLabel?: string;
   regrindAllowed: boolean;
   disposeAfterOneUse: boolean;
   drawingNo: string;

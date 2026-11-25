@@ -34,71 +34,105 @@ export interface UnifiedStatusMeta {
   isInProcess?: boolean;
 }
 
-export const CANONICAL_STATUS_LIST: {
+function isEnglishActive(lang?: string): boolean {
+  if (lang) {
+    const upper = lang.toUpperCase();
+    return upper === 'EN' || upper === 'DUAL';
+  }
+  try {
+    const saved = localStorage.getItem('app_language')?.toUpperCase();
+    return saved === 'EN' || saved === 'DUAL';
+  } catch {
+    return false;
+  }
+}
+
+export interface CanonicalStatusDef {
   key: CanonicalStatusKey;
   label: string;
   shortLabel: string;
   description: string;
   icon: string;
   badgeClass: string;
-}[] = [
-  {
-    key: 'EMERGENCY',
-    label: '🚨 งานด่วน #1',
-    shortLabel: 'งานด่วน #1',
-    description: 'การเพิ่มคิวงานด่วนแทรกมาก่อนคิวปกติในวันนั้น',
-    icon: '🚨',
-    badgeClass: 'bg-rose-600 text-white font-black animate-pulse shadow-md'
-  },
-  {
-    key: 'IN_PROCESS',
-    label: '⚡ กำลังเจียร',
-    shortLabel: 'กำลังเจียร',
-    description: 'งานที่อยู่ระหว่างการเจียรบนแท่นเครื่องเจียรราบ Okamoto',
-    icon: '⚡',
-    badgeClass: 'bg-purple-600 text-white font-black shadow-[0_0_12px_rgba(168,85,247,0.5)] border border-purple-400 animate-pulse'
-  },
-  {
-    key: 'WAITING',
-    label: '⏳ รอคิวเจียร',
-    shortLabel: 'รอคิวเจียร',
-    description: 'งานที่รอคิวเจียรตามลำดับในวันนั้น',
-    icon: '⏳',
-    badgeClass: 'bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold'
-  },
-  {
-    key: 'POSTPONED',
-    label: '🟡 งานเลื่อน',
-    shortLabel: 'งานเลื่อน',
-    description: 'งานที่ยังไม่เสร็จหรือเลื่อนบันทึกคงไว้เพื่อดูประวัติตกค้าง',
-    icon: '🟡',
-    badgeClass: 'bg-amber-500 text-slate-950 font-black shadow-sm'
-  },
-  {
-    key: 'READY',
-    label: '🔵 งานเจียรเสร็จแล้ว (รอตรวจ QC)',
-    shortLabel: 'เจียรเสร็จแล้ว',
-    description: 'พนักงานเจียรเสร็จแล้วและกดยืนยัน รอการตรวจรับ QC',
-    icon: '🔵',
-    badgeClass: 'bg-sky-500 text-white font-black shadow-sm'
-  },
-  {
-    key: 'COMPLETED',
-    label: '🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)',
-    shortLabel: 'งานเสร็จสมบูรณ์',
-    description: 'ผ่านการตรวจรับ QC เรียบร้อยและปิดงานสมบูรณ์',
-    icon: '🟢',
-    badgeClass: 'bg-emerald-500 text-slate-950 font-black shadow-sm'
-  },
-  {
-    key: 'SCRAP',
-    label: '❌ ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร)',
-    shortLabel: 'ยกเลิก / คัดทิ้ง',
-    description: 'ระยะเจียรต่ำกว่าสเปค Min หรือเกินรอบเจียร หรือกดยกเลิกคัดทิ้ง',
-    icon: '❌',
-    badgeClass: 'bg-rose-950/90 text-rose-300 border border-rose-600 font-bold'
-  }
-];
+}
+
+export function getCanonicalStatusList(lang?: string): CanonicalStatusDef[] {
+  const isEn = isEnglishActive(lang);
+  return [
+    {
+      key: 'EMERGENCY',
+      label: isEn ? '🚨 Urgent #1' : '🚨 งานด่วน #1',
+      shortLabel: isEn ? 'Urgent #1' : 'งานด่วน #1',
+      description: isEn
+        ? 'Priority urgent regrind job inserted ahead of standard daily queue'
+        : 'การเพิ่มคิวงานด่วนแทรกมาก่อนคิวปกติในวันนั้น',
+      icon: '🚨',
+      badgeClass: 'bg-rose-600 text-white font-black animate-pulse shadow-md'
+    },
+    {
+      key: 'IN_PROCESS',
+      label: isEn ? '⚡ Grinding' : '⚡ กำลังเจียร',
+      shortLabel: isEn ? 'Grinding' : 'กำลังเจียร',
+      description: isEn
+        ? 'Currently actively regrinding on Okamoto surface grinder'
+        : 'งานที่อยู่ระหว่างการเจียรบนแท่นเครื่องเจียรราบ Okamoto',
+      icon: '⚡',
+      badgeClass: 'bg-purple-600 text-white font-black shadow-[0_0_12px_rgba(168,85,247,0.5)] border border-purple-400 animate-pulse'
+    },
+    {
+      key: 'WAITING',
+      label: isEn ? '⏳ Waiting' : '⏳ รอคิวเจียร',
+      shortLabel: isEn ? 'Waiting' : 'รอคิวเจียร',
+      description: isEn
+        ? 'Scheduled job waiting in standard daily regrinding sequence'
+        : 'งานที่รอคิวเจียรตามลำดับในวันนั้น',
+      icon: '⏳',
+      badgeClass: 'bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold'
+    },
+    {
+      key: 'POSTPONED',
+      label: isEn ? '🟡 Postponed' : '🟡 งานเลื่อน',
+      shortLabel: isEn ? 'Postponed' : 'งานเลื่อน',
+      description: isEn
+        ? 'Rescheduled or carried-over pending regrinding job'
+        : 'งานที่ยังไม่เสร็จหรือเลื่อนบันทึกคงไว้เพื่อดูประวัติตกค้าง',
+      icon: '🟡',
+      badgeClass: 'bg-amber-500 text-slate-950 font-black shadow-sm'
+    },
+    {
+      key: 'READY',
+      label: isEn ? '🔵 Ready for QC' : '🔵 งานเจียรเสร็จแล้ว (รอตรวจ QC)',
+      shortLabel: isEn ? 'Ready for QC' : 'เจียรเสร็จแล้ว',
+      description: isEn
+        ? 'Regrinding completed by operator and awaiting QC verification'
+        : 'พนักงานเจียรเสร็จแล้วและกดยืนยัน รอการตรวจรับ QC',
+      icon: '🔵',
+      badgeClass: 'bg-sky-500 text-white font-black shadow-sm'
+    },
+    {
+      key: 'COMPLETED',
+      label: isEn ? '🟢 QC Passed' : '🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)',
+      shortLabel: isEn ? 'QC Passed' : 'งานเสร็จสมบูรณ์',
+      description: isEn
+        ? 'Passed final QC dimensional verification and closed'
+        : 'ผ่านการตรวจรับ QC เรียบร้อยและปิดงานสมบูรณ์',
+      icon: '🟢',
+      badgeClass: 'bg-emerald-500 text-slate-950 font-black shadow-sm'
+    },
+    {
+      key: 'SCRAP',
+      label: isEn ? '❌ Cancelled / Scrapped' : '❌ ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร)',
+      shortLabel: isEn ? 'Scrapped' : 'ยกเลิก / คัดทิ้ง',
+      description: isEn
+        ? 'Below Scrap Limit, exceeded max regrind cycles, or manually scrapped'
+        : 'ระยะเจียรต่ำกว่าสเปค Min หรือเกินรอบเจียร หรือกดยกเลิกคัดทิ้ง',
+      icon: '❌',
+      badgeClass: 'bg-rose-950/90 text-rose-300 border border-rose-600 font-bold'
+    }
+  ];
+}
+
+export const CANONICAL_STATUS_LIST: CanonicalStatusDef[] = getCanonicalStatusList();
 
 /**
  * Resolves any work ticket or historical regrind record to one of the canonical statuses.
@@ -148,7 +182,7 @@ export function resolveUnifiedStatusKey(item: any): CanonicalStatusKey {
     Boolean(item.isEmergency) ||
     item.urgency === 'EMERGENCY' ||
     (typeof item.note === 'string' && (item.note.includes('ด่วน') || item.note.toLowerCase().includes('urgent'))) ||
-    (typeof item.remarks === 'string' && item.remarks.includes('ด่วน'));
+    (typeof item.remarks === 'string' && (item.remarks.includes('ด่วน') || item.remarks.toLowerCase().includes('urgent')));
 
   if (isExplicitEmergency) {
     return 'EMERGENCY';
@@ -172,20 +206,22 @@ export function resolveUnifiedStatusKey(item: any): CanonicalStatusKey {
 /**
  * Returns full metadata, CSS classes, icons, and workflow capability flags.
  */
-export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
+export function getUnifiedStatusMeta(item: any, lang?: string): UnifiedStatusMeta {
   const key = resolveUnifiedStatusKey(item);
+  const isEn = isEnglishActive(lang);
 
   switch (key) {
     case 'EMERGENCY':
       return {
         key: 'EMERGENCY',
-        label: '🚨 งานด่วน #1',
-        shortLabel: 'งานด่วน #1',
+        label: isEn ? '🚨 Urgent #1' : '🚨 งานด่วน #1',
+        shortLabel: isEn ? 'Urgent #1' : 'งานด่วน #1',
         badgeClass: 'bg-rose-600 text-white font-black animate-pulse shadow-md',
         cardClass: 'bg-rose-950/45 border-rose-500/80 shadow-[0_0_15px_rgba(244,63,94,0.3)] ring-1 ring-rose-500/40 hover:border-rose-400',
         pillClass: 'bg-rose-950/90 border border-rose-500 text-rose-100 shadow-sm font-bold',
         leftBar: 'bg-rose-500',
         icon: '🚨',
+        subLabel: isEn ? 'Priority urgent job ahead of queue' : 'งานด่วนแทรกคิวลำดับแรก',
         allowQcApproval: false,
         isScrapped: false
       };
@@ -193,14 +229,14 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
     case 'IN_PROCESS':
       return {
         key: 'IN_PROCESS',
-        label: '⚡ กำลังเจียร (In-Process)',
-        shortLabel: 'กำลังเจียร',
+        label: isEn ? '⚡ Grinding (In-Process)' : '⚡ กำลังเจียร (In-Process)',
+        shortLabel: isEn ? 'Grinding' : 'กำลังเจียร',
         badgeClass: 'bg-purple-600 text-white font-black shadow-[0_0_12px_rgba(168,85,247,0.5)] border border-purple-400 animate-pulse',
         cardClass: 'bg-purple-950/40 border-purple-400/80 shadow-[0_0_18px_rgba(168,85,247,0.25)] ring-1 ring-purple-400/50 hover:border-purple-300',
         pillClass: 'bg-purple-950/90 border border-purple-400 text-purple-200 font-bold shadow-sm',
         leftBar: 'bg-purple-500 animate-pulse',
         icon: '⚡',
-        subLabel: 'กำลังเจียรบนแท่นเครื่อง Okamoto',
+        subLabel: isEn ? 'Regrinding on Okamoto surface grinder' : 'กำลังเจียรบนแท่นเครื่อง Okamoto',
         allowQcApproval: false,
         isScrapped: false,
         isInProcess: true
@@ -209,14 +245,14 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
     case 'WAITING':
       return {
         key: 'WAITING',
-        label: '⏳ รอคิวเจียร',
-        shortLabel: 'รอคิวเจียร',
+        label: isEn ? '⏳ Waiting' : '⏳ รอคิวเจียร',
+        shortLabel: isEn ? 'Waiting' : 'รอคิวเจียร',
         badgeClass: 'bg-slate-800 text-cyan-300 border border-cyan-500/40 font-bold',
         cardClass: 'bg-slate-950/70 border-white/10 hover:border-cyan-400/40',
         pillClass: 'bg-slate-900 border border-cyan-500/40 text-cyan-200 font-bold',
         leftBar: 'bg-cyan-500',
         icon: '⏳',
-        subLabel: 'รอเริ่มงานตามลำดับคิว',
+        subLabel: isEn ? 'Queued in daily schedule' : 'รอเริ่มงานตามลำดับคิว',
         allowQcApproval: false,
         isScrapped: false
       };
@@ -224,14 +260,14 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
     case 'POSTPONED':
       return {
         key: 'POSTPONED',
-        label: '🟡 งานเลื่อน',
-        shortLabel: 'งานเลื่อน',
+        label: isEn ? '🟡 Postponed' : '🟡 งานเลื่อน',
+        shortLabel: isEn ? 'Postponed' : 'งานเลื่อน',
         badgeClass: 'bg-amber-500 text-slate-950 font-black shadow-sm',
         cardClass: 'bg-amber-950/35 border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.15)] hover:border-amber-400',
         pillClass: 'bg-amber-950/90 border border-amber-400 text-amber-200 font-bold',
         leftBar: 'bg-amber-400',
         icon: '🟡',
-        subLabel: 'เลื่อนกำหนดการ / งานตกค้าง',
+        subLabel: isEn ? 'Rescheduled / backlog carry-over' : 'เลื่อนกำหนดการ / งานตกค้าง',
         allowQcApproval: false,
         isScrapped: false
       };
@@ -239,14 +275,14 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
     case 'READY':
       return {
         key: 'READY',
-        label: '🔵 งานเจียรเสร็จแล้ว (รอตรวจ QC)',
-        shortLabel: 'เจียรเสร็จแล้ว',
+        label: isEn ? '🔵 Ready for QC' : '🔵 งานเจียรเสร็จแล้ว (รอตรวจ QC)',
+        shortLabel: isEn ? 'Ready for QC' : 'เจียรเสร็จแล้ว',
         badgeClass: 'bg-sky-500 text-white font-black shadow-sm',
         cardClass: 'bg-sky-950/35 border-sky-400/60 shadow-[0_0_12px_rgba(56,189,248,0.15)] hover:border-sky-300',
         pillClass: 'bg-sky-950/90 border border-sky-400 text-sky-100 font-bold',
         leftBar: 'bg-sky-400',
         icon: '🔵',
-        subLabel: 'ช่างเจียรเสร็จแล้ว • รอตรวจ QC',
+        subLabel: isEn ? 'Grinding done • Awaiting QC check' : 'ช่างเจียรเสร็จแล้ว • รอตรวจ QC',
         allowQcApproval: true,
         isScrapped: false
       };
@@ -254,14 +290,14 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
     case 'COMPLETED':
       return {
         key: 'COMPLETED',
-        label: '🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)',
-        shortLabel: 'งานเสร็จสมบูรณ์',
+        label: isEn ? '🟢 QC Passed' : '🟢 งานเสร็จสมบูรณ์ (QC ผ่าน)',
+        shortLabel: isEn ? 'QC Passed' : 'งานเสร็จสมบูรณ์',
         badgeClass: 'bg-emerald-500 text-slate-950 font-black shadow-sm',
         cardClass: 'bg-emerald-950/30 border-emerald-500/60 shadow-[0_0_12px_rgba(16,185,129,0.15)] hover:border-emerald-400',
         pillClass: 'bg-emerald-950/90 border border-emerald-500 text-emerald-100 font-bold',
         leftBar: 'bg-emerald-400',
         icon: '🟢',
-        subLabel: 'QC ผ่านการตรวจรับ • ปิดงานสมบูรณ์',
+        subLabel: isEn ? 'QC approved • Job closed' : 'QC ผ่านการตรวจรับ • ปิดงานสมบูรณ์',
         allowQcApproval: false,
         isScrapped: false
       };
@@ -269,14 +305,14 @@ export function getUnifiedStatusMeta(item: any): UnifiedStatusMeta {
     case 'SCRAP':
       return {
         key: 'SCRAP',
-        label: '❌ ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร)',
-        shortLabel: 'ยกเลิก / คัดทิ้ง',
+        label: isEn ? '❌ Cancelled / Scrapped' : '❌ ยกเลิก / คัดทิ้ง (ครบลิมิตเจียร)',
+        shortLabel: isEn ? 'Scrapped' : 'ยกเลิก / คัดทิ้ง',
         badgeClass: 'bg-rose-950/90 text-rose-300 border border-rose-600 font-bold',
         cardClass: 'bg-slate-950/90 border-rose-900/60 opacity-80 hover:opacity-100',
         pillClass: 'bg-slate-950 border border-rose-600 text-rose-300 line-through font-bold',
         leftBar: 'bg-rose-700',
         icon: '❌',
-        subLabel: 'ต่ำกว่า Min Spec หรือ เกินรอบเจียร (ไม่ผ่าน QC)',
+        subLabel: isEn ? 'Below Scrap Limit or max cycles exceeded' : 'ต่ำกว่า Min Spec หรือ เกินรอบเจียร (ไม่ผ่าน QC)',
         allowQcApproval: false,
         isScrapped: true
       };

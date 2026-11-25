@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { CostRateMasterItem } from '../../types/costSaving';
 import { costSavingService } from '../../services/costSavingService';
+import { useLanguage } from '../../i18n';
 
 interface CostRateModalProps {
   isOpen: boolean;
@@ -35,6 +36,8 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
   initialRate,
   onSaved
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [formData, setFormData] = useState<Partial<CostRateMasterItem>>({
     machineId: '',
     machineName: '',
@@ -242,19 +245,19 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
 
     // Strict Validation
     if (!formData.machineId?.trim()) {
-      setError('กรุณาระบุ Machine ID / Code');
+      setError(isEn ? 'Please enter Machine ID / Code' : 'กรุณาระบุ Machine ID / Code');
       return;
     }
     if (!formData.machineName?.trim()) {
-      setError('กรุณาระบุชื่อเครื่องจักร / อุปกรณ์ (Machine Name)');
+      setError(isEn ? 'Please enter Machine Name' : 'กรุณาระบุชื่อเครื่องจักร / อุปกรณ์ (Machine Name)');
       return;
     }
     if (!formData.effectiveDate) {
-      setError('กรุณาระบุวันที่มีผลบังคับใช้ (Effective Date)');
+      setError(isEn ? 'Please select an Effective Date' : 'กรุณาระบุวันที่มีผลบังคับใช้ (Effective Date)');
       return;
     }
     if (initialRate && !revisionReason.trim()) {
-      setError('กรุณาระบุเหตุผลการปรับปรุงอัตรา (Reason for Revision)');
+      setError(isEn ? 'Please enter Reason for Revision' : 'กรุณาระบุเหตุผลการปรับปรุงอัตรา (Reason for Revision)');
       return;
     }
 
@@ -269,15 +272,15 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
     const ePrice = Number(formData.electricityPricePerKwh);
 
     if (mRate < 0 || lRate < 0 || cVarRate < 0 || cFixedCost < 0 || qRate < 0) {
-      setError('อัตราค่าใช้จ่าย (Rate) ทุกช่องต้องเป็นค่าบวกหรือเท่ากับ 0');
+      setError(isEn ? 'All cost rates must be zero or positive.' : 'อัตราค่าใช้จ่าย (Rate) ทุกช่องต้องเป็นค่าบวกหรือเท่ากับ 0');
       return;
     }
     if (power < 0 || ePrice < 0) {
-      setError('กำลังไฟ (Rated Power) และค่าไฟฟ้า (Electricity Price) ต้องไม่ติดลบ');
+      setError(isEn ? 'Rated Power and Electricity Price cannot be negative.' : 'กำลังไฟ (Rated Power) และค่าไฟฟ้า (Electricity Price) ต้องไม่ติดลบ');
       return;
     }
     if (loadF < 0 || loadF > 100) {
-      setError('Load Factor ต้องอยู่ระหว่าง 0% ถึง 100%');
+      setError(isEn ? 'Load Factor must be between 0% and 100%.' : 'Load Factor ต้องอยู่ระหว่าง 0% ถึง 100%');
       return;
     }
 
@@ -334,10 +337,14 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-white tracking-wide">
-                {initialRate ? 'แก้ไขอัตราต้นทุนเครื่องจักร & ค่าแรง (Edit Cost Rate Master)' : 'ตั้งค่าอัตราต้นทุนเครื่องจักรใหม่ (New Machine Cost Rate)'}
+                {initialRate
+                  ? (isEn ? 'Edit Machine & Labor Cost Rate Master' : 'แก้ไขอัตราต้นทุนเครื่องจักร & ค่าแรง (Edit Cost Rate Master)')
+                  : (isEn ? 'New Machine & Labor Cost Rate' : 'ตั้งค่าอัตราต้นทุนเครื่องจักรใหม่ (New Machine Cost Rate)')}
               </h3>
               <p className="text-xs text-slate-400">
-                กำหนด Machine Cost Rate, Labor Rate, ค่าไฟฟ้า และ Consumables พร้อมระบบตรวจสอบคำนวณป้องกันค่าแรงซ้ำ
+                {isEn
+                  ? 'Configure Machine Cost Rate, Labor Rate, Power & Consumables with double-counting prevention'
+                  : 'กำหนด Machine Cost Rate, Labor Rate, ค่าไฟฟ้า และ Consumables พร้อมระบบตรวจสอบคำนวณป้องกันค่าแรงซ้ำ'}
               </p>
             </div>
           </div>
@@ -368,7 +375,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
               <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-400" />
-                <span>SECTION A: ข้อมูลเครื่องจักร & ค่าพลังงานไฟฟ้า (Machine & Power Specs)</span>
+                <span>{isEn ? 'SECTION A: Machine & Power Specs' : 'SECTION A: ข้อมูลเครื่องจักร & ค่าพลังงานไฟฟ้า (Machine & Power Specs)'}</span>
               </div>
               <span className="text-[10px] font-mono text-slate-400">Physics & Electricity Baseline</span>
             </div>
@@ -387,7 +394,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-slate-400 mb-1 font-semibold">ชื่อเครื่องจักร / อุปกรณ์ (Machine Name) *</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'Machine / Equipment Name *' : 'ชื่อเครื่องจักร / อุปกรณ์ (Machine Name) *'}</label>
                 <input
                   type="text"
                   required
@@ -399,7 +406,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Rated Power (กำลังไฟ, kW)</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'Rated Power (kW)' : 'Rated Power (กำลังไฟ, kW)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -411,7 +418,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Load Factor (% ภาระโหลดใช้งาน)</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'Load Factor (% Operating Load)' : 'Load Factor (% ภาระโหลดใช้งาน)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -424,7 +431,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Electricity Price (ค่าไฟ, บาท/kWh)</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'Electricity Price (฿/kWh)' : 'Electricity Price (ค่าไฟ, บาท/kWh)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -436,7 +443,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Auxiliary Power (ไฟช่วย/ปั๊ม, kW)</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'Auxiliary Power (Pump/Chiller, kW)' : 'Auxiliary Power (ไฟช่วย/ปั๊ม, kW)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -448,21 +455,21 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">วิธีคิดต้นทุน (Calculation Method)</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'Calculation Method' : 'วิธีคิดต้นทุน (Calculation Method)'}</label>
                 <select
                   value={formData.rateCalculationMethod || 'STANDARD_FACTORY_APPROVED'}
                   onChange={e => setFormData({ ...formData, rateCalculationMethod: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-950 border border-white/15 rounded-xl text-white focus:border-cyan-400 focus:outline-none"
                 >
-                  <option value="STANDARD_FACTORY_APPROVED">STANDARD_FACTORY_APPROVED (มาตรฐานโรงงานอนุมัติ)</option>
-                  <option value="FULL_COSTING">FULL_COSTING (ต้นทุนเต็มรวมโควต้าค่าใช้จ่าย)</option>
-                  <option value="DIRECT_COSTING">DIRECT_COSTING (คิดเฉพาะผันแปรทางตรง)</option>
-                  <option value="ACTIVITY_BASED">ACTIVITY_BASED (ตามฐานกิจกรรม ABC)</option>
+                  <option value="STANDARD_FACTORY_APPROVED">{isEn ? 'STANDARD_FACTORY_APPROVED (Factory Approved)' : 'STANDARD_FACTORY_APPROVED (มาตรฐานโรงงานอนุมัติ)'}</option>
+                  <option value="FULL_COSTING">{isEn ? 'FULL_COSTING (Full Absorption Cost)' : 'FULL_COSTING (ต้นทุนเต็มรวมโควต้าค่าใช้จ่าย)'}</option>
+                  <option value="DIRECT_COSTING">{isEn ? 'DIRECT_COSTING (Direct Variable Only)' : 'DIRECT_COSTING (คิดเฉพาะผันแปรทางตรง)'}</option>
+                  <option value="ACTIVITY_BASED">{isEn ? 'ACTIVITY_BASED (ABC Method)' : 'ACTIVITY_BASED (ตามฐานกิจกรรม ABC)'}</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">ผู้อนุมัติ/ผู้ปรับปรุง (Updated By)</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'Updated / Approved By' : 'ผู้อนุมัติ/ผู้ปรับปรุง (Updated By)'}</label>
                 <input
                   type="text"
                   value={formData.updatedBy || ''}
@@ -477,11 +484,11 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-amber-400 shrink-0" />
                 <span className="text-slate-300">
-                  ค่าไฟฟ้าคำนวณได้: (({formData.ratedPowerKw || 0} kW × {formData.loadFactorPercent || 0}% / 100) + {formData.auxiliaryPowerKw || 0} kW) × ฿{formData.electricityPricePerKwh || 0}/kWh
+                  {isEn ? 'Calculated Power Cost:' : 'ค่าไฟฟ้าคำนวณได้:'} (({formData.ratedPowerKw || 0} kW × {formData.loadFactorPercent || 0}% / 100) + {formData.auxiliaryPowerKw || 0} kW) × ฿{formData.electricityPricePerKwh || 0}/kWh
                 </span>
               </div>
               <div className="text-amber-300 font-bold text-sm">
-                = ฿{calculatedElectricityCostPerHour.toFixed(2)} / ชม.
+                = ฿{calculatedElectricityCostPerHour.toFixed(2)} / {isEn ? 'hr' : 'ชม.'}
               </div>
             </div>
           </div>
@@ -493,17 +500,17 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
               <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-cyan-400" />
-                <span>SECTION B: อัตราต้นทุนต่อชั่วโมง & วัสดุสิ้นเปลือง (Hourly Rates & Consumables)</span>
+                <span>{isEn ? 'SECTION B: Hourly Rates & Consumables' : 'SECTION B: อัตราต้นทุนต่อชั่วโมง & วัสดุสิ้นเปลือง (Hourly Rates & Consumables)'}</span>
               </div>
               <span className="text-[10px] text-amber-400 font-semibold">
-                * ต้องได้รับการยืนยันจาก Cost Control / บัญชีก่อนใช้เป็นอัตราทางการ
+                {isEn ? '* Must be verified by Cost Control / Accounting before official use' : '* ต้องได้รับการยืนยันจาก Cost Control / บัญชีก่อนใช้เป็นอัตราทางการ'}
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
               <div>
                 <label className="block text-slate-400 mb-1 font-semibold">
-                  Machine Cost Rate (บาท/ชม.) *
+                  {isEn ? 'Machine Cost Rate (฿/hr) *' : 'Machine Cost Rate (บาท/ชม.) *'}
                 </label>
                 <input
                   type="number"
@@ -515,13 +522,15 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                   className="w-full px-3 py-2 bg-slate-950 border border-white/15 rounded-xl text-cyan-300 font-bold font-mono focus:border-cyan-400 focus:outline-none"
                 />
                 <span className="text-[10px] text-slate-500 mt-0.5 block">
-                  {formData.includesLaborInMachineRate ? '(รวมค่าแรงช่างประจำเครื่อง)' : '(ไม่รวมค่าแรงช่าง)'}
+                  {formData.includesLaborInMachineRate
+                    ? (isEn ? '(Includes operator labor)' : '(รวมค่าแรงช่างประจำเครื่อง)')
+                    : (isEn ? '(Excludes operator labor)' : '(ไม่รวมค่าแรงช่าง)')}
                 </span>
               </div>
 
               <div>
                 <label className="block text-slate-400 mb-1 font-semibold flex items-center justify-between">
-                  <span>Labor Rate ช่าง (บาท/ชม.) *</span>
+                  <span>{isEn ? 'Operator Labor Rate (฿/hr) *' : 'Labor Rate ช่าง (บาท/ชม.) *'}</span>
                   {formData.includesLaborInMachineRate && (
                     <span className="text-[10px] text-amber-400 font-normal">Read-only (Machine Running)</span>
                   )}
@@ -541,13 +550,13 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                 />
                 <span className="text-[10px] text-slate-500 mt-0.5 block">
                   {formData.includesLaborInMachineRate 
-                    ? 'ยังใช้อัตรานี้คิด Setup Labor นอกเวลาเดินเครื่อง' 
-                    : 'คิดตามชั่วโมงช่างปฏิบัติงานจริง'}
+                    ? (isEn ? 'Still used for Setup Labor outside machine runtime' : 'ยังใช้อัตรานี้คิด Setup Labor นอกเวลาเดินเครื่อง')
+                    : (isEn ? 'Billed per actual operator work hours' : 'คิดตามชั่วโมงช่างปฏิบัติงานจริง')}
                 </span>
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">QC Inspection Rate (บาท/ชม.)</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'QC Inspection Rate (฿/hr)' : 'QC Inspection Rate (บาท/ชม.)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -556,12 +565,12 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                   onChange={e => setFormData({ ...formData, qcCostRatePerHour: parseFloat(e.target.value) || 0 })}
                   className="w-full px-3 py-2 bg-slate-950 border border-white/15 rounded-xl text-white font-mono focus:border-cyan-400 focus:outline-none"
                 />
-                <span className="text-[10px] text-slate-500 mt-0.5 block">อัตราค่าตรวจรับรองมาตรฐาน QC</span>
+                <span className="text-[10px] text-slate-500 mt-0.5 block">{isEn ? 'Standard QC verification hourly rate' : 'อัตราค่าตรวจรับรองมาตรฐาน QC'}</span>
               </div>
 
               <div>
                 <label className="block text-slate-400 mb-1 font-semibold">
-                  Consumables Variable Rate (บาท/ชม.)
+                  {isEn ? 'Consumables Variable Rate (฿/hr)' : 'Consumables Variable Rate (บาท/ชม.)'}
                 </label>
                 <input
                   type="number"
@@ -571,12 +580,12 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                   onChange={e => setFormData({ ...formData, consumablesCostRatePerHour: parseFloat(e.target.value) || 0 })}
                   className="w-full px-3 py-2 bg-slate-950 border border-white/15 rounded-xl text-white font-mono focus:border-cyan-400 focus:outline-none"
                 />
-                <span className="text-[10px] text-slate-500 mt-0.5 block">เช่น น้ำยาขัดเงา, หินเจียรสึกหรอ</span>
+                <span className="text-[10px] text-slate-500 mt-0.5 block">{isEn ? 'e.g., polishing compound, wheel wear' : 'เช่น น้ำยาขัดเงา, หินเจียรสึกหรอ'}</span>
               </div>
 
               <div>
                 <label className="block text-slate-400 mb-1 font-semibold">
-                  Consumables Fixed Cost (บาท/รายการซ่อม)
+                  {isEn ? 'Consumables Fixed Cost (฿/job)' : 'Consumables Fixed Cost (บาท/รายการซ่อม)'}
                 </label>
                 <input
                   type="number"
@@ -586,7 +595,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                   onChange={e => setFormData({ ...formData, consumablesFixedCostPerJob: parseFloat(e.target.value) || 0 })}
                   className="w-full px-3 py-2 bg-slate-950 border border-white/15 rounded-xl text-white font-mono focus:border-cyan-400 focus:outline-none"
                 />
-                <span className="text-[10px] text-slate-500 mt-0.5 block">เช่น ผ้าเช็ด, สเปรย์กันสนิม, เทปป้องกัน</span>
+                <span className="text-[10px] text-slate-500 mt-0.5 block">{isEn ? 'e.g., wipes, anti-rust spray, masking tape' : 'เช่น ผ้าเช็ด, สเปรย์กันสนิม, เทปป้องกัน'}</span>
               </div>
 
               <div className="flex flex-col justify-end">
@@ -597,7 +606,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                 >
                   <span className="flex items-center gap-1.5">
                     <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>แจกแจงต้นทุนย่อย (Optional Breakdown)</span>
+                    <span>{isEn ? 'Optional Cost Breakdown' : 'แจกแจงต้นทุนย่อย (Optional Breakdown)'}</span>
                   </span>
                   {showOptionalBreakdown ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </button>
@@ -608,12 +617,12 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
             {showOptionalBreakdown && (
               <div className="p-3 bg-black/50 border border-white/10 rounded-xl space-y-3 animate-fadeIn text-xs">
                 <div className="flex items-center justify-between border-b border-white/5 pb-1 text-[11px] text-slate-400">
-                  <span>แจกแจงองค์ประกอบต้นทุนเครื่องจักรต่อชั่วโมง (Calculated Components)</span>
-                  <span className="text-cyan-300 font-mono font-bold">ผลรวมประมาณการ: ฿{calculatedBreakdownSum} / ชม.</span>
+                  <span>{isEn ? 'Hourly Machine Cost Components Breakdown' : 'แจกแจงองค์ประกอบต้นทุนเครื่องจักรต่อชั่วโมง (Calculated Components)'}</span>
+                  <span className="text-cyan-300 font-mono font-bold">{isEn ? 'Est. Sum:' : 'ผลรวมประมาณการ:'} ฿{calculatedBreakdownSum} / {isEn ? 'hr' : 'ชม.'}</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 font-mono">
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">ค่าเสื่อมราคา</label>
+                    <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Depreciation' : 'ค่าเสื่อมราคา'}</label>
                     <input
                       type="number"
                       min="0"
@@ -624,7 +633,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-amber-300 mb-1">ค่าไฟฟ้า (Auto)</label>
+                    <label className="block text-[10px] text-amber-300 mb-1">{isEn ? 'Electricity (Auto)' : 'ค่าไฟฟ้า (Auto)'}</label>
                     <input
                       type="number"
                       disabled
@@ -633,7 +642,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">ค่าบำรุงรักษา</label>
+                    <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Maintenance' : 'ค่าบำรุงรักษา'}</label>
                     <input
                       type="number"
                       min="0"
@@ -644,7 +653,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">Coolant/หล่อเย็น</label>
+                    <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Coolant' : 'Coolant/หล่อเย็น'}</label>
                     <input
                       type="number"
                       min="0"
@@ -655,7 +664,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">Tooling/หินเจียร</label>
+                    <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Tooling / Wheel' : 'Tooling/หินเจียร'}</label>
                     <input
                       type="number"
                       min="0"
@@ -666,7 +675,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">โสหุ้ย/Overhead</label>
+                    <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Overhead' : 'โสหุ้ย/Overhead'}</label>
                     <input
                       type="number"
                       min="0"
@@ -687,7 +696,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
           <div className="p-4 bg-slate-900/70 border border-white/10 rounded-2xl space-y-3">
             <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>SECTION C: นโยบายป้องกันค่าแรงซ้ำ (Double-Counting Prevention Engine)</span>
+              <span>{isEn ? 'SECTION C: Double-Counting Prevention Engine' : 'SECTION C: นโยบายป้องกันค่าแรงซ้ำ (Double-Counting Prevention Engine)'}</span>
             </div>
 
             <div className={`p-3.5 rounded-xl border transition-all ${
@@ -706,23 +715,38 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                 <div className="flex-1">
                   <label htmlFor="includesLaborInMachineRate" className="text-xs font-bold cursor-pointer select-none block">
                     <span className={formData.includesLaborInMachineRate ? 'text-amber-300' : 'text-emerald-300'}>
-                      อัตราค่าเครื่องจักร (Machine Cost Rate) รวมค่าแรงช่างประจำเครื่องจักรแล้ว (Includes Operator Labor)
+                      {isEn
+                        ? 'Machine Cost Rate already includes operator labor'
+                        : 'อัตราค่าเครื่องจักร (Machine Cost Rate) รวมค่าแรงช่างประจำเครื่องจักรแล้ว (Includes Operator Labor)'}
                     </span>
                   </label>
                   
                   {formData.includesLaborInMachineRate ? (
                     <div className="mt-1.5 p-2 bg-amber-900/40 rounded-lg border border-amber-500/30 text-[11px] text-amber-200 space-y-1">
                       <strong className="block text-amber-300">
-                        ⚠️ อัตราค่าเครื่องจักรรวมค่าแรง Operator แล้ว ระบบจะไม่นำค่าแรงมาคำนวณซ้ำกับเวลาเดินเครื่อง
+                        {isEn
+                          ? '⚠️ Operator labor is included in machine rate; direct running labor will not be double-counted.'
+                          : '⚠️ อัตราค่าเครื่องจักรรวมค่าแรง Operator แล้ว ระบบจะไม่นำค่าแรงมาคำนวณซ้ำกับเวลาเดินเครื่อง'}
                       </strong>
                       <p className="text-slate-300">
-                        • ในช่วงเวลาเดินเครื่องจักร (Machine Running Hours): ต้นทุนค่าแรง Operator จะถูกคำนวณเป็น ฿0.00 โดยอัตโนมัติ เพื่อป้องกันการนับซ้ำ<br />
-                        • หากมีงานตั้งค่าชิ้นงาน (Setup Labor) หรือเตรียมการก่อน/หลังเดินเครื่อง ระบบจะยังคงคำนวณจากอัตราค่าแรงช่างตามปกติ
+                        {isEn ? (
+                          <>
+                            • During Machine Running Hours: Operator labor cost automatically calculates as ฿0.00 to prevent double-counting.<br />
+                            • Setup Labor before/after machine runtime is still calculated using the standard labor rate.
+                          </>
+                        ) : (
+                          <>
+                            • ในช่วงเวลาเดินเครื่องจักร (Machine Running Hours): ต้นทุนค่าแรง Operator จะถูกคำนวณเป็น ฿0.00 โดยอัตโนมัติ เพื่อป้องกันการนับซ้ำ<br />
+                            • หากมีงานตั้งค่าชิ้นงาน (Setup Labor) หรือเตรียมการก่อน/หลังเดินเครื่อง ระบบจะยังคงคำนวณจากอัตราค่าแรงช่างตามปกติ
+                          </>
+                        )}
                       </p>
                     </div>
                   ) : (
                     <p className="mt-1 text-[11px] text-slate-300">
-                      ✓ อัตราค่าเครื่องจักรแยกเฉพาะค่าอุปกรณ์และพลังงาน — ระบบจะคำนวณค่าแรงช่าง (Labor Cost) ตามชั่วโมงการปฏิบัติงานจริงของพนักงาน
+                      {isEn
+                        ? '✓ Machine rate covers equipment & energy only — operator labor cost is billed per actual work hours.'
+                        : '✓ อัตราค่าเครื่องจักรแยกเฉพาะค่าอุปกรณ์และพลังงาน — ระบบจะคำนวณค่าแรงช่าง (Labor Cost) ตามชั่วโมงการปฏิบัติงานจริงของพนักงาน'}
                     </p>
                   )}
                 </div>
@@ -737,14 +761,14 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
               <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
                 <Clock className="w-4 h-4 text-cyan-400" />
-                <span>SECTION D: การอนุมัติและประวัติการแก้ไข (Revision Log & Notes)</span>
+                <span>{isEn ? 'SECTION D: Revision Log & Notes' : 'SECTION D: การอนุมัติและประวัติการแก้ไข (Revision Log & Notes)'}</span>
               </div>
               <span className="text-[10px] font-mono text-slate-400">Effective Date & Audit Trail</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">วันที่มีผลบังคับใช้ (Effective Date) *</label>
+                <label className="block text-slate-400 mb-1 font-semibold">{isEn ? 'Effective Date *' : 'วันที่มีผลบังคับใช้ (Effective Date) *'}</label>
                 <input
                   type="date"
                   required
@@ -756,14 +780,14 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
 
               <div>
                 <label className="block text-slate-400 mb-1 font-semibold">
-                  เหตุผลการปรับปรุงอัตรา (Reason for Revision / Change Log) {initialRate ? '*' : ''}
+                  {isEn ? 'Reason for Revision / Change Log' : 'เหตุผลการปรับปรุงอัตรา (Reason for Revision / Change Log)'} {initialRate ? '*' : ''}
                 </label>
                 <input
                   type="text"
                   required={!!initialRate}
                   value={revisionReason}
                   onChange={e => setRevisionReason(e.target.value)}
-                  placeholder="เช่น ปรับเพิ่มอัตราค่าไฟฟ้า 4.50 บาท / ทบทวนงบประมาณประจำปี 2026"
+                  placeholder={isEn ? 'e.g., Adjusted power rate ฿4.50/kWh / Annual 2026 budget review' : 'เช่น ปรับเพิ่มอัตราค่าไฟฟ้า 4.50 บาท / ทบทวนงบประมาณประจำปี 2026'}
                   className="w-full px-3 py-2 bg-slate-950 border border-amber-500/40 rounded-xl text-amber-200 focus:border-amber-400 focus:outline-none"
                 />
               </div>
@@ -771,13 +795,13 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
 
             <div>
               <label className="block text-slate-400 mb-1 text-xs font-semibold">
-                หมายเหตุรายละเอียดการจัดสรรต้นทุน (Notes & Breakdown)
+                {isEn ? 'Cost Allocation Notes & Breakdown' : 'หมายเหตุรายละเอียดการจัดสรรต้นทุน (Notes & Breakdown)'}
               </label>
               <textarea
                 rows={2}
                 value={formData.notes || ''}
                 onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="ระบุรายละเอียดองค์ประกอบต้นทุน เช่น ค่าเสื่อมราคา ค่าบำรุงรักษา preventative maintenance ค่าพลังงาน"
+                placeholder={isEn ? 'Specify cost components such as depreciation, preventive maintenance, energy...' : 'ระบุรายละเอียดองค์ประกอบต้นทุน เช่น ค่าเสื่อมราคา ค่าบำรุงรักษา preventative maintenance ค่าพลังงาน'}
                 className="w-full px-3 py-2 bg-slate-950 border border-white/15 rounded-xl text-xs text-white focus:border-cyan-400 focus:outline-none"
               />
             </div>
@@ -791,7 +815,11 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                   className="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <History className="w-4 h-4" />
-                  <span>{showHistory ? 'ซ่อนประวัติการเปลี่ยนแปลงอัตรา' : `ประวัติการปรับปรุงอัตรา (${initialRate.rateRevisionHistory.length} รายการ)`}</span>
+                  <span>
+                    {showHistory
+                      ? (isEn ? 'Hide Rate Revision History' : 'ซ่อนประวัติการเปลี่ยนแปลงอัตรา')
+                      : (isEn ? `Rate Revision History (${initialRate.rateRevisionHistory.length} entries)` : `ประวัติการปรับปรุงอัตรา (${initialRate.rateRevisionHistory.length} รายการ)`)}
+                  </span>
                 </button>
 
                 {showHistory && (
@@ -799,7 +827,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                     {initialRate.rateRevisionHistory.map(rev => (
                       <div key={rev.id} className="p-2.5 bg-slate-900/90 rounded-lg border border-white/5 flex flex-col gap-1">
                         <div className="flex items-center justify-between text-slate-300">
-                          <span className="text-cyan-300 font-bold">มีผล: {rev.effectiveDate}</span>
+                          <span className="text-cyan-300 font-bold">{isEn ? 'Effective:' : 'มีผล:'} {rev.effectiveDate}</span>
                           <span className="text-slate-500">{new Date(rev.revisionDate).toLocaleString()}</span>
                         </div>
                         <div className="text-slate-200">
@@ -807,9 +835,11 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                           Labor Rate: <span className="line-through text-slate-500">฿{rev.oldLaborRate}</span> ➔ <strong className="text-emerald-400">฿{rev.newLaborRate}</strong>
                         </div>
                         <div className="text-slate-400 flex items-center justify-between">
-                          <span>โดย: {rev.changedBy} - "{rev.reason}"</span>
+                          <span>{isEn ? 'By:' : 'โดย:'} {rev.changedBy} - "{rev.reason}"</span>
                           <span className={`text-[10px] px-1.5 py-0.2 rounded ${rev.includesLaborInMachineRate ? 'bg-amber-950 text-amber-300' : 'bg-slate-800 text-slate-300'}`}>
-                            {rev.includesLaborInMachineRate ? 'รวมค่าแรงแล้ว' : 'แยกค่าแรง'}
+                            {rev.includesLaborInMachineRate
+                              ? (isEn ? 'Labor Included' : 'รวมค่าแรงแล้ว')
+                              : (isEn ? 'Labor Separate' : 'แยกค่าแรง')}
                           </span>
                         </div>
                       </div>
@@ -828,7 +858,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               <div className="flex items-center gap-2">
                 <Calculator className="w-4 h-4 text-cyan-400" />
                 <h4 className="text-xs font-black text-white uppercase tracking-wider">
-                  ตัวอย่างการคำนวณต้นทุนการซ่อมจริง (Real-Time Calculation Preview Sandbox)
+                  {isEn ? 'Real-Time Calculation Preview Sandbox' : 'ตัวอย่างการคำนวณต้นทุนการซ่อมจริง (Real-Time Calculation Preview Sandbox)'}
                 </h4>
               </div>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
@@ -837,13 +867,15 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-400">
-              ทดสอบจำลองคำนวณต้นทุนงานซ่อมตามอัตราที่กำหนดข้างต้น เพื่อตรวจสอบความถูกต้องและความคุ้มค่าก่อนบันทึกระบบ
+              {isEn
+                ? 'Simulate job repair cost using the configured rates above to verify accuracy before saving.'
+                : 'ทดสอบจำลองคำนวณต้นทุนงานซ่อมตามอัตราที่กำหนดข้างต้น เพื่อตรวจสอบความถูกต้องและความคุ้มค่าก่อนบันทึกระบบ'}
             </p>
 
             {/* Sandbox Input Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs font-mono">
               <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Machine Hours (ชม.)</label>
+                <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Machine Hours (hrs)' : 'Machine Hours (ชม.)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -855,7 +887,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Setup Labor (ชม.)</label>
+                <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Setup Labor (hrs)' : 'Setup Labor (ชม.)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -867,7 +899,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-400 mb-1">Direct Labor (ชม.)</label>
+                <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Direct Labor (hrs)' : 'Direct Labor (ชม.)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -879,7 +911,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-400 mb-1">QC Hours (ชม.)</label>
+                <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'QC Hours (hrs)' : 'QC Hours (ชม.)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -891,7 +923,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-400 mb-1">จำนวนชิ้นงาน (ชิ้น)</label>
+                <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'Quantity (pcs)' : 'จำนวนชิ้นงาน (ชิ้น)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -903,7 +935,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[10px] text-slate-400 mb-1">ราคาซื้อใหม่ (บาท/ชิ้น)</label>
+                <label className="block text-[10px] text-slate-400 mb-1">{isEn ? 'New Price (฿/pc)' : 'ราคาซื้อใหม่ (บาท/ชิ้น)'}</label>
                 <input
                   type="number"
                   min="0"
@@ -921,7 +953,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                 <div className="p-2 bg-cyan-950/20 border border-cyan-500/20 rounded-xl">
                   <div className="flex items-center gap-1 text-[9px] font-bold text-cyan-400 mb-0.5">
                     <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/30 flex items-center justify-center text-[8px]">1</span>
-                    <span>STEP 1: เครื่องจักร</span>
+                    <span>{isEn ? 'STEP 1: MACHINE' : 'STEP 1: เครื่องจักร'}</span>
                   </div>
                   <span className="text-cyan-300 font-bold block text-sm">฿{previewResults.machineCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   <span className="text-[10px] text-slate-400 block">({previewMachineHours}h × ฿{formData.machineCostRatePerHour || 0})</span>
@@ -930,20 +962,23 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                 <div className="p-2 bg-emerald-950/20 border border-emerald-500/20 rounded-xl">
                   <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 mb-0.5">
                     <span className="w-3.5 h-3.5 rounded-full bg-emerald-500/30 flex items-center justify-center text-[8px]">2</span>
-                    <span>STEP 2: ค่าแรงช่าง</span>
+                    <span>{isEn ? 'STEP 2: LABOR' : 'STEP 2: ค่าแรงช่าง'}</span>
                   </div>
                   <span className="text-emerald-400 font-bold block text-sm">฿{previewResults.totalLaborCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  <span className="text-[10px] text-slate-400 block truncate" title={formData.includesLaborInMachineRate ? 'รวมในเครื่องแล้ว' : 'คิดตามชั่วโมงจริง'}>
+                  <span
+                    className="text-[10px] text-slate-400 block truncate"
+                    title={formData.includesLaborInMachineRate ? (isEn ? 'Included in machine rate' : 'รวมในเครื่องแล้ว') : (isEn ? 'Billed per actual hours' : 'คิดตามชั่วโมงจริง')}
+                  >
                     {formData.includesLaborInMachineRate 
-                      ? `Setup ฿${previewResults.setupLaborCost} (เดินเครื่อง ฿0)` 
-                      : `Setup ฿${previewResults.setupLaborCost} + เดิน ฿${previewResults.directLaborCost}`}
+                      ? (isEn ? `Setup ฿${previewResults.setupLaborCost} (Run ฿0)` : `Setup ฿${previewResults.setupLaborCost} (เดินเครื่อง ฿0)`)
+                      : (isEn ? `Setup ฿${previewResults.setupLaborCost} + Run ฿${previewResults.directLaborCost}` : `Setup ฿${previewResults.setupLaborCost} + เดิน ฿${previewResults.directLaborCost}`)}
                   </span>
                 </div>
 
                 <div className="p-2 bg-amber-950/20 border border-amber-500/20 rounded-xl">
                   <div className="flex items-center gap-1 text-[9px] font-bold text-amber-400 mb-0.5">
                     <span className="w-3.5 h-3.5 rounded-full bg-amber-500/30 flex items-center justify-center text-[8px]">3</span>
-                    <span>STEP 3: สิ้นเปลือง</span>
+                    <span>{isEn ? 'STEP 3: CONSUMABLES' : 'STEP 3: สิ้นเปลือง'}</span>
                   </div>
                   <span className="text-amber-300 font-bold block text-sm">฿{previewResults.consumablesCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   <span className="text-[10px] text-slate-400 block">
@@ -954,7 +989,7 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                 <div className="p-2 bg-purple-950/20 border border-purple-500/20 rounded-xl">
                   <div className="flex items-center gap-1 text-[9px] font-bold text-purple-400 mb-0.5">
                     <span className="w-3.5 h-3.5 rounded-full bg-purple-500/30 flex items-center justify-center text-[8px]">4</span>
-                    <span>STEP 4: ตรวจสอบ QC</span>
+                    <span>{isEn ? 'STEP 4: QC CHECK' : 'STEP 4: ตรวจสอบ QC'}</span>
                   </div>
                   <span className="text-purple-300 font-bold block text-sm">฿{previewResults.qcCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   <span className="text-[10px] text-slate-400 block">({previewQcHours}h × ฿{formData.qcCostRatePerHour || 0})</span>
@@ -963,35 +998,35 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
                 <div className="p-2 bg-rose-950/20 border border-rose-500/20 rounded-xl">
                   <div className="flex items-center gap-1 text-[9px] font-bold text-rose-400 mb-0.5">
                     <span className="w-3.5 h-3.5 rounded-full bg-rose-500/30 flex items-center justify-center text-[8px]">5</span>
-                    <span>ต้นทุนต่อชิ้น (Unit)</span>
+                    <span>{isEn ? 'UNIT COST / PC' : 'ต้นทุนต่อชิ้น (Unit)'}</span>
                   </div>
                   {previewResults.isQtyZero ? (
-                    <span className="text-rose-400 font-bold text-xs">N/A (ระบุจำนวน)</span>
+                    <span className="text-rose-400 font-bold text-xs">{isEn ? 'N/A (Enter Qty)' : 'N/A (ระบุจำนวน)'}</span>
                   ) : (
                     <span className="text-white font-bold block text-sm">฿{previewResults.costPerPiece.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   )}
-                  <span className="text-[10px] text-slate-400 block">({previewRepairQuantity} ชิ้น)</span>
+                  <span className="text-[10px] text-slate-400 block">({previewRepairQuantity} {isEn ? 'pcs' : 'ชิ้น'})</span>
                 </div>
               </div>
 
               {/* Summary KPIs Row */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <div>
-                  <span className="text-[11px] text-slate-400">ต้นทุนการซ่อมแท้จริง (True Repair Cost): </span>
+                  <span className="text-[11px] text-slate-400">{isEn ? 'True Repair Cost: ' : 'ต้นทุนการซ่อมแท้จริง (True Repair Cost): '}</span>
                   <strong className="text-base text-cyan-300">
                     ฿{previewResults.totalRepairCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </strong>
                 </div>
 
                 <div>
-                  <span className="text-[11px] text-slate-400">มูลค่าจัดซื้อใหม่เทียบเท่า: </span>
+                  <span className="text-[11px] text-slate-400">{isEn ? 'Equivalent New Purchase: ' : 'มูลค่าจัดซื้อใหม่เทียบเท่า: '}</span>
                   <span className="text-slate-200 font-bold">
                     ฿{previewResults.equivalentNewCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-emerald-400">ผลประหยัดสุทธิ (Net Saving): </span>
+                  <span className="text-[11px] text-emerald-400">{isEn ? 'Net Cost Saving: ' : 'ผลประหยัดสุทธิ (Net Saving): '}</span>
                   <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black text-sm">
                     ฿{previewResults.estimatedSaving.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({previewResults.savingPercent.toFixed(2)}%)
                   </span>
@@ -1005,16 +1040,16 @@ export const CostRateModal: React.FC<CostRateModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs cursor-pointer transition-all"
+              className="px-5 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs cursor-pointer transition-all whitespace-nowrap shrink-0"
             >
-              ยกเลิก (Cancel)
+              {isEn ? 'Cancel' : 'ยกเลิก (Cancel)'}
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-black text-xs cursor-pointer shadow-lg shadow-cyan-500/20 flex items-center gap-2 transition-all active:scale-95"
+              className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-black text-xs cursor-pointer shadow-lg shadow-cyan-500/20 flex items-center gap-2 transition-all active:scale-95 whitespace-nowrap shrink-0"
             >
               <Save className="w-4 h-4" />
-              <span>บันทึกอัตราต้นทุน (Save Rate Master)</span>
+              <span>{isEn ? 'Save Rate Master' : 'บันทึกอัตราต้นทุน (Save Rate Master)'}</span>
             </button>
           </div>
         </form>

@@ -8,6 +8,7 @@ import {
 import { CostRateMasterItem } from '../../types/costSaving';
 import { costSavingService } from '../../services/costSavingService';
 import { StepByStepJobCostSimulator } from './StepByStepJobCostSimulator';
+import { useLanguage } from '../../i18n';
 
 interface CostRateMasterTabProps {
   rates?: CostRateMasterItem[];
@@ -20,6 +21,8 @@ export const CostRateMasterTab: React.FC<CostRateMasterTabProps> = ({
   costRates,
   onRefresh
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const activeRates = rates || costRates || [];
 
@@ -35,10 +38,16 @@ export const CostRateMasterTab: React.FC<CostRateMasterTabProps> = ({
       const res = costSavingService.saveCostRateMaster(
         updated,
         'Cost Engineer (True Cost Engine)',
-        `ปรับปรุงอัตราจาก Step-by-Step True Cost Simulator (Machine: ฿${calculatedMachineRate.toFixed(2)}/hr, Labor: ฿${calculatedLaborRate.toFixed(2)}/hr)`
+        isEn
+          ? `Updated from Step-by-Step True Cost Simulator (Machine: ฿${calculatedMachineRate.toFixed(2)}/hr, Labor: ฿${calculatedLaborRate.toFixed(2)}/hr)`
+          : `ปรับปรุงอัตราจาก Step-by-Step True Cost Simulator (Machine: ฿${calculatedMachineRate.toFixed(2)}/hr, Labor: ฿${calculatedLaborRate.toFixed(2)}/hr)`
       );
       if (res.success) {
-        setSaveToast(`อัปเดตอัตราต้นทุนเข้าสู่เครื่องจักร ${existing.machineName} (${machineId}) เรียบร้อยแล้ว!`);
+        setSaveToast(
+          isEn
+            ? `Updated cost rates for ${existing.machineName} (${machineId}).`
+            : `อัปเดตอัตราต้นทุนเข้าสู่เครื่องจักร ${existing.machineName} (${machineId}) เรียบร้อยแล้ว!`
+        );
         setTimeout(() => setSaveToast(null), 4000);
         onRefresh();
       }
@@ -73,13 +82,19 @@ export const CostRateMasterTab: React.FC<CostRateMasterTabProps> = ({
           </div>
           <div>
             <h3 className="text-base font-black text-white tracking-wide flex items-center gap-2">
-              <span>ระบบคำนวณและวิเคราะห์ต้นทุนแท้จริงงานเจียร (Grinding True Cost & Step-Ladder Engine)</span>
+              <span>
+                {isEn
+                  ? 'Grinding True Cost & Step-Ladder Engine'
+                  : 'ระบบคำนวณและวิเคราะห์ต้นทุนแท้จริงงานเจียร (Grinding True Cost & Step-Ladder Engine)'}
+              </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                 TRUE COST PRO
               </span>
             </h3>
             <p className="text-xs text-slate-400">
-              วิเคราะห์และคำนวณต้นทุนงานเจียรแท้จริงแบบทีละขั้นตอน (5 Steps) พร้อมกราฟขั้นบันไดสะสมต้นทุน (Step-Ladder Accumulation Chart)
+              {isEn
+                ? '5-step true grinding cost calculator with cumulative step-ladder cost breakdown chart.'
+                : 'วิเคราะห์และคำนวณต้นทุนงานเจียรแท้จริงแบบทีละขั้นตอน (5 Steps) พร้อมกราฟขั้นบันไดสะสมต้นทุน (Step-Ladder Accumulation Chart)'}
             </p>
           </div>
         </div>

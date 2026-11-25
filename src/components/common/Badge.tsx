@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertSeverity, OrderStatus, MachineStatus } from '../../types';
 import { Play, Pause, Wrench, AlertOctagon, RefreshCw } from 'lucide-react';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface BadgeProps {
   severity?: AlertSeverity;
@@ -19,6 +20,8 @@ export const Badge: React.FC<BadgeProps> = ({
   className = '', 
   showIcon = true 
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   if (machineStatus) {
     const statusNormalized = (machineStatus || '').toUpperCase();
     const isMaintenance = statusNormalized.includes('MAINT') || statusNormalized.includes('MAINTENANCE') || statusNormalized.includes('UNDER MAINTENANCE');
@@ -74,7 +77,7 @@ export const Badge: React.FC<BadgeProps> = ({
       return (
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-semibold uppercase tracking-wider bg-yellow-950/60 text-yellow-300 border border-yellow-700/70 ${className}`}>
           {showIcon && <Pause className="w-2.5 h-2.5 text-yellow-300" />}
-          <span>{label || 'พักไลน์ / ไม่มีแผน'}</span>
+          <span>{label || (isEn ? 'IDLE / NO PLAN' : 'พักไลน์ / ไม่มีแผน')}</span>
         </span>
       );
     }

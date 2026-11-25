@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, AlertCircle, X, RotateCcw, Clock, Sparkles } from 'lucide-react';
+import { useLanguage } from '../../i18n';
 
 export interface DateRangeState {
   startDate: string; // YYYY-MM-DD or ''
@@ -65,6 +66,8 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
   className = '',
   compact = false
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [isOpenModal, setIsOpenModal] = useState<boolean>(false);
 
@@ -101,7 +104,11 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         s.setDate(s.getDate() + (maxDaysAllowed - 1));
         const cappedEnd = formatDateToYYYYMMDD(s);
         onChangeRange(newStart, cappedEnd);
-        setWarningMsg(`จำกัดช่วงเวลาสูงสุดไม่เกิน ${maxDaysAllowed} วัน (ปรับวันสิ้นสุดอัตโนมัติ)`);
+        setWarningMsg(
+          isEn
+            ? `Max range is ${maxDaysAllowed} days (end date auto-adjusted)`
+            : `จำกัดช่วงเวลาสูงสุดไม่เกิน ${maxDaysAllowed} วัน (ปรับวันสิ้นสุดอัตโนมัติ)`
+        );
         setTimeout(() => setWarningMsg(null), 4000);
         return;
       }
@@ -129,7 +136,11 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         e.setDate(e.getDate() - (maxDaysAllowed - 1));
         const cappedStart = formatDateToYYYYMMDD(e);
         onChangeRange(cappedStart, newEnd);
-        setWarningMsg(`จำกัดช่วงเวลาสูงสุดไม่เกิน ${maxDaysAllowed} วัน (ปรับวันเริ่มต้นอัตโนมัติ)`);
+        setWarningMsg(
+          isEn
+            ? `Max range is ${maxDaysAllowed} days (start date auto-adjusted)`
+            : `จำกัดช่วงเวลาสูงสุดไม่เกิน ${maxDaysAllowed} วัน (ปรับวันเริ่มต้นอัตโนมัติ)`
+        );
         setTimeout(() => setWarningMsg(null), 4000);
         return;
       }
@@ -194,7 +205,9 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
                 ? isHmi ? 'text-green-300 animate-pulse' : 'text-cyan-300 animate-pulse'
                 : 'text-slate-400'
             }`} />
-            <span className="hidden sm:inline font-thai text-[10px] text-slate-300">วันที่:</span>
+            <span className="hidden sm:inline font-thai text-[10px] text-slate-300">
+              {isEn ? 'Date:' : 'วันที่:'}
+            </span>
           </div>
 
           {/* Start Date Input */}
@@ -207,7 +220,7 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
                 ? 'text-green-300'
                 : 'text-white'
             }`}
-            title="วันเริ่มต้น (Start Date)"
+            title={isEn ? 'Start Date' : 'วันเริ่มต้น (Start Date)'}
           />
 
           <span className="text-slate-500 text-[10px] font-mono font-bold">-</span>
@@ -222,7 +235,7 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
                 ? 'text-green-300'
                 : 'text-white'
             }`}
-            title="วันสิ้นสุด (End Date)"
+            title={isEn ? 'End Date' : 'วันสิ้นสุด (End Date)'}
           />
 
           {/* Days Indicator Badge */}
@@ -244,7 +257,7 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
               type="button"
               onClick={handleClear}
               className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded transition-colors cursor-pointer"
-              title="ล้างช่วงวันที่ (Clear Filter)"
+              title={isEn ? 'Clear Date Filter' : 'ล้างช่วงวันที่ (Clear Filter)'}
             >
               <X className="w-3 h-3" />
             </button>
@@ -283,7 +296,7 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
               onClick={handlePresetThisMonth}
               className="px-1.5 py-0.5 h-7 rounded-md text-[9.5px] font-mono font-bold transition-all border bg-[#070D19] text-slate-400 hover:text-slate-200 border-slate-800 hover:border-slate-700 cursor-pointer"
             >
-              เดือนนี้
+              {isEn ? 'This Month' : 'เดือนนี้'}
             </button>
           </div>
         )}

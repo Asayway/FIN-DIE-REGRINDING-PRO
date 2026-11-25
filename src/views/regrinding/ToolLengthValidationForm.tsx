@@ -111,30 +111,41 @@ export const ToolLengthValidationForm: React.FC<ToolLengthValidationFormProps> =
   }, [initialTicket, activeMaster]);
 
   // Thresholds from Part Life Standard Matrix & Regrind Master
-  const nominalLength = activeMaster?.nominalLengthMm || 70.00;
-  const minAllowedThreshold = activeMaster?.minAllowedLengthMm || 65.00;
-  const maxAllowedCycles = activeMaster?.maxRegrindCount || 4;
-  const maxGrindAllowance = activeMaster?.totalGrindingAllowanceMm || (nominalLength - minAllowedThreshold);
-  const stdGrindPerTime = activeMaster?.grindingAmountPerTimeMm || 0.25;
+  const nominalLength = activeMaster?.nominalLengthMm ?? 70.00;
+  const minAllowedThreshold = activeMaster?.minAllowedLengthMm ?? 65.00;
+  const maxAllowedCycles = activeMaster?.maxRegrindCount ?? 4;
+  const maxGrindAllowance = activeMaster?.totalGrindingAllowanceMm ?? Number(Math.max(0, nominalLength - minAllowedThreshold).toFixed(3));
+  const stdGrindPerTime = activeMaster?.grindingAmountPerTimeMm ?? 0.25;
+  const stdGrindMin = activeMaster?.grindMinMm ?? stdGrindPerTime;
+  const stdGrindMax = activeMaster?.grindMaxMm ?? stdGrindMin;
+  const isNonRegrindable = Boolean(activeMaster && (!activeMaster.regrindAllowed || activeMaster.disposeAfterOneUse));
 
   // Real-time calculations
   const calculatedRemainingLength = useMemo(() => {
     if (manualRemainingLength !== null && !isNaN(manualRemainingLength)) {
-      return manualRemainingLength;
+      return Number(manualRemainingLength.toFixed(3));
     }
-    return Number(Math.max(0, previousLength - grindDepth).toFixed(2));
+    return Number(Math.max(0, previousLength - grindDepth).toFixed(3));
   }, [manualRemainingLength, previousLength, grindDepth]);
 
-  const cumulativeMaterialRemoved = Number((nominalLength - calculatedRemainingLength).toFixed(2));
-  const remainingGrindingMargin = Number((calculatedRemainingLength - minAllowedThreshold).toFixed(2));
-  const remainingCyclesBeforeScrap = Math.max(0, maxAllowedCycles - currentCycleCount);
-  const healthPercentage = Math.max(0, Math.min(100, Math.round(((calculatedRemainingLength - minAllowedThreshold) / (nominalLength - minAllowedThreshold)) * 100)));
+  const cumulativeMaterialRemoved = Number((nominalLength - calculatedRemainingLength).toFixed(3));
+  const remainingGrindingMargin = Number((calculatedRemainingLength - minAllowedThreshold).toFixed(3));
+  const isBelowMinThreshold = Number(calculatedRemainingLength.toFixed(3)) < Number(minAllowedThreshold.toFixed(3)) - 1e-4;
+  const isCycleExceeded = currentCycleCount > maxAllowedCycles;
+  const cycleRemaining = Math.max(0, maxAllowedCycles - currentCycleCount);
+  const effectiveStep = Math.max(0.01, grindDepth > 0 ? grindDepth : (stdGrindMin || 0.1));
+  const dimRemaining = isBelowMinThreshold ? 0 : Math.floor((calculatedRemainingLength - minAllowedThreshold) / effectiveStep + 1e-6);
+  const remainingCyclesBeforeScrap = (isBelowMinThreshold || isNonRegrindable)
+    ? 0
+    : Math.max(0, Math.min(cycleRemaining, dimRemaining));
+  const wearDenom = Math.max(0.01, nominalLength - minAllowedThreshold);
+  const healthPercentage = (isBelowMinThreshold || isNonRegrindable)
+    ? 0
+    : Math.max(0, Math.min(100, Math.round(((calculatedRemainingLength - minAllowedThreshold) / wearDenom) * 100)));
 
   // Validation Rules
-  const isBelowMinThreshold = calculatedRemainingLength < minAllowedThreshold;
-  const isCycleExceeded = currentCycleCount > maxAllowedCycles;
   const isNearThresholdWarning = !isBelowMinThreshold && remainingGrindingMargin <= 0.30;
-  const isInvalid = isBelowMinThreshold || isCycleExceeded;
+  const isInvalid = isBelowMinThreshold || isCycleExceeded || isNonRegrindable;
 
   // Auto trigger scrap prompt if invalid
   useEffect(() => {
@@ -149,12 +160,12 @@ export const ToolLengthValidationForm: React.FC<ToolLengthValidationFormProps> =
     const depth = Math.max(0, val);
     setGrindDepth(depth);
     setShimThickness(depth);
-    setManualRemainingLength(Number(Math.max(0, previousLength - depth).toFixed(2)));
+    setManualRemainingLength(Number(Math.max(0, previousLength - depth).toFixed(3)));
   };
 
   const handleManualRemainingChange = (val: number) => {
     setManualRemainingLength(val);
-    const depth = Number(Math.max(0, previousLength - val).toFixed(2));
+    const depth = Number(Math.max(0, previousLength - val).toFixed(3));
     setGrindDepth(depth);
     setShimThickness(depth);
   };
@@ -411,7 +422,7 @@ export const ToolLengthValidationForm: React.FC<ToolLengthValidationFormProps> =
                   partName={activeMaster.partName}
                   size="md"
                 />
-                <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
                   <div>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 block">ความยาวเริ่มต้น (L-nominal)</span>
                     <strong className="text-slate-900 dark:text-slate-100 font-mono text-xs sm:text-sm">
@@ -422,6 +433,16 @@ export const ToolLengthValidationForm: React.FC<ToolLengthValidationFormProps> =
                     <span className="text-[10px] text-rose-600 dark:text-rose-400 block font-semibold">พิกัดต่ำสุด (L-min)</span>
                     <strong className="text-rose-600 dark:text-rose-400 font-mono text-xs sm:text-sm">
                       {minAllowedThreshold.toFixed(2)} mm
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block">เจียรครั้งละ (ΔL Std)</span>
+                    <strong className="text-cyan-700 dark:text-cyan-300 font-mono text-xs sm:text-sm">
+                      {isNonRegrindable
+                        ? 'ไม่เจียรซ้ำ'
+                        : Math.abs(stdGrindMin - stdGrindMax) > 1e-4
+                        ? `${stdGrindMin.toFixed(2)}–${stdGrindMax.toFixed(2)} mm`
+                        : `${stdGrindMin.toFixed(2)} mm`}
                     </strong>
                   </div>
                   <div>

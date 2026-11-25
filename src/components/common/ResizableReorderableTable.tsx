@@ -10,6 +10,7 @@ import {
   RotateCcw,
   GripVertical
 } from 'lucide-react';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 export interface ColumnDef<T> {
   id: string;
@@ -71,8 +72,11 @@ export function ResizableReorderableTable<T>({
   data,
   keyExtractor,
   className = '',
-  emptyMessage = 'ไม่พบข้อมูล'
+  emptyMessage
 }: ResizableReorderableTableProps<T>) {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
+  const resolvedEmptyMessage = emptyMessage || (isEn ? 'No data available' : 'ไม่พบข้อมูล');
   // State for column order (array of column IDs)
   const [colOrder, setColOrder] = useState<string[]>(initialColumns.map(c => c.id));
   
@@ -187,16 +191,16 @@ export function ResizableReorderableTable<T>({
       {/* Column Customizer Toolbar */}
       <div className="flex items-center justify-between px-2 py-1 bg-slate-950/80 border border-slate-800 rounded-lg text-xs">
         <div className="text-slate-400 font-mono flex items-center gap-2">
-          <span>ความกว้างและลำดับคอลัมน์ปรับแต่งได้ (Resizable & Reorderable Table)</span>
+          <span>{isEn ? 'Resizable & Reorderable Table' : 'ความกว้างและลำดับคอลัมน์ปรับแต่งได้ (Resizable & Reorderable Table)'}</span>
         </div>
         
-                <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded mr-2">
             <button
               type="button"
               onClick={() => scrollTable('left')}
               className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-l transition-colors"
-              title="เลื่อนซ้าย"
+              title={isEn ? 'Scroll Left' : 'เลื่อนซ้าย'}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -205,7 +209,7 @@ export function ResizableReorderableTable<T>({
               type="button"
               onClick={() => scrollTable('right')}
               className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-r transition-colors"
-              title="เลื่อนขวา"
+              title={isEn ? 'Scroll Right' : 'เลื่อนขวา'}
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -214,16 +218,16 @@ export function ResizableReorderableTable<T>({
           <button
             type="button"
             onClick={() => setShowColSettings(!showColSettings)}
-            className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 hover:bg-slate-800 text-cyan-300 font-mono flex items-center gap-1.5 transition-colors"
+            className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 hover:bg-slate-800 text-cyan-300 font-mono flex items-center gap-1.5 transition-colors whitespace-nowrap"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>ปรับแต่งคอลัมน์ ({orderedColumns.length}/{initialColumns.length})</span>
+            <span>{isEn ? `Columns (${orderedColumns.length}/${initialColumns.length})` : `ปรับแต่งคอลัมน์ (${orderedColumns.length}/${initialColumns.length})`}</span>
           </button>
           
           <button
             type="button"
             onClick={resetLayout}
-            title="รีเซ็ตตำแหน่งและความกว้างเดิม"
+            title={isEn ? 'Reset column order & widths' : 'รีเซ็ตตำแหน่งและความกว้างเดิม'}
             className="p-1 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -235,8 +239,8 @@ export function ResizableReorderableTable<T>({
       {showColSettings && (
         <div className="p-3 bg-slate-900 border border-slate-700 rounded-lg text-xs space-y-2 animate-fadeIn">
           <div className="font-bold text-cyan-300 font-mono border-b border-slate-800 pb-1 flex items-center justify-between">
-            <span>การแสดงผลและการจัดลำดับคอลัมน์ (Column Controls)</span>
-            <span className="text-[11px] text-slate-400 font-normal">กดลูกศรเพื่อเลื่อนตำแหน่ง หรือสวิตช์เปิด/ปิด</span>
+            <span>{isEn ? 'Column Controls (Visibility & Order)' : 'การแสดงผลและการจัดลำดับคอลัมน์ (Column Controls)'}</span>
+            <span className="text-[11px] text-slate-400 font-normal">{isEn ? 'Use arrows to reorder or toggle eye icon to show/hide' : 'กดลูกศรเพื่อเลื่อนตำแหน่ง หรือสวิตช์เปิด/ปิด'}</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
@@ -252,7 +256,7 @@ export function ResizableReorderableTable<T>({
                       type="button"
                       onClick={() => setColVisibility(prev => ({ ...prev, [colId]: !isVisible }))}
                       className={`p-1 rounded border ${isVisible ? 'bg-cyan-950 border-cyan-500 text-cyan-300' : 'bg-slate-900 border-slate-800 text-slate-600'}`}
-                      title={isVisible ? 'ซ่อนคอลัมน์นี้' : 'แสดงคอลัมน์นี้'}
+                      title={isVisible ? (isEn ? 'Hide column' : 'ซ่อนคอลัมน์นี้') : (isEn ? 'Show column' : 'แสดงคอลัมน์นี้')}
                     >
                       {isVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
                     </button>
@@ -330,7 +334,7 @@ export function ResizableReorderableTable<T>({
                             type="button"
                             onClick={() => moveColumn(idx, 'left')}
                             className="p-0.5 hover:bg-[#333333] text-slate-300 hover:text-white"
-                            title="ย้ายไปซ้าย"
+                            title={isEn ? 'Move Left' : 'ย้ายไปซ้าย'}
                           >
                             <ArrowLeft className="w-3 h-3" />
                           </button>
@@ -340,7 +344,7 @@ export function ResizableReorderableTable<T>({
                             type="button"
                             onClick={() => moveColumn(idx, 'right')}
                             className="p-0.5 hover:bg-[#333333] text-slate-300 hover:text-white"
-                            title="ย้ายไปขวา"
+                            title={isEn ? 'Move Right' : 'ย้ายไปขวา'}
                           >
                             <ArrowRight className="w-3 h-3" />
                           </button>
@@ -352,7 +356,7 @@ export function ResizableReorderableTable<T>({
                     <div
                       onMouseDown={e => handleResizeStart(e, col.id)}
                       className="absolute right-0 top-0 bottom-0 w-3 -mr-1.5 cursor-col-resize hover:bg-[#00ff00] active:bg-[#00ff00] transition-colors z-30 flex items-center justify-center opacity-0 group-hover:opacity-100"
-                      title="คลิกลากเพื่อปรับขนาดคอลัมน์ได้อย่างอิสระ"
+                      title={isEn ? 'Drag to resize column width' : 'คลิกลากเพื่อปรับขนาดคอลัมน์ได้อย่างอิสระ'}
                     >
                       <div className="w-0.5 h-4 bg-[#00ff00]" />
                     </div>
@@ -367,7 +371,7 @@ export function ResizableReorderableTable<T>({
             {data.length === 0 ? (
               <tr>
                 <td colSpan={orderedColumns.length} className="px-4 py-8 text-center text-slate-500 font-thai">
-                  {emptyMessage}
+                  {resolvedEmptyMessage}
                 </td>
               </tr>
             ) : (

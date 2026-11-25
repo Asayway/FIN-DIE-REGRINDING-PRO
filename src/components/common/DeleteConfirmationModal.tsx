@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Trash2, X, AlertCircle } from 'lucide-react';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 interface DeleteConfirmationModalProps {
   isOpen: boolean;
@@ -18,15 +19,24 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
   isOpen,
   onClose,
   onConfirm,
-  title = 'ยืนยันการลบข้อมูล (Delete Confirmation)',
+  title,
   itemName,
   itemDetails,
-  warningText = 'การดำเนินการนี้จะลบข้อมูลออกจากระบบทันที โปรดตรวจสอบความถูกต้องก่อนยืนยัน',
-  confirmButtonText = 'ยืนยันการลบ (Confirm Delete)',
-  cancelButtonText = 'ยกเลิก (Cancel)',
+  warningText,
+  confirmButtonText,
+  cancelButtonText,
   isDanger = true
 }) => {
+  const { language } = useLanguage();
+  const isEn = language === 'EN' || language === 'DUAL';
   if (!isOpen) return null;
+
+  const resolvedTitle = title || (isEn ? 'Confirm Delete' : 'ยืนยันการลบข้อมูล (Delete Confirmation)');
+  const resolvedWarning = warningText ?? (isEn
+    ? 'This action immediately removes the selected data from the system. Please verify before confirming.'
+    : 'การดำเนินการนี้จะลบข้อมูลออกจากระบบทันที โปรดตรวจสอบความถูกต้องก่อนยืนยัน');
+  const resolvedConfirm = confirmButtonText || (isEn ? 'Confirm Delete' : 'ยืนยันการลบ (Confirm Delete)');
+  const resolvedCancel = cancelButtonText || (isEn ? 'Cancel' : 'ยกเลิก (Cancel)');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
@@ -41,7 +51,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white font-thai">{title}</h3>
+              <h3 className="text-base font-bold text-white font-thai">{resolvedTitle}</h3>
               <p className="text-[11px] text-rose-300 font-thai">Mandatory Action Verification</p>
             </div>
           </div>
@@ -56,7 +66,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
         {/* Modal Body */}
         <div className="p-5 space-y-4">
           <div className="text-sm text-slate-300 font-thai leading-relaxed">
-            คุณต้องการลบรายการต่อไปนี้ออกจากระบบใช่หรือไม่?
+            {isEn ? 'Are you sure you want to delete the following item from the system?' : 'คุณต้องการลบรายการต่อไปนี้ออกจากระบบใช่หรือไม่?'}
           </div>
 
           {/* Highlighted Item Target Box */}
@@ -75,10 +85,10 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
           </div>
 
           {/* Warning notice */}
-          {warningText && (
+          {resolvedWarning && (
             <div className="flex items-start gap-2 bg-rose-950/20 border border-rose-900/30 rounded-lg p-2.5 text-xs text-rose-300 font-thai">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <span>{warningText}</span>
+              <span>{resolvedWarning}</span>
             </div>
           )}
         </div>
@@ -90,7 +100,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
             onClick={onClose}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-bold font-thai transition-colors"
           >
-            {cancelButtonText}
+            {resolvedCancel}
           </button>
           <button
             type="button"
@@ -101,7 +111,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
             className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-extrabold font-thai transition-colors flex items-center gap-1.5 shadow-lg shadow-rose-950"
           >
             <Trash2 className="w-4 h-4" />
-            <span>{confirmButtonText}</span>
+            <span>{resolvedConfirm}</span>
           </button>
         </div>
       </div>
